@@ -1,5 +1,5 @@
 {
-  "name": "csag-blueprint-packages",
+  "name": "csag-blueprint",
   "private": true,
   "workspaces": [
     "packages/*"

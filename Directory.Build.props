@@ -27,7 +27,7 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryType>git</RepositoryType>
-    <RepositoryUrl>https://github.com/neolution-ch/csag-blueprint-packages</RepositoryUrl>
+    <RepositoryUrl>https://github.com/neolution-ch/Csag.Blueprint</RepositoryUrl>
     <PackageTags>blueprint</PackageTags>
     <Description>CSAG Blueprint shared package</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>

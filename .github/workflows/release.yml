@@ -1,121 +1,121 @@
 name: Release
 
 on:
-    push:
-        branches:
-            - main
-            - "release/**"
+  push:
+    branches:
+      - main
+      - "release/**"
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 permissions:
-    contents: write
-    packages: write
-    pull-requests: write
+  contents: write
+  packages: write
+  pull-requests: write
 
 jobs:
-    release:
-        name: Release
-        runs-on: ubuntu-latest
-        steps:
-            - name: Generate App Token
-              id: app-token
-              uses: actions/create-github-app-token@v3
-              with:
-                  client-id: ${{ secrets.CHANGESETS_BOT_APP_ID }}
-                  private-key: ${{ secrets.CHANGESETS_BOT_PRIVATE_KEY }}
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.CHANGESETS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGESETS_BOT_PRIVATE_KEY }}
 
-            - name: Checkout
-              uses: actions/checkout@v6
-              with:
-                  fetch-depth: 0
-                  token: ${{ steps.app-token.outputs.token }}
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
 
-            - name: Setup Node.js
-              uses: actions/setup-node@v6
-              with:
-                  node-version: 24
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
 
-            - name: Install Dependencies
-              run: npm ci
+      - name: Install Dependencies
+        run: npm ci
 
-            - name: Determine publish config
-              id: publish-config
-              run: |
-                  if [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
-                    # Extract major version from branch name (e.g., release/v1.x → release-v1)
-                    BRANCH="${{ github.ref_name }}"
-                    TAG=$(echo "$BRANCH" | sed -n 's|release/v\([0-9]*\)\..*|release-v\1|p')
-                    echo "tag=--tag $TAG" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "tag=" >> "$GITHUB_OUTPUT"
-                  fi
+      - name: Determine publish config
+        id: publish-config
+        run: |
+          if [[ "${{ github.ref }}" == refs/heads/release/* ]]; then
+            # Extract major version from branch name (e.g., release/v1.x → release-v1)
+            BRANCH="${{ github.ref_name }}"
+            TAG=$(echo "$BRANCH" | sed -n 's|release/v\([0-9]*\)\..*|release-v\1|p')
+            echo "tag=--tag $TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=" >> "$GITHUB_OUTPUT"
+          fi
 
-            - name: Create Release Pull Request or Publish
-              id: changesets
-              uses: changesets/action@v1
-              with:
-                  version: node scripts/sync-versions.js
-                  publish: npx changeset publish ${{ steps.publish-config.outputs.tag }}
-                  title: "chore: version packages"
-                  commit: "chore: version packages"
-              env:
-                  GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+      - name: Create Release Pull Request or Publish
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: node scripts/sync-versions.js
+          publish: npx changeset publish ${{ steps.publish-config.outputs.tag }}
+          title: "chore: version packages"
+          commit: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-            - name: Create release branch on major version bump
-              if: steps.changesets.outputs.published == 'true' && github.ref ==
-                  'refs/heads/main'
-              uses: actions/github-script@v8
-              with:
-                  script: |
-                      const published = JSON.parse('${{ steps.changesets.outputs.publishedPackages }}');
-                      if (!published.length) return;
+      - name: Create release branch on major version bump
+        if: steps.changesets.outputs.published == 'true' && github.ref ==
+          'refs/heads/main'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const published = JSON.parse('${{ steps.changesets.outputs.publishedPackages }}');
+            if (!published.length) return;
 
-                      const newVersion = published[0].version;
-                      const newMajor = parseInt(newVersion.split('.')[0], 10);
+            const newVersion = published[0].version;
+            const newMajor = parseInt(newVersion.split('.')[0], 10);
 
-                      // Only act on stable major bumps (not prereleases)
-                      if (newVersion.includes('-') || newMajor < 1) return;
+            // Only act on stable major bumps (not prereleases)
+            if (newVersion.includes('-') || newMajor < 1) return;
 
-                      const prevMajor = newMajor - 1;
-                      const branchName = `release/v${prevMajor}.x`;
+            const prevMajor = newMajor - 1;
+            const branchName = `release/v${prevMajor}.x`;
 
-                      // Check if the branch already exists
-                      try {
-                          await github.rest.repos.getBranch({
-                              owner: context.repo.owner,
-                              repo: context.repo.repo,
-                              branch: branchName,
-                          });
-                          console.log(`Branch ${branchName} already exists, skipping.`);
-                          return;
-                      } catch (e) {
-                          if (e.status !== 404) throw e;
-                      }
+            // Check if the branch already exists
+            try {
+                await github.rest.repos.getBranch({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    branch: branchName,
+                });
+                console.log(`Branch ${branchName} already exists, skipping.`);
+                return;
+            } catch (e) {
+                if (e.status !== 404) throw e;
+            }
 
-                      // Find the last tag for the previous major version
-                      const tags = await github.paginate(github.rest.repos.listTags, {
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          per_page: 100,
-                      });
+            // Find the last tag for the previous major version
+            const tags = await github.paginate(github.rest.repos.listTags, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+            });
 
-                      const prevTag = tags.find(t => {
-                          const match = t.name.match(/(?:^v?|@)(\d+)\.\d+\.\d+$/);
-                          return match && parseInt(match[1], 10) === prevMajor;
-                      });
+            const prevTag = tags.find(t => {
+                const match = t.name.match(/(?:^v?|@)(\d+)\.\d+\.\d+$/);
+                return match && parseInt(match[1], 10) === prevMajor;
+            });
 
-                      if (!prevTag) {
-                          console.log(`No tag found for v${prevMajor}, skipping branch creation.`);
-                          return;
-                      }
+            if (!prevTag) {
+                console.log(`No tag found for v${prevMajor}, skipping branch creation.`);
+                return;
+            }
 
-                      // Create the branch from the previous major's last tag
-                      await github.rest.git.createRef({
-                          owner: context.repo.owner,
-                          repo: context.repo.repo,
-                          ref: `refs/heads/${branchName}`,
-                          sha: prevTag.commit.sha,
-                      });
+            // Create the branch from the previous major's last tag
+            await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/heads/${branchName}`,
+                sha: prevTag.commit.sha,
+            });
 
-                      console.log(`Created ${branchName} from tag ${prevTag.name} (${prevTag.commit.sha}).`);
+            console.log(`Created ${branchName} from tag ${prevTag.name} (${prevTag.commit.sha}).`);

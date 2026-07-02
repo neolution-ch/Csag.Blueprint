@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
+    <Version>0.1.0</Version>
         <Description>Test infrastructure with Testcontainers, integration test base classes, and AutoFixture support for CSAG Blueprint applications.</Description>
     </PropertyGroup>
     <ItemGroup>

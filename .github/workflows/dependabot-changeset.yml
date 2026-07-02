@@ -42,16 +42,19 @@ jobs:
         id: detect-changes
         if: steps.check-changeset.outputs.exists == 'false'
         run: |
-          # NuGet packages: nuspec dependencies change when a csproj or the central
-          # version file changes. Lockfile-only or tooling updates need no release.
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'packages/*/*.csproj' 'Directory.Packages.props')
+          # A shipped NuGet package is affected when its declared dependencies
+          # (a csproj or the central Directory.Packages.props) or its resolved
+          # dependency graph (packages.lock.json) change. Any Dependabot update
+          # that touches none of these — root npm dev-deps, GitHub Actions, other
+          # tooling — ships no code and gets an empty changeset instead.
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'packages/*/*.csproj' 'packages/*/packages.lock.json' 'Directory.Packages.props')
           if [ -n "$CHANGED" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Package-affecting files changed:"
             echo "$CHANGED"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No package-affecting changes detected (lockfile/tooling-only update)"
+            echo "No package-affecting changes detected (tooling-only update)"
           fi
 
       - name: Setup Node.js

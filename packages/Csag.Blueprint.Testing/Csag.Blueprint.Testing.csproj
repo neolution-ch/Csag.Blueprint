@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <Description>Test infrastructure with Testcontainers, integration test base classes, and AutoFixture support for CSAG Blueprint applications.</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="AutoFixture.Xunit3" />
+        <PackageReference Include="FastEndpoints.Testing" />
+        <PackageReference Include="Microsoft.Data.SqlClient" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore" />
+        <PackageReference Include="Shouldly" />
+        <PackageReference Include="Testcontainers.MsSql" />
+        <PackageReference Include="WireMock.Net.Testcontainers" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Csag.Blueprint.Web\Csag.Blueprint.Web.csproj" />
+    </ItemGroup>
+</Project>

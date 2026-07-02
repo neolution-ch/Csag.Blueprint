@@ -1,0 +1,57 @@
+name: CI
+
+on:
+    pull_request:
+        branches:
+            - main
+            - "release/**"
+
+jobs:
+    changeset-check:
+        name: Changeset Check
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+
+            - name: Install Dependencies
+              run: npm ci
+
+            - name: Check for changesets
+              if: github.head_ref != 'changeset-release/main' && !startsWith(github.head_ref, 'changeset-release/release/')
+              run: npx changeset status --since=origin/${{ github.base_ref }}
+
+    build:
+        name: Build & Pack
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v5
+              with:
+                  global-json-file: global.json
+
+            - name: Restore
+              run: dotnet restore --locked-mode
+
+            - name: Build
+              run: dotnet build --configuration Release --no-restore
+
+            - name: Pack (smoke test)
+              run: dotnet pack --configuration Release --no-build -o ./nupkgs
+
+            - name: Upload packages
+              uses: actions/upload-artifact@v6
+              with:
+                  name: nupkgs
+                  path: ./nupkgs
+                  retention-days: 7

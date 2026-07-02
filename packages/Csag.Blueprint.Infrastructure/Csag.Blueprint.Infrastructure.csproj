@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Database, session, tenancy, localization, and authorization infrastructure for CSAG Blueprint applications.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Neolution.Extensions.Caching.Distributed" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Csag.Blueprint.Application\Csag.Blueprint.Application.csproj" />
+    <ProjectReference Include="..\Csag.Blueprint.Domain\Csag.Blueprint.Domain.csproj" />
+  </ItemGroup>
+</Project>

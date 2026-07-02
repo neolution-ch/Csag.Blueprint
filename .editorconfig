@@ -1,0 +1,143 @@
+ # collana solutions ❤ http://EditorConfig.org
+
+# This file is the top-most EditorConfig file in the solution
+root = true
+
+# All Files
+[*]
+indent_style = space
+#indent_size intentionally not set globally; it has too many unintended consequences.
+tab_width = 4
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+
+# Dotnet Code Files
+[*.{cs,csx,cake,vb}]
+indent_size = 4
+
+# MSBuild + Solution XML
+[*.{slnx,csproj,vbproj,vcxproj,vcxproj.filters,proj,projitems,shproj,props,targets}]
+indent_size = 2
+tab_width = 2
+
+# Configuration Files
+[*.{json,jsonc,yml,yaml,xml,config,nuspec,resx,ruleset}]
+indent_size = 2
+tab_width = 2
+
+# Web Files
+[*.{htm,html,js,ts,css,scss,less}]
+indent_size = 2
+tab_width = 2
+
+# Razor Files
+[*.cshtml]
+indent_size = 2
+tab_width = 2
+
+# Markdown Files
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# LLM reference documents (external content, not authored by us)
+[**/docs/llm-references/**]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# Windows script files
+[*.{bat,cmd}]
+end_of_line = crlf
+
+# Bash / shell scripts
+[*.sh]
+indent_size = 2
+tab_width = 2
+
+# NuGet lock files
+[*.lock.json]
+insert_final_newline = false
+
+#### .NET Code Analyzers rules - configure these as required ####
+
+[**/Program.cs]
+# CA1031: Do not catch general exception types in Program.cs files
+; Used to catch unhandled exceptions in the application and log them before exiting
+dotnet_diagnostic.CA1031.severity = none
+
+[*.{cs}]
+
+# SA1412: Store files as UTF-8 with byte order mark
+; This rule is outdated and will be disabled in a next release of Neolution.CodeAnalysis
+dotnet_diagnostic.SA1412.severity = none
+
+# SA1600: Elements must be documented (disable solution-wide)
+dotnet_diagnostic.SA1600.severity = none
+
+# SA1615: Element return value must be documented (disable solution-wide)
+dotnet_diagnostic.SA1615.severity = none
+
+# SA1611: Element parameters must be documented (disable solution-wide)
+dotnet_diagnostic.SA1611.severity = none
+
+# CA1515: Because an application's API isn't typically referenced from outside the assembly, types can be made internal
+; Rule makes more sense for libraries than applications - disabling for application projects
+dotnet_diagnostic.CA1515.severity = none
+
+# CA1002: Change 'List<T>' in public APIs to Collection<T>/ReadOnlyCollection<T>/KeyedCollection<K,V>
+; Disabled for now (will allow public List<T> properties/parameters)
+dotnet_diagnostic.CA1002.severity = none
+
+# CA2227: Change writable collection properties to be read-only
+; Disabled for now (will allow public setters on collection properties)
+dotnet_diagnostic.CA2227.severity = none
+
+# CA1819: Properties should not return arrays
+; Disabled for now (allow public array properties in this application)
+dotnet_diagnostic.CA1819.severity = none
+
+# CA2007: Consider calling ConfigureAwait on the awaited task
+; Not needed for ASP.NET Core / server-side code in this solution
+dotnet_diagnostic.CA2007.severity = none
+
+# CA1062: Validate parameters of public methods for null
+; Disabled solution-wide for now (will be re-enabled when addressing parameter validation across the app)
+dotnet_diagnostic.CA1062.severity = none
+
+# CA1861: Prefer 'static readonly' fields over constant array arguments
+; Disabled solution-wide for now
+dotnet_diagnostic.CA1861.severity = none
+
+# CA1848: For improved performance, use the LoggerMessage delegates instead of calling 'LoggerExtensions.LogInformation(ILogger, string?, params object?[])'
+; This rule is removed in a future version of Neolution.CodeAnalysis anyway
+dotnet_diagnostic.CA1848.severity = none
+
+# CA1873: Avoid boxing and evaluation of logging arguments when logging is disabled
+; Disabled for simple property access logging - performance impact is negligible for non-expensive operations
+dotnet_diagnostic.CA1873.severity = none
+
+# CA2200: Do not rethrow an exception without preserving the stack trace or adding contextual information
+; This rule is removed in a future version of Neolution.CodeAnalysis anyway
+dotnet_diagnostic.CA2200.severity = none
+
+# CA1031: Do not catch general exception types
+; This rule is removed in a future version of Neolution.CodeAnalysis anyway
+dotnet_diagnostic.CA1031.severity = none
+
+# S2139: Either log this exception and handle it, or rethrow it with some contextual information
+; This rule is removed in a future version of Neolution.CodeAnalysis anyway
+dotnet_diagnostic.S2139.severity = none
+
+# S2360: Use the overloading mechanism instead of the optional parameters
+; Disabled for now
+dotnet_diagnostic.S2360.severity = none
+
+# S3900: Refactor this method to add validation of parameter before using it
+; Preferring cleaner code over redundant null checks and nullable reference types provide compile-time safety
+dotnet_diagnostic.S3900.severity = none
+
+# CA1873: Evaluation of this argument may be expensive and unnecessary if logging is disabled
+; Code readability prioritized over micro-optimizations, so this is acceptable for our performance requirements
+dotnet_diagnostic.CA1873.severity = none

@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+  </Folder>
+  <Folder Name="/packages/">
+    <Project Path="packages/Csag.Blueprint.Domain/Csag.Blueprint.Domain.csproj" />
+    <Project Path="packages/Csag.Blueprint.Application/Csag.Blueprint.Application.csproj" />
+    <Project Path="packages/Csag.Blueprint.Infrastructure/Csag.Blueprint.Infrastructure.csproj" />
+    <Project Path="packages/Csag.Blueprint.Web/Csag.Blueprint.Web.csproj" />
+    <Project Path="packages/Csag.Blueprint.SourceGenerators/Csag.Blueprint.SourceGenerators.csproj" />
+    <Project Path="packages/Csag.Blueprint.Testing/Csag.Blueprint.Testing.csproj" />
+  </Folder>
+</Solution>

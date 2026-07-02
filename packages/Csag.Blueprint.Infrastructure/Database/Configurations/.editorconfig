@@ -1,0 +1,4 @@
+# Configuration-specific rules
+[*.cs]
+# S4017: Entities use generics so downstream apps can plug in their own User/Tenant types, making nested generics in Configure() unavoidable
+dotnet_diagnostic.S4017.severity = none

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <Description>Application-layer abstractions, claim types, tenant context, and table view system for CSAG Blueprint applications.</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Csag.Blueprint.Domain\Csag.Blueprint.Domain.csproj" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    </ItemGroup>
+</Project>

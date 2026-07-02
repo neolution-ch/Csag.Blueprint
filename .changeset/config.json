@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.1/schema.json",
+  "changelog": [
+    "@changesets/changelog-github",
+    { "repo": "neolution-ch/csag-blueprint-packages" }
+  ],
+  "commit": false,
+  "fixed": [
+    [
+      "@neolution-ch/csag-blueprint-domain",
+      "@neolution-ch/csag-blueprint-application",
+      "@neolution-ch/csag-blueprint-infrastructure",
+      "@neolution-ch/csag-blueprint-web",
+      "@neolution-ch/csag-blueprint-testing",
+      "@neolution-ch/csag-blueprint-source-generators"
+    ]
+  ],
+  "linked": [],
+  "access": "restricted",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": [],
+  "privatePackages": { "version": true, "tag": true }
+}

@@ -1,0 +1,78 @@
+name: Dependabot Changeset
+
+on:
+    pull_request:
+        types: [ opened, synchronize, reopened ]
+
+permissions:
+    contents: write
+
+jobs:
+    generate-changeset:
+        name: Generate Changeset
+        runs-on: ubuntu-latest
+        if: github.actor == 'dependabot[bot]'
+        steps:
+            - name: Generate App Token
+              id: app-token
+              uses: actions/create-github-app-token@v3
+              with:
+                  client-id: ${{ secrets.CHANGESETS_BOT_APP_ID }}
+                  private-key: ${{ secrets.CHANGESETS_BOT_PRIVATE_KEY }}
+
+            - name: Checkout
+              uses: actions/checkout@v6
+              with:
+                  fetch-depth: 0
+                  ref: ${{ github.event.pull_request.head.ref }}
+                  token: ${{ steps.app-token.outputs.token }}
+
+            - name: Check for existing changeset
+              id: check-changeset
+              run: |
+                  CHANGESET_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- '.changeset/*.md' | grep -v README.md || true)
+                  if [ -n "$CHANGESET_FILES" ]; then
+                    echo "exists=true" >> "$GITHUB_OUTPUT"
+                    echo "Changeset already exists, skipping generation"
+                  else
+                    echo "exists=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Detect package-affecting changes
+              id: detect-changes
+              if: steps.check-changeset.outputs.exists == 'false'
+              run: |
+                  # NuGet packages: nuspec dependencies change when a csproj or the central
+                  # version file changes. Lockfile-only or tooling updates need no release.
+                  CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'packages/*/*.csproj' 'Directory.Packages.props')
+                  if [ -n "$CHANGED" ]; then
+                    echo "changed=true" >> "$GITHUB_OUTPUT"
+                    echo "Package-affecting files changed:"
+                    echo "$CHANGED"
+                  else
+                    echo "changed=false" >> "$GITHUB_OUTPUT"
+                    echo "No package-affecting changes detected (lockfile/tooling-only update)"
+                  fi
+
+            - name: Setup Node.js
+              if: steps.check-changeset.outputs.exists == 'false'
+              uses: actions/setup-node@v6
+              with:
+                  node-version: 24
+
+            - name: Generate changeset
+              if: steps.check-changeset.outputs.exists == 'false'
+              run: node scripts/generate-dependabot-changeset.js
+              env:
+                  PR_TITLE: ${{ github.event.pull_request.title }}
+                  PR_BODY: ${{ github.event.pull_request.body }}
+                  WORKSPACE_PACKAGES_CHANGED: ${{ steps.detect-changes.outputs.changed }}
+
+            - name: Commit and push changeset
+              if: steps.check-changeset.outputs.exists == 'false'
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                  git add .changeset/
+                  git commit -m "chore: add changeset for dependency updates"
+                  git push

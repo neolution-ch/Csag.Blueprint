@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <Description>ASP.NET Core middleware, validated options, security configuration, and
+            FastEndpoints extensions for CSAG Blueprint applications.</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Audit.NET" />
+        <PackageReference Include="Audit.EntityFramework.Core" />
+        <PackageReference Include="Audit.NET.SqlServer" />
+        <PackageReference Include="ClosedXML" />
+        <PackageReference Include="FastEndpoints" />
+        <PackageReference Include="FastEndpoints.Swagger" />
+        <PackageReference Include="FluentValidation" />
+        <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" />
+        <PackageReference Include="Microsoft.ApplicationInsights.NLogTarget" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" />
+        <PackageReference Include="Microsoft.Extensions.Caching.SqlServer" />
+        <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+        <PackageReference Include="Neolution.Extensions.Caching.Distributed" />
+        <PackageReference Include="Neolution.Extensions.Configuration.GoogleSecrets" />
+        <PackageReference Include="NLog.Web.AspNetCore" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Data.SqlClient" VersionOverride="7.0.1" />
+        <ProjectReference Include="..\Csag.Blueprint.Infrastructure\Csag.Blueprint.Infrastructure.csproj" />
+    </ItemGroup>
+</Project>

@@ -1,0 +1,58 @@
+name: NuGet Publish
+
+on:
+    release:
+        types: [published]
+
+# All six packages are versioned in lockstep, so one version train produces six
+# GitHub Releases (one per fixed package) and this workflow fires up to six times.
+# Runs are serialized and pushes use --skip-duplicate, making every run after the
+# first a no-op.
+concurrency:
+    group: nuget-publish
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        name: Publish to nuget.org
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v6
+
+            - name: Setup .NET
+              uses: actions/setup-dotnet@v5
+              with:
+                  global-json-file: global.json
+
+            - name: Extract version from tag
+              id: version
+              run: |
+                  # Tag format: @neolution-ch/csag-blueprint-domain@0.1.0
+                  TAG="${GITHUB_REF_NAME}"
+                  echo "version=${TAG##*@}" >> "$GITHUB_OUTPUT"
+
+            - name: Remove changesets version-tracking stubs
+              run: |
+                  # Remove package.json files so they don't leak into the NuGet packages
+                  find packages/ -name "package.json" -delete
+
+            - name: Restore
+              run: dotnet restore --locked-mode
+
+            - name: Pack
+              run: dotnet pack --configuration Release --no-restore -o ./nupkgs
+
+            - name: Verify packed version matches the release tag
+              run: |
+                  ls ./nupkgs
+                  test -f "./nupkgs/Csag.Blueprint.Domain.${{ steps.version.outputs.version }}.nupkg"
+
+            - name: Push to nuget.org
+              run: |
+                  dotnet nuget push "./nupkgs/*.nupkg" \
+                    --api-key "${{ secrets.NUGET_API_KEY }}" \
+                    --source https://api.nuget.org/v3/index.json \
+                    --skip-duplicate

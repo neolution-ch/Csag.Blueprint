@@ -1,0 +1,16 @@
+{
+  "name": "csag-blueprint-packages",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "changeset": "changeset",
+    "version-packages": "node scripts/sync-versions.js",
+    "release": "changeset publish"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "@changesets/changelog-github": "^0.5.1"
+  }
+}

@@ -1,0 +1,50 @@
+# Dependabot configuration. The Dependabot Changeset workflow auto-generates a
+# changeset for every PR opened here, so these updates flow through the normal
+# release process.
+version: 2
+updates:
+  # NuGet dependencies (all versions are centralized in Directory.Packages.props).
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 14
+    ignore:
+      # Major versions of these track the .NET target framework (net10.0);
+      # they are bumped manually together with a TFM upgrade.
+      - dependency-name: "Microsoft.EntityFrameworkCore*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.AspNetCore*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.Extensions*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.ApplicationInsights*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      # Batch all updates into one PR to reduce noise (and one changeset).
+      nuget-ecosystem:
+        patterns: ["*"]
+
+  # npm dependencies: only the changesets release tooling at the root.
+  # (The packages/* package.json files are version-tracking stubs with no deps.)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 14
+    groups:
+      npm-non-major:
+        update-types: ["minor", "patch"]
+
+  # Keep the pinned GitHub Actions in these workflows up to date too.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 30
+    groups:
+      github-actions:
+        patterns: ["*"]

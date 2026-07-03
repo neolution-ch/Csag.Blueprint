@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <Version>0.1.0</Version>
     <Description>Database, session, tenancy, localization, and authorization infrastructure for CSAG Blueprint applications.</Description>
   </PropertyGroup>
   <ItemGroup>

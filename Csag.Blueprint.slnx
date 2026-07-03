@@ -12,4 +12,8 @@
     <Project Path="packages/Csag.Blueprint.SourceGenerators/Csag.Blueprint.SourceGenerators.csproj" />
     <Project Path="packages/Csag.Blueprint.Testing/Csag.Blueprint.Testing.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <File Path="tests/Directory.Build.props" />
+    <Project Path="tests/Csag.Blueprint.Infrastructure.Tests/Csag.Blueprint.Infrastructure.Tests.csproj" />
+  </Folder>
 </Solution>

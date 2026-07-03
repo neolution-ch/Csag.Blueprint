@@ -1,0 +1,31 @@
+<Project>
+  <!--
+    Defaults for every project under tests/.
+    MSBuild imports only the *nearest* Directory.Build.props, so it would stop here and skip the
+    repo-root one. We set IsTestProject first (the root guards its Neolution.CodeAnalysis injection
+    on IsTestProject != 'true'), then explicitly chain to the root, then override test-only settings.
+  -->
+  <PropertyGroup>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!-- Test projects are never shipped to nuget (root sets IsPackable=true for the packages). -->
+    <IsPackable>false</IsPackable>
+    <!-- No XML doc generation for tests (root turns it on for the shipped packages -> CS1591 noise). -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- xUnit v3 test projects run as a self-hosted console app. -->
+    <OutputType>Exe</OutputType>
+
+    <!--
+      Keep TreatWarningsAsErrors (inherited) so the toolchain stays honest, but dial the analysis
+      surface back from the root's AnalysisMode=All and silence the rules that fight idiomatic
+      xUnit/NSubstitute/Shouldly test code (underscore test names, ConfigureAwait, literal arrays,
+      "make type internal" on public test classes, Random usage in fixtures).
+    -->
+    <AnalysisMode>Recommended</AnalysisMode>
+    <NoWarn>$(NoWarn);CA1707;CA2007;CA1861;CA1515;CA5394;CA1062</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -21,7 +21,7 @@ jobs:
           private-key: ${{ secrets.CHANGESETS_BOT_PRIVATE_KEY }}
 
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.ref }}
@@ -59,7 +59,7 @@ jobs:
 
       - name: Setup Node.js
         if: steps.check-changeset.outputs.exists == 'false'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: 24
 

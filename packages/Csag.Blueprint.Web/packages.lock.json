@@ -171,11 +171,11 @@
       },
       "NLog.Web.AspNetCore": {
         "type": "Direct",
-        "requested": "[6.1.3, )",
-        "resolved": "6.1.3",
-        "contentHash": "EPbrb/qZYgKe+eXN5KrR5PlEzbli08RdUT9QB5/E+CqR9Bci+vEImpcZTXUXxNm7z2XNBFOtz1WAaOh+cuBj7g==",
+        "requested": "[6.1.4, )",
+        "resolved": "6.1.4",
+        "contentHash": "kM79afVMCJx5Nb3nyponqOTKPjFNVKNzCPCyMKJXRVUv+BLOCjFGpAzMfriO8u0skc3kZwLUY2ZJUb5SGNZ9Ug==",
         "dependencies": {
-          "NLog.Extensions.Logging": "6.1.3"
+          "NLog.Extensions.Logging": "6.1.4"
         }
       },
       "Audit.EntityFramework.Abstractions": {
@@ -639,15 +639,15 @@
       },
       "NLog": {
         "type": "Transitive",
-        "resolved": "6.1.3",
-        "contentHash": "w4JFIUN3cjQobFOc6wuXtHTyMNaWfdAxOhMvCR0vHBNpl2kKSjNYYxzx1KsTtePufQeokFMEx9UbWTAqlICKjA=="
+        "resolved": "6.1.4",
+        "contentHash": "ft6Lv17uoFuHTGWiY47FEXH7VA5HMHp973zodaOZAJyFg6mHL9RdXjqdNkRJXFo5plQJR+LPt5e6aAZU8KSDog=="
       },
       "NLog.Extensions.Logging": {
         "type": "Transitive",
-        "resolved": "6.1.3",
-        "contentHash": "e47ew/O3uHBANPDnI0RAaBbVEpOsuF8rhKedQLdJunwEB+7EnUSjT/kEODKPD3wrlkjoeCxTXrOXD7l1EB7HNQ==",
+        "resolved": "6.1.4",
+        "contentHash": "gDJjgF9LjG1Zsy3o/3BVUk5gFcCozYzrzKTZjcnE43FghchoQ9Xi4ra2dGEU+ftJf9oM0Kzs06y1r2SjfhDBGQ==",
         "dependencies": {
-          "NLog": "6.1.3"
+          "NLog": "6.1.4"
         }
       },
       "NSwag.Annotations": {
@@ -815,7 +815,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[1.0.0, )",
+          "Csag.Blueprint.Domain": "[0.1.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.9, )"
         }
       },
@@ -828,8 +828,8 @@
       "csag.blueprint.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Application": "[1.0.0, )",
-          "Csag.Blueprint.Domain": "[1.0.0, )",
+          "Csag.Blueprint.Application": "[0.1.0, )",
+          "Csag.Blueprint.Domain": "[0.1.0, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.9, )",
           "Microsoft.EntityFrameworkCore": "[10.0.9, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.9, )",

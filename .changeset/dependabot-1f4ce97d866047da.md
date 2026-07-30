@@ -1,0 +1,25 @@
+---
+"@neolution-ch/csag-blueprint-domain": patch
+"@neolution-ch/csag-blueprint-application": patch
+"@neolution-ch/csag-blueprint-infrastructure": patch
+"@neolution-ch/csag-blueprint-web": patch
+"@neolution-ch/csag-blueprint-testing": patch
+"@neolution-ch/csag-blueprint-source-generators": patch
+---
+
+Bump the nuget-ecosystem group with 13 updates
+
+| Package | From | To | Bump |
+|---------|------|----|------|
+| Microsoft.AspNetCore.Authentication.Google | 10.0.9 | 10.0.10 | 🟢 patch |
+| Microsoft.AspNetCore.DataProtection.EntityFrameworkCore | 10.0.9 | 10.0.10 | 🟢 patch |
+| Microsoft.AspNetCore.Identity.EntityFrameworkCore | 10.0.9 | 10.0.10 | 🟢 patch |
+| Microsoft.CodeAnalysis.Analyzers | 5.3.0 | 5.6.0 | 🟡 minor |
+| Microsoft.Data.SqlClient | 7.0.1 | 7.0.2 | 🟢 patch |
+| Microsoft.EntityFrameworkCore | 10.0.9 | 10.0.10 | 🟢 patch |
+| Microsoft.EntityFrameworkCore.SqlServer | 10.0.9 | 10.0.10 | 🟢 patch |
+| Microsoft.Extensions.Caching.SqlServer | 10.0.9 | 10.0.10 | 🟢 patch |
+| Microsoft.Extensions.Caching.StackExchangeRedis | 10.0.9 | 10.0.10 | 🟢 patch |
+| NLog.Web.AspNetCore | 6.1.3 | 6.1.4 | 🟢 patch |
+| Testcontainers.MsSql | 4.12.0 | 4.13.0 | 🟡 minor |
+| WireMock.Net.Testcontainers | 2.11.0 | 2.12.0 | 🟡 minor |

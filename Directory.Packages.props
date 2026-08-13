@@ -39,6 +39,6 @@
     <PackageVersion Include="FastEndpoints.Testing" Version="8.2.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.13.0" />
-    <PackageVersion Include="WireMock.Net.Testcontainers" Version="2.12.0" />
+    <PackageVersion Include="WireMock.Net.Testcontainers" Version="2.13.0" />
   </ItemGroup>
 </Project>

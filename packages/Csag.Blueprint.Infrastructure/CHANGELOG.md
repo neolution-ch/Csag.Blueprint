@@ -1,5 +1,11 @@
 # @neolution-ch/csag-blueprint-infrastructure
 
+## 0.1.1
+
+### Patch Changes
+
+- [#15](https://github.com/neolution-ch/Csag.Blueprint/pull/15) [`53adf9c`](https://github.com/neolution-ch/Csag.Blueprint/commit/53adf9c6f519a6306c25bda3b68b6848a7db9496) Thanks [@neotrow](https://github.com/neotrow)! - Update to the latest blueprint packages from csag-blueprint-web
+
 ## 0.1.0
 
 ### Minor Changes

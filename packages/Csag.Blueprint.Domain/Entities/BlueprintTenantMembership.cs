@@ -38,6 +38,12 @@ public class BlueprintTenantMembership<TUser, TTenant> : IAuditable
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
 
+    /// <inheritdoc/>
+    public string? CreatedByActor { get; set; }
+
+    /// <inheritdoc/>
+    public string? UpdatedByActor { get; set; }
+
     /// <summary>
     /// Gets or sets the user associated with this membership.
     /// </summary>
@@ -47,4 +53,16 @@ public class BlueprintTenantMembership<TUser, TTenant> : IAuditable
     /// Gets or sets the tenant associated with this membership.
     /// </summary>
     public TTenant Tenant { get; set; } = null!;
+
+    /// <summary>
+    /// Gets the tenant-scoped role assignments for this membership. Each entry links the
+    /// membership to a role in the shared role catalog, granting that role only within this tenant.
+    /// </summary>
+    public ICollection<BlueprintTenantMembershipRole<TUser, TTenant>> Roles { get; } = new List<BlueprintTenantMembershipRole<TUser, TTenant>>();
+
+    /// <summary>
+    /// Gets the tenant-scoped direct permission grants for this membership. Each entry grants the
+    /// user an individual permission only within this tenant, independently of their roles.
+    /// </summary>
+    public ICollection<BlueprintTenantMembershipPermission<TUser, TTenant>> Permissions { get; } = new List<BlueprintTenantMembershipPermission<TUser, TTenant>>();
 }

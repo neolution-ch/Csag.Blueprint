@@ -25,7 +25,7 @@ public sealed class BlueprintResourceAccess : IAuditable
 
     /// <summary>
     /// Gets or sets the type of resource this permission applies to.
-    /// Examples: "Pedalo", "Reservation", "MaintenanceRecord"
+    /// Examples: "Invoice", "Order", "Report"
     /// </summary>
     public string ResourceType { get; set; } = string.Empty;
 
@@ -50,4 +50,10 @@ public sealed class BlueprintResourceAccess : IAuditable
     /// Gets or sets the date and time when this permission was last updated.
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <inheritdoc/>
+    public string? CreatedByActor { get; set; }
+
+    /// <inheritdoc/>
+    public string? UpdatedByActor { get; set; }
 }

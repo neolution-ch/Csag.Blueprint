@@ -33,4 +33,10 @@ public sealed class BlueprintTranslation : IAuditable
 
     /// <inheritdoc/>
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <inheritdoc/>
+    public string? CreatedByActor { get; set; }
+
+    /// <inheritdoc/>
+    public string? UpdatedByActor { get; set; }
 }

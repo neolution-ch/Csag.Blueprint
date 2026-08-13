@@ -7,7 +7,10 @@ namespace Csag.Blueprint.Web.Options.Api.Security
     using Csag.Blueprint.Web.Options.Api.Security.OAuth;
     using Csag.Blueprint.Web.Options.Api.Security.Password;
     using Csag.Blueprint.Web.Options.Api.Security.PasswordReset;
+    using Csag.Blueprint.Web.Options.Api.Security.RequestLimits;
     using Csag.Blueprint.Web.Options.Api.Security.SecurityHeaders;
+    using Csag.Blueprint.Web.Options.Api.Security.ServiceAccountLockout;
+    using Csag.Blueprint.Web.Options.Api.Security.Swagger;
     using Microsoft.AspNetCore.Http;
 
     /// <summary>
@@ -73,10 +76,31 @@ namespace Csag.Blueprint.Web.Options.Api.Security
         public JwtSettings Jwt { get; set; } = new();
 
         /// <summary>
+        /// Gets or sets the service-account token endpoint lockout settings.
+        /// Configures the failed-attempt threshold and lockout duration for service-account credential
+        /// verification, mirroring the semantics of ASP.NET Core Identity lockout for interactive users.
+        /// </summary>
+        public ServiceAccountLockoutSettings ServiceAccountLockout { get; set; } = new();
+
+        /// <summary>
+        /// Gets or sets the multi-factor authentication (MFA) settings.
+        /// Controls whether TOTP-based MFA is supported, whether it is mandatory for all users,
+        /// and which external login providers bypass the MFA challenge.
+        /// </summary>
+        public MfaSettings Mfa { get; set; } = new();
+
+        /// <summary>
         /// Gets or sets the CSRF (Cross-Site Request Forgery) protection settings.
         /// Configures token distribution and validation for cookie-authenticated requests.
         /// </summary>
         public CsrfSettings Csrf { get; set; } = new();
+
+        /// <summary>
+        /// Gets or sets the request size limit settings.
+        /// Centrally caps the request body size (Kestrel) and the multipart form body size
+        /// to protect the API against oversized requests and resource exhaustion.
+        /// </summary>
+        public RequestLimitsSettings RequestLimits { get; set; } = new();
 
         /// <summary>
         /// Gets or sets the cookie secure policy for the Identity session cookie.
@@ -87,9 +111,24 @@ namespace Csag.Blueprint.Web.Options.Api.Security
 
         /// <summary>
         /// Gets or sets the number of hours before a user session expires.
+        /// This single value drives both the authentication cookie <c>ExpireTimeSpan</c> and the sign-in
+        /// ticket <c>ExpiresUtc</c>, so the cookie and ticket lifetimes can never drift.
         /// The session cookie is always persistent across browser restarts.
+        /// Because sliding expiration is enabled, this is an <b>idle (inactivity) timeout</b>: the session
+        /// is extended by this value on activity once more than half of the window has elapsed, and expires
+        /// only after this many hours of inactivity. There is no separate absolute (maximum) lifetime cap.
         /// Defaults to 168 hours (7 days).
         /// </summary>
         public int SessionExpirationHours { get; set; }
+
+        /// <summary>
+        /// Gets or sets the Swagger UI settings.
+        /// Controls whether the runtime Swagger UI HTML and Swagger JSON endpoints are served.
+        /// The JSON API has no CSP by design, so the served Swagger UI HTML is unprotected.
+        /// Defaults to disabled (off) so the exposed surface is never served unless an environment
+        /// explicitly opts in; it is enabled only in the Development and Testing appsettings, while
+        /// Staging and Production inherit the disabled default. Remains toggleable via configuration.
+        /// </summary>
+        public SwaggerSettings Swagger { get; set; } = new();
     }
 }

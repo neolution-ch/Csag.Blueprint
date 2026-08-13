@@ -1,7 +1,7 @@
 namespace Csag.Blueprint.Application.Claims;
 
 /// <summary>
-/// Defines identity claim type constants used within the application based on the blueprint template and packages.
+/// Defines identity claim type constants shared between the Blueprint packages and consuming applications.
 /// </summary>
 public static class IdentityClaimTypes
 {

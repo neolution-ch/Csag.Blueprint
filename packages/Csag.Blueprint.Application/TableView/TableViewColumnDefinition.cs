@@ -113,7 +113,9 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
     }
 
     /// <summary>
-    /// Sets the description for the column.
+    /// Sets the description for the column. When a translation key is also recorded via
+    /// <see cref="WithTranslatedDescription"/>, this value serves as the request-time fallback
+    /// for keys that cannot be resolved.
     /// </summary>
     /// <param name="description">The description.</param>
     /// <returns>The column definition for fluent chaining.</returns>
@@ -124,13 +126,48 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
     }
 
     /// <summary>
-    /// Sets the display name for the column header.
+    /// Sets the translation key used to localize the column description at request time.
+    /// Records the key only — no localizer or database access — so it is safe to call while the
+    /// definition is constructed during application startup. When the key cannot be resolved at
+    /// request time, the description set via <see cref="WithDescription"/> is served unchanged.
+    /// </summary>
+    /// <param name="translationKey">The dot-separated translation key (a <c>TranslationKeys</c> constant).</param>
+    /// <returns>The column definition for fluent chaining.</returns>
+    public TableViewColumnDefinition<TEntity, TDto> WithTranslatedDescription(string translationKey)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(translationKey);
+
+        this.metadata.DescriptionKey = translationKey;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the display name for the column header. When a translation key is also recorded via
+    /// <see cref="WithTranslatedDisplayName"/>, this value serves as the request-time fallback
+    /// for keys that cannot be resolved.
     /// </summary>
     /// <param name="displayName">The display name.</param>
     /// <returns>This configuration for chaining.</returns>
     public TableViewColumnDefinition<TEntity, TDto> WithDisplayName(string displayName)
     {
         this.metadata.DisplayName = displayName;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the translation key used to localize the column header at request time.
+    /// Records the key only — no localizer or database access — so it is safe to call while the
+    /// definition is constructed during application startup. When the key cannot be resolved at
+    /// request time, the display name set via <see cref="WithDisplayName"/> (or the humanized
+    /// default derived from the column name) is served unchanged.
+    /// </summary>
+    /// <param name="translationKey">The dot-separated translation key (a <c>TranslationKeys</c> constant).</param>
+    /// <returns>This configuration for chaining.</returns>
+    public TableViewColumnDefinition<TEntity, TDto> WithTranslatedDisplayName(string translationKey)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(translationKey);
+
+        this.metadata.DisplayNameKey = translationKey;
         return this;
     }
 

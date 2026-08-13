@@ -4,9 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 
 /// <summary>
-/// Single source of truth for the blueprint's JSON serialization conventions.
+/// Single source of truth for the shared Blueprint JSON serialization conventions.
 /// Used by the API host (FastEndpoints) and any persistence layer that round-trips
-/// blueprint models through JSON, so the contract stays consistent in both directions.
+/// Blueprint models through JSON, so the contract stays consistent in both directions.
 /// </summary>
 public static class BlueprintJsonOptions
 {
@@ -17,7 +17,7 @@ public static class BlueprintJsonOptions
     public static JsonSerializerOptions Default { get; } = CreateDefault();
 
     /// <summary>
-    /// Applies the blueprint's JSON conventions to an existing options instance:
+    /// Applies the shared JSON conventions to an existing options instance:
     /// camelCase property names and string-form enum values (case-insensitive on read,
     /// PascalCase on write — matching the wider .NET enum convention).
     /// </summary>

@@ -29,6 +29,12 @@ public class BlueprintUser : IdentityUser<Guid>, IAuditable, IUserProfileClaimsS
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
 
+    /// <inheritdoc/>
+    public string? CreatedByActor { get; set; }
+
+    /// <inheritdoc/>
+    public string? UpdatedByActor { get; set; }
+
     /// <summary>
     /// Gets the user's display name.
     /// Override in derived types to compose from first name, last name, etc.

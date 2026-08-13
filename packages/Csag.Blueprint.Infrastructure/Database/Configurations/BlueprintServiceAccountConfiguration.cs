@@ -23,6 +23,8 @@ public sealed class BlueprintServiceAccountConfiguration : IEntityTypeConfigurat
         builder.Property(e => e.Roles).HasColumnType("nvarchar(max)");
         builder.Property(e => e.Permissions).HasColumnType("nvarchar(max)");
         builder.Property(e => e.IsActive).IsRequired();
+        builder.Property(e => e.AccessFailedCount).IsRequired();
+        builder.Property(e => e.LockoutEnd);
         builder.Property(e => e.TenantId).IsRequired();
         builder.Property(e => e.CreatedAt).IsRequired();
 

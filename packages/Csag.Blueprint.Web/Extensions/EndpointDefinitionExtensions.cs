@@ -10,12 +10,25 @@ namespace Csag.Blueprint.Web.Extensions
     {
         private const string EndpointSuffix = "Endpoint";
         private const string NamespacePlaceholder = "[namespace]";
-        private const string DefaultBaseNamespace = "Web.Api.Endpoints.";
 
-        public static void ApplyConventions(this EndpointDefinition ep, string baseNamespace = DefaultBaseNamespace)
+        /// <summary>
+        /// Applies the shared naming and routing conventions to an endpoint definition: the
+        /// "Endpoint" class-name suffix is dropped from the endpoint name, and the <c>[namespace]</c>
+        /// route placeholder is replaced with the kebab-cased first namespace segment below
+        /// <paramref name="baseNamespace"/>.
+        /// </summary>
+        /// <param name="ep">The endpoint definition to configure.</param>
+        /// <param name="baseNamespace">
+        /// The root namespace of the consuming application's endpoint classes (e.g.
+        /// <c>"MyCompany.Api.Endpoints"</c>, with or without a trailing dot). Deliberately has no
+        /// default: the package cannot know the host's namespace, so the application must pass its own.
+        /// </param>
+        public static void ApplyConventions(this EndpointDefinition ep, string baseNamespace)
         {
+            ArgumentException.ThrowIfNullOrWhiteSpace(baseNamespace);
+
             ep.ApplyNamingConvention();
-            ep.ApplyRoutingConvention(baseNamespace);
+            ep.ApplyRoutingConvention(baseNamespace.EndsWith('.') ? baseNamespace : baseNamespace + ".");
         }
 
         private static void ApplyNamingConvention(this EndpointDefinition ep)

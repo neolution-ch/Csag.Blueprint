@@ -7,7 +7,10 @@ namespace Csag.Blueprint.Web.Options.Api.Security
     using Csag.Blueprint.Web.Options.Api.Security.OAuth;
     using Csag.Blueprint.Web.Options.Api.Security.Password;
     using Csag.Blueprint.Web.Options.Api.Security.PasswordReset;
+    using Csag.Blueprint.Web.Options.Api.Security.RequestLimits;
     using Csag.Blueprint.Web.Options.Api.Security.SecurityHeaders;
+    using Csag.Blueprint.Web.Options.Api.Security.ServiceAccountLockout;
+    using Csag.Blueprint.Web.Options.Api.Security.Swagger;
     using FluentValidation;
 
     /// <summary>
@@ -52,10 +55,29 @@ namespace Csag.Blueprint.Web.Options.Api.Security
                 .WithMessage("Jwt cannot be null")
                 .SetValidator(new JwtSettingsValidator());
 
+            this.RuleFor(x => x.ServiceAccountLockout)
+                .NotNull()
+                .WithMessage("ServiceAccountLockout cannot be null")
+                .SetValidator(new ServiceAccountLockoutSettingsValidator());
+
+            this.RuleFor(x => x.Mfa)
+                .NotNull()
+                .WithMessage("Mfa cannot be null")
+                .SetValidator(new MfaSettingsValidator());
+
             this.RuleFor(x => x.Csrf)
                 .NotNull()
                 .WithMessage("Csrf cannot be null")
                 .SetValidator(new CsrfSettingsValidator());
+
+            this.RuleFor(x => x.RequestLimits)
+                .NotNull()
+                .WithMessage("RequestLimits cannot be null")
+                .SetValidator(new RequestLimitsSettingsValidator());
+            this.RuleFor(x => x.Swagger)
+                .NotNull()
+                .WithMessage("Swagger cannot be null")
+                .SetValidator(new SwaggerSettingsValidator());
 
             this.RuleFor(x => x.SessionExpirationHours)
                 .GreaterThan(0)

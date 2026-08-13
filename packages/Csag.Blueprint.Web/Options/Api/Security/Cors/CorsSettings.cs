@@ -6,7 +6,7 @@ namespace Csag.Blueprint.Web.Options.Api.Security.Cors
     public sealed class CorsSettings
     {
         /// <summary>
-        /// Gets or sets the allowed origins as a semicolon-delimited string (e.g., "http://localhost:3000;https://app.example.com").
+        /// Gets or sets the allowed origins as a semicolon-delimited string (e.g., "http://localhost:20023;https://app.example.com").
         /// Do not include trailing slashes in URLs.
         /// </summary>
         public string? AllowedOrigins { get; set; }

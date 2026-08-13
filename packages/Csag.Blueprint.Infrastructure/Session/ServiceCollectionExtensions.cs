@@ -25,6 +25,7 @@ public static class ServiceCollectionExtensions
         where TContext : DbContext
     {
         services.AddSingleton<ITicketCacheService, TicketCacheService>();
+        services.AddSingleton<ISessionExpirationExtender, SessionExpirationExtender<TContext>>();
         services.AddSingleton<ITicketStore, DistributedCacheTicketStore>();
         services.AddScoped<ISessionManager, SessionManager<TUser, TContext>>();
         services.AddSingleton<IPostConfigureOptions<CookieAuthenticationOptions>>(sp => new PostConfigureCookieAuthenticationOptions(sp.GetRequiredService<ITicketStore>()));

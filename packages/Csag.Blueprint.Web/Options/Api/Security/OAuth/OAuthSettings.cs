@@ -1,8 +1,12 @@
 namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
 {
+    using System;
+    using System.Collections.Generic;
+
     /// <summary>
-    /// OAuth external authentication provider settings.
-    /// Configures integration with third-party identity providers (Google, Microsoft, GitHub, etc.).
+    /// OAuth external authentication settings.
+    /// Configures generic OpenID Connect integration with one or more third-party identity providers
+    /// (Google, Microsoft Entra ID, and any compliant OIDC provider) via their well-known discovery URLs.
     /// </summary>
     public sealed class OAuthSettings
     {
@@ -16,18 +20,20 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
         public bool AutoCreateUsers { get; set; }
 
         /// <summary>
-        /// Gets or sets the default role to assign to automatically created OAuth users.
-        /// This role is only applied when AutoCreateUsers is true and a new user account is created.
-        /// Must be a valid role name from Application.Authorization.Roles (e.g., "Admin", "Manager", "Employee", "Maintenance").
-        /// Required when AutoCreateUsers is true.
-        /// Example: "Employee" - gives basic access to new OAuth users.
+        /// Gets or sets the absolute base URL of the frontend application (scheme + host, e.g. "https://localhost:20023").
+        /// External-auth flows always complete on the API origin, because the OAuth provider's redirect URI points at the
+        /// API rather than the frontend. The post-login redirect must therefore be sent back to the frontend origin,
+        /// otherwise the user lands on the API host (where the SPA routes do not exist → 404).
+        /// When null, redirects use a relative path, which is only correct when the frontend and API share an origin.
         /// </summary>
-        public string? DefaultRole { get; set; }
+        public string? FrontendBaseUrl { get; set; }
 
         /// <summary>
-        /// Gets or sets the Google OAuth authentication settings.
-        /// Configure this to enable "Sign in with Google" functionality.
+        /// Gets or sets the configured OpenID Connect providers, keyed by authentication scheme name
+        /// (e.g. "google", "microsoft"). Each enabled entry is registered as its own OIDC scheme and
+        /// exposed at <c>/auth/external/{scheme}</c>. Configure entries to enable "Sign in with ..." options.
         /// </summary>
-        public GoogleOAuthSettings Google { get; set; } = new();
+        public IDictionary<string, OidcProviderSettings> Providers { get; set; }
+            = new Dictionary<string, OidcProviderSettings>(StringComparer.OrdinalIgnoreCase);
     }
 }

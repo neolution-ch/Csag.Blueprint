@@ -49,6 +49,16 @@ public interface ITenantManager<TUser, TTenant>
     Task<TTenant?> GetUserTenantAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Determines whether a user is a member of a tenant. Prefer this over
+    /// <see cref="GetUserTenantAsync"/> for pure existence checks — it does not load the tenant entity.
+    /// </summary>
+    /// <param name="userId">The user identifier.</param>
+    /// <param name="tenantId">The tenant identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns><c>true</c> if the user is a member of the tenant; otherwise <c>false</c>.</returns>
+    Task<bool> IsMemberAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds a user to a tenant.
     /// </summary>
     /// <param name="userId">The user identifier.</param>

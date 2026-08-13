@@ -20,7 +20,7 @@ namespace Csag.Blueprint.Web.Extensions
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddFastEndpointsWithConfiguration(this IServiceCollection services)
         {
-            // Apply the blueprint's shared JSON conventions (camelCase property names,
+            // Apply the shared Blueprint JSON conventions (camelCase property names,
             // string enums). Same helper is used by persistence layers so the on-the-wire
             // and at-rest JSON shapes stay aligned.
             services.ConfigureHttpJsonOptions(options => BlueprintJsonOptions.Configure(options.SerializerOptions));
@@ -46,6 +46,16 @@ namespace Csag.Blueprint.Web.Extensions
             var options = new FastEndpointsConventionOptions();
             configure?.Invoke(options);
 
+            // Fail fast at startup: without the host's endpoint root namespace the [namespace] route
+            // placeholder cannot be resolved, and the package must not guess it.
+            if (string.IsNullOrWhiteSpace(options.EndpointsBaseNamespace))
+            {
+                throw new InvalidOperationException(
+                    $"{nameof(FastEndpointsConventionOptions)}.{nameof(FastEndpointsConventionOptions.EndpointsBaseNamespace)} must be set to the root " +
+                    "namespace of the application's endpoint classes (e.g. \"MyCompany.Api.Endpoints\").");
+            }
+
+            var endpointsBaseNamespace = options.EndpointsBaseNamespace;
             var schemes = new List<string>();
             if (options.CookieAuthMode == AuthMode.OptOut)
             {
@@ -65,7 +75,7 @@ namespace Csag.Blueprint.Web.Extensions
                     x.Errors.UseProblemDetails(o => o.AllowDuplicateErrors = true);
                     x.Endpoints.Configurator = ep =>
                     {
-                        ep.ApplyConventions();
+                        ep.ApplyConventions(endpointsBaseNamespace);
 
                         // Apply opt-out schemes to all authenticated endpoints.
                         // AuthSchemes() has compounding behavior in the Configurator, so skip
@@ -81,8 +91,16 @@ namespace Csag.Blueprint.Web.Extensions
                     // Without this, security scanners (e.g. OWASP ZAP) flag the 500 as a SQL injection.
                     x.Binding.FormExceptionTransformer =
                         _ => new FluentValidation.Results.ValidationFailure("_", "The request body was malformed or contained invalid multipart data.");
-                })
-                .UseSwaggerGen();
+                });
+
+            // Serve the Swagger UI HTML and the runtime Swagger JSON document only when enabled.
+            // Because the JSON API has no CSP by design, the served Swagger UI HTML is unprotected, so
+            // callers turn this off in Production via configuration. Gating only this middleware keeps the
+            // Swagger document registered in DI, which means the build-time OpenAPI export stays unaffected.
+            if (options.EnableSwaggerUi)
+            {
+                app.UseSwaggerGen();
+            }
 
             return app;
         }

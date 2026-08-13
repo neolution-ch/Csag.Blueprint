@@ -5,6 +5,7 @@ using Csag.Blueprint.Web.Options.Api.Security;
 using Csag.Blueprint.Web.Options.Cache;
 using Csag.Blueprint.Web.Options.Database;
 using Csag.Blueprint.Web.Options.FeatureFlags;
+using Csag.Blueprint.Web.Options.Frontend;
 using Csag.Blueprint.Web.Options.Localization;
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
@@ -47,7 +48,7 @@ public static class OptionsExtensions
 
     /// <summary>
     /// Adds all blueprint default options with FluentValidation support.
-    /// Registers DatabaseOptions, SecuritySettings, FeatureFlagOptions, CacheOptions, and LocalizationOptions
+    /// Registers DatabaseOptions, SecuritySettings, FeatureFlagOptions, CacheOptions, LocalizationOptions, and FrontendSettings
     /// with their respective validators, all nested under the "Blueprint" configuration section.
     /// </summary>
     /// <param name="services">The service collection.</param>
@@ -78,6 +79,10 @@ public static class OptionsExtensions
         services.AddValidatedOptions<LocalizationOptions, LocalizationOptionsValidator>(
             configuration,
             $"{BlueprintOptions.SectionName}:Localization");
+
+        services.AddValidatedOptions<FrontendSettings, FrontendSettingsValidator>(
+            configuration,
+            $"{BlueprintOptions.SectionName}:Frontend");
 
         return services;
     }

@@ -35,6 +35,15 @@ public abstract class TableViewMetadataEndpointBase<TEntity, TDto, TDefinition>
     /// </summary>
     protected TDefinition ViewDefinition => this.definition;
 
+    /// <summary>
+    /// Gets the column metadata with request-time localization applied for the current request culture.
+    /// Use this instead of <c>ViewDefinition.Metadata</c> when building responses in overriding endpoints,
+    /// so translated column headers stay consistent across all table view endpoints. Each access re-runs
+    /// localization — read it once per request and reuse the result.
+    /// </summary>
+    protected IList<TableViewColumnMetadata> LocalizedMetadata =>
+        this.Resolve<ITableViewMetadataLocalizer>().Localize(this.definition.Metadata);
+
     /// <inheritdoc/>
     public override async Task HandleAsync(CancellationToken ct)
     {
@@ -43,7 +52,7 @@ public abstract class TableViewMetadataEndpointBase<TEntity, TDto, TDefinition>
             ViewId = TDefinition.ViewId,
             DisplayName = TDefinition.DisplayName,
             Description = TDefinition.Description,
-            Columns = this.definition.Metadata,
+            Columns = this.LocalizedMetadata,
         };
 
         await this.Send.OkAsync(response, ct);

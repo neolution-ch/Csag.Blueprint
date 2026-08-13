@@ -4,6 +4,7 @@ using Csag.Blueprint.Web.Options.Api.Security;
 using Csag.Blueprint.Web.Options.Cache;
 using Csag.Blueprint.Web.Options.Database;
 using Csag.Blueprint.Web.Options.FeatureFlags;
+using Csag.Blueprint.Web.Options.Frontend;
 using Csag.Blueprint.Web.Options.Localization;
 
 /// <summary>
@@ -41,4 +42,9 @@ public sealed class BlueprintOptions
     /// Gets or sets the localization configuration.
     /// </summary>
     public LocalizationOptions Localization { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the frontend configuration (such as the base URL used to build links).
+    /// </summary>
+    public FrontendSettings Frontend { get; set; } = new();
 }

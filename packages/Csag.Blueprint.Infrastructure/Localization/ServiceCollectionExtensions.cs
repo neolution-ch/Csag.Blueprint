@@ -1,9 +1,12 @@
 namespace Csag.Blueprint.Infrastructure.Localization;
 
+using Csag.Blueprint.Application.TableView;
 using Csag.Blueprint.Infrastructure.Enums;
+using Csag.Blueprint.Infrastructure.TableView;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
 using Neolution.Extensions.Caching.Abstractions;
@@ -59,6 +62,13 @@ public static class ServiceCollectionExtensions
         });
 
         services.AddSingleton<ITranslationCacheInvalidator, TranslationCacheInvalidator>();
+
+        // Upgrade table view metadata localization from the no-op default to the localizer-backed
+        // implementation. Replace works regardless of whether the table view registration ran first.
+        services.Replace(ServiceDescriptor.Singleton<ITableViewMetadataLocalizer>(sp =>
+            new StringLocalizerTableViewMetadataLocalizer(
+                sp.GetRequiredService<IStringLocalizer>(),
+                sp.GetRequiredService<ILogger<StringLocalizerTableViewMetadataLocalizer>>())));
 
         return services;
     }

@@ -5,6 +5,7 @@ using Csag.Blueprint.Application.TableView;
 using Csag.Blueprint.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
 /// Extension methods for shared table view runtime service registration.
@@ -13,6 +14,9 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds shared table view core services required by blueprint infrastructure.
+    /// Registers a no-op <see cref="ITableViewMetadataLocalizer"/> so table views work without any
+    /// localization package; <c>AddBlueprintDbLocalization</c> replaces it with a localizer-backed
+    /// implementation when database localization is enabled.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -20,6 +24,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ITableViewExecutor, TableViewExecutor>();
         services.AddScoped<ITableViewCatalogService, TableViewCatalogService>();
+        services.TryAddSingleton<ITableViewMetadataLocalizer, NoOpTableViewMetadataLocalizer>();
 
         return services;
     }
@@ -128,7 +133,7 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds the blueprint table view preferences service that manages user-specific
+    /// Adds the table view preferences service that manages user-specific
     /// table view layout, filter, and sorting preferences.
     /// </summary>
     /// <typeparam name="TContext">The DbContext type.</typeparam>

@@ -42,17 +42,25 @@ public class TenantManager<TUser, TTenant, TContext> : ITenantManager<TUser, TTe
 
         async Task<TenantOperationResult> InternalAsync()
         {
-            await using var transaction = await this.dbContext.Database.BeginTransactionAsync(cancellationToken);
+            // Wrap the transaction in an execution strategy so it is retry-safe under the global
+            // retrying execution strategy (EnableRetryOnFailure). Without this, a user-initiated
+            // transaction throws InvalidOperationException on transient-fault retry.
+            // See: https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency#execution-strategies-and-transactions
+            var strategy = this.dbContext.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await this.dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            this.dbContext.Set<TTenant>().Add(tenant);
-            await this.dbContext.SaveChangesAsync(cancellationToken);
+                this.dbContext.Set<TTenant>().Add(tenant);
+                await this.dbContext.SaveChangesAsync(cancellationToken);
 
-            await this.SyncMembersInternalAsync(tenant.Id, userIds, cancellationToken);
+                await this.SyncMembersInternalAsync(tenant.Id, userIds, cancellationToken);
 
-            await this.dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+                await this.dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
 
-            return TenantOperationResult.Success();
+                return TenantOperationResult.Success();
+            });
         }
     }
 
@@ -69,17 +77,25 @@ public class TenantManager<TUser, TTenant, TContext> : ITenantManager<TUser, TTe
 
         async Task<TenantOperationResult> InternalAsync()
         {
-            await using var transaction = await this.dbContext.Database.BeginTransactionAsync(cancellationToken);
+            // Wrap the transaction in an execution strategy so it is retry-safe under the global
+            // retrying execution strategy (EnableRetryOnFailure). Without this, a user-initiated
+            // transaction throws InvalidOperationException on transient-fault retry.
+            // See: https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency#execution-strategies-and-transactions
+            var strategy = this.dbContext.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
+            {
+                await using var transaction = await this.dbContext.Database.BeginTransactionAsync(cancellationToken);
 
-            this.dbContext.Set<TTenant>().Update(tenant);
-            await this.dbContext.SaveChangesAsync(cancellationToken);
+                this.dbContext.Set<TTenant>().Update(tenant);
+                await this.dbContext.SaveChangesAsync(cancellationToken);
 
-            await this.SyncMembersInternalAsync(tenant.Id, userIds, cancellationToken);
+                await this.SyncMembersInternalAsync(tenant.Id, userIds, cancellationToken);
 
-            await this.dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+                await this.dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
 
-            return TenantOperationResult.Success();
+                return TenantOperationResult.Success();
+            });
         }
     }
 
@@ -133,6 +149,17 @@ public class TenantManager<TUser, TTenant, TContext> : ITenantManager<TUser, TTe
         return await this.dbContext.Set<TTenant>()
             .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == tenantId, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> IsMemberAsync(
+        Guid userId,
+        Guid tenantId,
+        CancellationToken cancellationToken = default)
+    {
+        return await this.dbContext.Set<BlueprintTenantMembership<TUser, TTenant>>()
+            .AsNoTracking()
+            .AnyAsync(m => m.UserId == userId && m.TenantId == tenantId, cancellationToken);
     }
 
     /// <inheritdoc/>

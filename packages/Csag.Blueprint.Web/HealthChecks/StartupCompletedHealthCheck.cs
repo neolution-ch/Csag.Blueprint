@@ -5,7 +5,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 /// <summary>
 /// Health check that verifies if the application startup has completed.
 /// </summary>
-public class ReadyHealthCheck : IHealthCheck
+public class StartupCompletedHealthCheck : IHealthCheck
 {
     private volatile bool isReady;
 

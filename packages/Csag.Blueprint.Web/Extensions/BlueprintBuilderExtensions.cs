@@ -1,8 +1,10 @@
 namespace Csag.Blueprint.Web.Extensions;
 
+using Csag.Blueprint.Web.Tenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
 /// <summary>
@@ -12,8 +14,9 @@ using Microsoft.Extensions.Hosting;
 public static class BlueprintBuilderExtensions
 {
     /// <summary>
-    /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel),
-    /// Google OAuth, FastEndpoints, Swagger, distributed cache, session authentication, and anti-forgery protection.
+    /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
+    /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
+    /// session authentication, and anti-forgery protection.
     /// </summary>
     /// <param name="builder">The web application builder.</param>
     /// <returns>The web application builder for chaining.</returns>
@@ -28,7 +31,8 @@ public static class BlueprintBuilderExtensions
             .AddHttpsRedirection(securitySettings)
             .AddHsts(securitySettings)
             .AddConfiguredCors(securitySettings)
-            .ConfigureKestrelServerOptions(securitySettings);
+            .ConfigureKestrelServerOptions(securitySettings)
+            .ConfigureFormOptions(securitySettings);
 
         builder.Services
             .AddProblemDetails(options =>
@@ -52,11 +56,15 @@ public static class BlueprintBuilderExtensions
                     }
                 };
             })
-            .AddGoogleOAuthAuthentication(securitySettings)
+            .AddOidcAuthentication(securitySettings)
             .AddFastEndpointsWithConfiguration()
             .AddSwaggerDocumentation()
             .AddConfigurableDistributedCache(cacheOptions, builder.Configuration)
             .AddAntiForgeryProtection(securitySettings);
+
+        // Addressing seam: how a request declares which tenant it belongs to. TryAdd, so an
+        // ITenantResolver registered before this call wins over the claims-based default.
+        builder.Services.TryAddScoped<ITenantResolver, ClaimsTenantResolver>();
 
         return builder;
     }

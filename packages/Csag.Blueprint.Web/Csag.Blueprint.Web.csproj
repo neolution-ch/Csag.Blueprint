@@ -17,7 +17,7 @@
         <PackageReference Include="FluentValidation" />
         <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" />
         <PackageReference Include="Microsoft.ApplicationInsights.NLogTarget" />
-        <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" />
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" />
         <PackageReference Include="Microsoft.Extensions.Caching.SqlServer" />
         <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
         <PackageReference Include="Neolution.Extensions.Caching.Distributed" />

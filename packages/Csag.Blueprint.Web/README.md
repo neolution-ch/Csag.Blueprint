@@ -24,7 +24,7 @@ Use:
 services.AddBlueprintDefaultValidatedOptions(configuration);
 ```
 
-This registers the blueprint-owned validated options rooted under the `Blueprint` configuration section.
+This registers the package-owned validated options rooted under the `Blueprint` configuration section.
 
 ### Builder composition
 
@@ -47,7 +47,7 @@ app.UseBlueprintSecurityHeaders();
 app.UseBlueprintMiddleware();
 ```
 
-`UseBlueprintMiddleware()` applies the core blueprint request pipeline:
+`UseBlueprintMiddleware()` applies the shared request pipeline:
 
 - correlation ID middleware
 - CORS
@@ -63,12 +63,45 @@ Applications may still append app-specific middleware before endpoint mapping.
 | Component | Purpose |
 | --- | --- |
 | `CorrelationIdMiddleware` | Adds/propagates correlation IDs per request. |
-| `TenantMiddleware` | Sets ambient tenant context from authenticated claims. |
+| `TenantMiddleware` | Establishes the ambient tenant context for the request. Delegates *how* the tenant is determined to `ITenantResolver`. |
 | `HttpAuditMiddleware` | Emits audit events for HTTP requests. |
 | `CorrelationIdDelegatingHandler` | Propagates correlation IDs to outbound HTTP requests. |
 | `SessionClaimRequestCultureProvider` | Resolves request culture from claims and `Accept-Language`. |
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
-| `ReadyHealthCheck` | Reusable readiness gate used with startup orchestration. |
+| `StartupCompletedHealthCheck` | Reusable readiness gate used with startup orchestration. |
+
+### Tenant resolution (the addressing seam)
+
+`ITenantResolver` decides which tenant an incoming request belongs to. The package ships
+`ClaimsTenantResolver` as the default, which reads the tenant from the authenticated session's
+`TenantId` claim — "session-resolved" addressing, where the tenant is a property of who you are
+signed in as rather than of the URL you requested.
+
+Other generic addressing strategies — a vanity subdomain (`acme.example.com`), a path segment
+(`/t/acme`), a header-driven tenant — belong in this package as additional `ITenantResolver`
+implementations; if the one you need is missing, add it here rather than in your application. A
+custom, app-local implementation remains possible for an addressing scheme that is genuinely
+app-specific and where no generic resolver makes sense. Either way the default is registered with
+`TryAddScoped`, so a resolver registered before `AddBlueprintServices` wins and the package default
+never has to be unregistered:
+
+```csharp
+builder.Services.AddScoped<ITenantResolver, MyAppSpecificTenantResolver>();
+builder.AddBlueprintServices();
+```
+
+Two things to know before switching addressing strategy:
+
+- `TenantMiddleware` runs **after** `UseAuthentication`/`UseAuthorization`, because the default
+  resolver needs the authenticated principal. A host- or path-based resolver does not, and moving the
+  middleware earlier is what enables per-tenant branding and per-tenant identity-provider routing on
+  the sign-in page.
+- Sign-in currently *derives* the tenant and writes it into the session ticket. Once the URL is the
+  source of truth that relationship inverts, so session composition needs revisiting too. The resolver
+  is the seam, not the whole job.
+
+The resolver returns `Guid?`; `null` means "no tenant context", which is a normal state for anonymous
+requests, platform-scope endpoints, and users who belong to no tenant.
 
 ### FastEndpoints and Swagger
 
@@ -91,5 +124,3 @@ The consuming application still owns:
 - app-specific validators and option extensions
 - host-specific runtime services
 - concrete authentication/authorization decisions at the app level
-
-For the broader package architecture, see [`docs/architecture/PACKAGES.md`](../../docs/architecture/PACKAGES.md). For the current persistence and startup operating model, see [`docs/architecture/DATABASE.md`](../../docs/architecture/DATABASE.md).

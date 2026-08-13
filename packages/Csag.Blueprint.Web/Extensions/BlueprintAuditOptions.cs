@@ -20,7 +20,7 @@ public sealed class BlueprintAuditOptions<TContext>
     /// <example>
     /// <code>
     /// options.EntityFieldConfigurator = config => config
-    ///     .ForEntity&lt;PedaloImage&gt;(entity => entity.Ignore(i => i.ImageData));
+    ///     .ForEntity&lt;InvoiceDocument&gt;(entity => entity.Ignore(i => i.FileData));
     /// </code>
     /// </example>
     public Action<IContextSettingsConfigurator<TContext>>? EntityFieldConfigurator { get; set; }

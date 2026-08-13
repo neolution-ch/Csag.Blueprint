@@ -3,7 +3,7 @@ namespace Csag.Blueprint.Infrastructure.TableView;
 using Csag.Blueprint.Application.TableView;
 
 /// <summary>
-/// Default implementation of <see cref="ITableViewCatalogRegistration"/> used by the blueprint infrastructure.
+/// Default implementation of <see cref="ITableViewCatalogRegistration"/>.
 /// Provides catalog metadata for a table view definition that implements <see cref="ITableViewDefinitionInfo"/>.
 /// </summary>
 public sealed class TableViewCatalogRegistration : ITableViewCatalogRegistration

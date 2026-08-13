@@ -10,9 +10,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 /// <code>
 /// migrationBuilder.SeedTranslation("Validation.EmailRequired", "de-CH", "E-Mail ist erforderlich");
 ///
-/// migrationBuilder.SeedTranslations("Errors.PedaloNotFound",
-///     ("de-CH", "Pedalo nicht gefunden"),
-///     ("fr-CH", "Pédalo introuvable"));
+/// migrationBuilder.SeedTranslations("Errors.InvoiceNotFound",
+///     ("de-CH", "Rechnung nicht gefunden"),
+///     ("fr-CH", "Facture introuvable"));
 /// </code>
 /// </remarks>
 public static class MigrationBuilderExtensions

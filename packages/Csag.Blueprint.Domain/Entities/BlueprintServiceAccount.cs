@@ -50,9 +50,30 @@ public sealed class BlueprintServiceAccount : IMustHaveTenant, IAuditable
     /// </summary>
     public bool IsActive { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets the number of consecutive failed authentication attempts since the last success.
+    /// Mirrors ASP.NET Core Identity's <c>AccessFailedCount</c> semantics: it is incremented on every failed
+    /// client-secret verification and reset to zero on a successful authentication or once the account is locked.
+    /// </summary>
+    public int AccessFailedCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC date and time until which the service account is locked out, or <c>null</c> when it
+    /// is not locked. Mirrors ASP.NET Core Identity's <c>LockoutEnd</c>: while this is a future instant the
+    /// account is rejected regardless of the supplied credentials. It is set once the failed-attempt count
+    /// reaches the configured threshold and cleared on the next successful authentication.
+    /// </summary>
+    public DateTimeOffset? LockoutEnd { get; set; }
+
     /// <inheritdoc/>
     public DateTimeOffset CreatedAt { get; set; }
 
     /// <inheritdoc/>
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <inheritdoc/>
+    public string? CreatedByActor { get; set; }
+
+    /// <inheritdoc/>
+    public string? UpdatedByActor { get; set; }
 }

@@ -57,6 +57,15 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
     /// </summary>
     protected virtual string ExportFileName => "export";
 
+    /// <summary>
+    /// Gets the column metadata with request-time localization applied for the current request culture.
+    /// Use this instead of <c>ViewDefinition.Metadata</c> when building responses in overriding endpoints,
+    /// so translated column headers stay consistent across all table view endpoints. Each access re-runs
+    /// localization — read it once per request and reuse the result.
+    /// </summary>
+    protected IList<TableViewColumnMetadata> LocalizedMetadata =>
+        this.Resolve<ITableViewMetadataLocalizer>().Localize(this.definition.Metadata);
+
     /// <inheritdoc/>
     public override async Task HandleAsync(TableViewExportRequest req, CancellationToken ct)
     {
@@ -88,7 +97,7 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
                 ct);
         }
 
-        var excelBytes = TableViewExcelExporter.Export(data, this.definition.Metadata, this.ExportFileName);
+        var excelBytes = TableViewExcelExporter.Export(data, this.LocalizedMetadata, this.ExportFileName);
 
         await this.Send.BytesAsync(
             excelBytes,

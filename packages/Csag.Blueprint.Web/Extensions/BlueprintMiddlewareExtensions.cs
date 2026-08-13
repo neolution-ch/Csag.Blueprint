@@ -79,6 +79,7 @@ public static class BlueprintMiddlewareExtensions
         app.UseConfiguredRequestLocalization();
         app.UseAuthorization();
         app.UseMiddleware<TenantMiddleware>();
+        app.UseMiddleware<CurrentActorMiddleware>();
 
         return app;
     }

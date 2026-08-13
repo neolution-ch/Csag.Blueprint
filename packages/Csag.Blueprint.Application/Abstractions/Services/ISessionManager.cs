@@ -26,12 +26,52 @@ public interface ISessionManager
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Revokes all active sessions for a specific user.
+    /// Revokes all active sessions for a specific user, across every tenant the (shared) account is
+    /// signed in to. Use this for account-level lifecycle changes (credential resets, email changes,
+    /// account disable) where every session must be invalidated.
     /// </summary>
     /// <param name="userId">The user ID whose sessions should be revoked.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of sessions revoked.</returns>
     Task<int> RevokeUserSessionsAsync(Guid userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Revokes the user's active sessions that are currently scoped to a specific tenant. Sessions the
+    /// (shared) account holds in other tenants are left intact. Use this for tenant-scoped access changes
+    /// (removing a member from a tenant, an admin revoking a member's sessions within their tenant).
+    /// </summary>
+    /// <param name="userId">The user ID whose tenant-scoped sessions should be revoked.</param>
+    /// <param name="tenantId">The tenant to scope the revocation to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of sessions revoked.</returns>
+    Task<int> RevokeUserSessionsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Revokes all of the user's active sessions EXCEPT the one identified by <paramref name="keepSessionKey"/>.
+    /// Use this for self-service security changes the user makes on their own account (changing their password,
+    /// enabling or disabling MFA): every OTHER device is signed out immediately while the session that performed
+    /// the change stays alive, so the user is not bounced to the login screen for acting on their own account.
+    /// </summary>
+    /// <param name="userId">The user ID whose other sessions should be revoked.</param>
+    /// <param name="keepSessionKey">
+    /// The session key to preserve — typically the current request's session
+    /// (see <c>HttpContext.GetCurrentSessionKeyAsync()</c>). Must be non-empty; to revoke every session
+    /// including the current one, call <see cref="RevokeUserSessionsAsync(Guid, CancellationToken)"/> instead.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of sessions revoked (never counts the preserved session).</returns>
+    Task<int> RevokeOtherUserSessionsAsync(Guid userId, string keepSessionKey, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Revokes every active session — for any user — that is currently scoped to the given tenant.
+    /// Use this for tenant-level lifecycle changes (deleting a tenant) so no session keeps operating
+    /// against a tenant that no longer exists. Sessions the affected accounts hold in other tenants
+    /// are left intact.
+    /// </summary>
+    /// <param name="tenantId">The tenant whose sessions should be revoked.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of sessions revoked.</returns>
+    Task<int> RevokeTenantSessionsAsync(Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Revokes a specific session by its session key.
@@ -69,6 +109,18 @@ public interface ISessionManager
     Task<int> RefreshUserSessionsAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Refreshes the user's active sessions that are currently scoped to a specific tenant by updating
+    /// their cached roles and permissions. Sessions the (shared) account holds in other tenants are left
+    /// untouched. Use this for tenant-scoped authorization changes that cannot affect the user's
+    /// authorization anywhere else.
+    /// </summary>
+    /// <param name="userId">The user ID whose sessions should be refreshed.</param>
+    /// <param name="tenantId">The tenant to scope the refresh to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of sessions refreshed.</returns>
+    Task<int> RefreshUserSessionsAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Cleans up expired session records from the database.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -81,6 +133,11 @@ public interface ISessionManager
 /// </summary>
 public sealed class ActiveSessionInfo
 {
+    /// <summary>
+    /// Gets or sets the identifier of the session tracking row.
+    /// </summary>
+    public Guid Id { get; set; }
+
     /// <summary>
     /// Gets or sets the session key.
     /// </summary>
@@ -105,4 +162,10 @@ public sealed class ActiveSessionInfo
     /// Gets or sets the IP address.
     /// </summary>
     public string? IpAddress { get; set; }
+
+    /// <summary>
+    /// Gets or sets the tenant this session is currently scoped to, if any.
+    /// Used to rebuild tenant-scoped authorization claims when refreshing sessions.
+    /// </summary>
+    public Guid? CurrentTenantId { get; set; }
 }

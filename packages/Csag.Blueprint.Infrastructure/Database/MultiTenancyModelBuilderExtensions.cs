@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Extension methods for configuring multi-tenancy in Entity Framework Core models.
-/// Owned by the blueprint — applications call these methods from their <c>OnModelCreating</c>.
+/// Owned by the Blueprint packages — applications call these methods from their <c>OnModelCreating</c>.
 /// </summary>
 public static class MultiTenancyModelBuilderExtensions
 {
@@ -28,10 +28,23 @@ public static class MultiTenancyModelBuilderExtensions
     /// The name of the <c>Guid?</c> instance property on <typeparamref name="TContext"/> that
     /// returns the current tenant ID. Defaults to <c>"CurrentTenantId"</c>.
     /// </param>
+    /// <param name="addTenantForeignKey">
+    /// Whether to add a foreign key from each tenant-owned entity to the tenant table. Defaults to
+    /// <see langword="true"/>, which is correct for the default pooled topology (everything in one
+    /// database).
+    /// <para>
+    /// Set this to <see langword="false"/> when tenant-owned <b>business</b> data lives in a different
+    /// database from the tenant table (a database-per-tenant or split-plane topology). A foreign key
+    /// cannot cross databases, so emitting one there produces an invalid model. The query filter and
+    /// the <c>TenantId</c> index are still applied; only referential integrity moves from the database
+    /// to the application.
+    /// </para>
+    /// </param>
     public static void ConfigureBlueprintMultiTenancy<TTenant, TContext>(
         this ModelBuilder modelBuilder,
         TContext context,
-        string currentTenantIdPropertyName = "CurrentTenantId")
+        string currentTenantIdPropertyName = "CurrentTenantId",
+        bool addTenantForeignKey = true)
         where TTenant : BlueprintTenant
         where TContext : DbContext
     {
@@ -54,7 +67,10 @@ public static class MultiTenancyModelBuilderExtensions
             modelBuilder.Entity(entityType.ClrType)
                 .HasIndex(nameof(IMustHaveTenant.TenantId));
 
-            AddTenantForeignKey<TTenant>(modelBuilder, entityType.ClrType);
+            if (addTenantForeignKey)
+            {
+                AddTenantForeignKey<TTenant>(modelBuilder, entityType.ClrType);
+            }
         }
     }
 

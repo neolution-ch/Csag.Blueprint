@@ -95,6 +95,16 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
     public DbSet<BlueprintTenantMembership<TAppUser, TAppTenant>> TenantMemberships => this.Set<BlueprintTenantMembership<TAppUser, TAppTenant>>();
 
     /// <summary>
+    /// Gets the tenant-scoped role assignments linking memberships to roles in the shared catalog.
+    /// </summary>
+    public DbSet<BlueprintTenantMembershipRole<TAppUser, TAppTenant>> TenantMembershipRoles => this.Set<BlueprintTenantMembershipRole<TAppUser, TAppTenant>>();
+
+    /// <summary>
+    /// Gets the tenant-scoped direct permission grants linking memberships to individual permissions.
+    /// </summary>
+    public DbSet<BlueprintTenantMembershipPermission<TAppUser, TAppTenant>> TenantMembershipPermissions => this.Set<BlueprintTenantMembershipPermission<TAppUser, TAppTenant>>();
+
+    /// <summary>
     /// Gets the current tenant ID for the executing request from the ambient <see cref="TenantContext"/>.
     /// </summary>
     /// <remarks>
@@ -128,6 +138,8 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
         builder.ApplyConfiguration(new BlueprintTableViewPreferenceConfiguration<TAppUser>());
         builder.ApplyConfiguration(new BlueprintTenantConfiguration<TAppTenant>());
         builder.ApplyConfiguration(new BlueprintTenantMembershipConfiguration<TAppUser, TAppTenant>());
+        builder.ApplyConfiguration(new BlueprintTenantMembershipRoleConfiguration<TAppUser, TAppTenant>());
+        builder.ApplyConfiguration(new BlueprintTenantMembershipPermissionConfiguration<TAppUser, TAppTenant>());
         builder.ApplyConfiguration(new BlueprintTranslationConfiguration());
         builder.ApplyConfiguration(new BlueprintUserConfiguration<TAppUser>());
 

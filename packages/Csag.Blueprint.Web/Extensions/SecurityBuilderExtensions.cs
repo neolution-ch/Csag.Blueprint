@@ -2,6 +2,7 @@ namespace Csag.Blueprint.Web.Extensions
 {
     using Csag.Blueprint.Web.Options.Api.Security;
     using Microsoft.AspNetCore.Builder;
+    using Microsoft.AspNetCore.Http.Features;
     using Microsoft.AspNetCore.HttpsPolicy;
     using Microsoft.AspNetCore.Server.Kestrel.Core;
     using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,8 @@ namespace Csag.Blueprint.Web.Extensions
     /// </summary>
     public static class SecurityBuilderExtensions
     {
+        private const long BytesPerMegabyte = 1024 * 1024;
+
         /// <summary>
         /// Configures HTTPS redirection options if enabled in SecuritySettings.
         /// </summary>
@@ -62,7 +65,11 @@ namespace Csag.Blueprint.Web.Extensions
         }
 
         /// <summary>
-        /// Configures Kestrel server options to remove the Server header if enabled in SecuritySettings.
+        /// Configures Kestrel server options: removes the Server header if enabled in SecuritySettings
+        /// and caps the maximum request body size from RequestLimits settings.
+        /// Oversized non-form bodies are rejected with 413 Payload Too Large; on multipart/form-data
+        /// endpoints the rejection surfaces during form binding and is returned as a 400 Bad Request
+        /// via the FastEndpoints FormExceptionTransformer.
         /// </summary>
         /// <param name="builder">The web application builder.</param>
         /// <param name="securitySettings">The security settings.</param>
@@ -72,13 +79,37 @@ namespace Csag.Blueprint.Web.Extensions
             ArgumentNullException.ThrowIfNull(builder);
             ArgumentNullException.ThrowIfNull(securitySettings);
 
-            if (securitySettings.SecurityHeaders.RemoveServerIdentityHeaders)
+            builder.Services.Configure<KestrelServerOptions>(options =>
             {
-                builder.Services.Configure<KestrelServerOptions>(options =>
+                if (securitySettings.SecurityHeaders.RemoveServerIdentityHeaders)
                 {
                     options.AddServerHeader = false;
-                });
-            }
+                }
+
+                options.Limits.MaxRequestBodySize = securitySettings.RequestLimits.MaxRequestBodySizeMegabytes * BytesPerMegabyte;
+            });
+
+            return builder;
+        }
+
+        /// <summary>
+        /// Configures form options to cap the length of each multipart section (e.g. each uploaded file)
+        /// from RequestLimits settings. Sections exceeding the cap fail during form binding;
+        /// FastEndpoints maps the failure to a 400 Bad Request via its FormExceptionTransformer.
+        /// The total multipart request body is bounded by Kestrel's MaxRequestBodySize.
+        /// </summary>
+        /// <param name="builder">The web application builder.</param>
+        /// <param name="securitySettings">The security settings.</param>
+        /// <returns>The web application builder for chaining.</returns>
+        public static WebApplicationBuilder ConfigureFormOptions(this WebApplicationBuilder builder, SecuritySettings securitySettings)
+        {
+            ArgumentNullException.ThrowIfNull(builder);
+            ArgumentNullException.ThrowIfNull(securitySettings);
+
+            builder.Services.Configure<FormOptions>(options =>
+            {
+                options.MultipartBodyLengthLimit = securitySettings.RequestLimits.MultipartBodyLengthLimitMegabytes * BytesPerMegabyte;
+            });
 
             return builder;
         }

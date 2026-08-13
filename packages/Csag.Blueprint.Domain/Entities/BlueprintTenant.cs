@@ -27,4 +27,10 @@ public class BlueprintTenant : IAuditable
     /// Gets or sets the timestamp when the tenant was last updated.
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <inheritdoc/>
+    public string? CreatedByActor { get; set; }
+
+    /// <inheritdoc/>
+    public string? UpdatedByActor { get; set; }
 }

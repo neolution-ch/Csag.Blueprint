@@ -20,7 +20,7 @@ public class BlueprintTableViewPreference<TUser>
     public Guid UserId { get; set; }
 
     /// <summary>
-    /// Gets or sets the table view identifier (for example, "pedalos").
+    /// Gets or sets the table view identifier (for example, "invoices").
     /// </summary>
     public string TableViewId { get; set; } = string.Empty;
 

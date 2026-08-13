@@ -29,7 +29,7 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Registers the blueprint <see cref="TenantManager{TUser, TTenant, TContext}"/> as the
+    /// Registers the package's <see cref="TenantManager{TUser, TTenant, TContext}"/> as the
     /// <see cref="ITenantManager{TUser, TTenant}"/> implementation. Call this after <see cref="AddBlueprintTenancyRuntime"/>.
     /// </summary>
     /// <typeparam name="TUser">The concrete user type deriving from <see cref="BlueprintUser"/>.</typeparam>
@@ -43,6 +43,9 @@ public static class ServiceCollectionExtensions
         where TContext : DbContext
     {
         services.AddScoped<ITenantManager<TUser, TTenant>, TenantManager<TUser, TTenant, TContext>>();
+        services.AddScoped<ITenantRoleService, TenantRoleService<TUser, TTenant, TContext>>();
+        services.AddScoped<ITenantPermissionService, TenantPermissionService<TUser, TTenant, TContext>>();
+        services.AddScoped<ITenantAuthorizationResolver, TenantAuthorizationResolver>();
         return services;
     }
 }

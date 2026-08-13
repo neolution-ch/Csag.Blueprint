@@ -21,4 +21,10 @@ public class BlueprintRole : IdentityRole<Guid>, IAuditable
     /// Automatically set by <c>AuditableTimestampInterceptor</c> on update.
     /// </summary>
     public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <inheritdoc/>
+    public string? CreatedByActor { get; set; }
+
+    /// <inheritdoc/>
+    public string? UpdatedByActor { get; set; }
 }

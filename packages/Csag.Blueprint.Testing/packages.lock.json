@@ -81,13 +81,13 @@
       },
       "WireMock.Net.Testcontainers": {
         "type": "Direct",
-        "requested": "[2.12.0, )",
-        "resolved": "2.12.0",
-        "contentHash": "xrxp0eVq73g5F8DN+7r86+yC+kd/Ngcc4+NsetPQ7rnpWVYVqSV9J3pi3YaCDQJQ2QJBVXoASoK8tutiwyvtRw==",
+        "requested": "[2.13.0, )",
+        "resolved": "2.13.0",
+        "contentHash": "VDhG2bX1t/aI9yOO5wMikIfU9R+BRD6B+okifXXDftW4AdmAgu8qeIWSuBa6tiAnFhgqLCCRnXr0xr3Rdjzs/A==",
         "dependencies": {
           "Stef.Validation": "0.3.0",
           "Testcontainers": "4.12.0",
-          "WireMock.Net.RestClient": "2.12.0"
+          "WireMock.Net.RestClient": "2.13.0"
         }
       },
       "Audit.EntityFramework.Abstractions": {
@@ -905,18 +905,18 @@
       },
       "WireMock.Net.Abstractions": {
         "type": "Transitive",
-        "resolved": "2.12.0",
-        "contentHash": "NwzLePd/Xwx2zvZvd87SbAHqLRBJHwj9aDot6HTX75dMsuBFa0nP/lkePYH1wXjo2dRUSqb62r5t6zTanwYV2g=="
+        "resolved": "2.13.0",
+        "contentHash": "7ZmPVJxlSBj0E7d47PHLydz15w0TEJ6WH2m7T/hucT3QfxbhN07AV0mwBoyO/T6jv+Af+hgEgmlep3v9TACxPw=="
       },
       "WireMock.Net.RestClient": {
         "type": "Transitive",
-        "resolved": "2.12.0",
-        "contentHash": "59jVXwUhUy4vOS28GOrmDXInrx24xrXB7uC9s8UcLUC1RuMYp1GpKfDl7nHqzGuBjFLWKFGhf6B1w2jBF17FKw==",
+        "resolved": "2.13.0",
+        "contentHash": "s9UwPONBou7Q4o+KITfz5t+0Ag+BjprdKzVDFFKVJMbGcVKVKuUfDjo0KNrpFjAyPecyXiOPz9umeireyRWu4w==",
         "dependencies": {
           "JsonConverter.Newtonsoft.Json": "0.13.0",
           "RestEase": "1.6.4",
           "Stef.Validation": "0.3.0",
-          "WireMock.Net.Abstractions": "2.12.0"
+          "WireMock.Net.Abstractions": "2.13.0"
         }
       },
       "xunit.v3.common": {
@@ -943,7 +943,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[0.1.0, )",
+          "Csag.Blueprint.Domain": "[0.1.1, )",
           "Microsoft.EntityFrameworkCore": "[10.0.10, )"
         }
       },
@@ -956,8 +956,8 @@
       "csag.blueprint.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Application": "[0.1.0, )",
-          "Csag.Blueprint.Domain": "[0.1.0, )",
+          "Csag.Blueprint.Application": "[0.1.1, )",
+          "Csag.Blueprint.Domain": "[0.1.1, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore": "[10.0.10, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.10, )",
@@ -970,8 +970,8 @@
           "Audit.EntityFramework.Core": "[32.2.0, )",
           "Audit.NET": "[32.2.0, )",
           "Audit.NET.SqlServer": "[32.2.0, )",
-          "ClosedXML": "[0.105.0, )",
-          "Csag.Blueprint.Infrastructure": "[0.1.0, )",
+          "ClosedXML": "[0.105.1, )",
+          "Csag.Blueprint.Infrastructure": "[0.1.1, )",
           "FastEndpoints": "[8.2.0, )",
           "FastEndpoints.Swagger": "[8.2.0, )",
           "FluentValidation": "[12.1.1, )",
@@ -1018,15 +1018,15 @@
       },
       "ClosedXML": {
         "type": "CentralTransitive",
-        "requested": "[0.105.0, )",
-        "resolved": "0.105.0",
-        "contentHash": "U0hAdnYyPvF7TqHMFloxrS7pmozab79tFFF4c/bgPtqeelUs7ILpUd3r3c7C0a/DXsUZb3k1n4Pf7Q2LMyMQOg==",
+        "requested": "[0.105.1, )",
+        "resolved": "0.105.1",
+        "contentHash": "X1ruIP9h2FBEK7jmO0peq3s6/Zqt5ve5a9f9kn6WUjdsUWvGbQlqxuGLz822xuFLlmnSeAfWFTGeX/tZlmAt+g==",
         "dependencies": {
           "ClosedXML.Parser": "2.0.0",
           "DocumentFormat.OpenXml": "[3.1.1, 4.0.0)",
           "ExcelNumberFormat": "1.1.0",
           "RBush.Signed": "4.0.0",
-          "SixLabors.Fonts": "1.0.0"
+          "SixLabors.Fonts": "[1.0.0, 3.0.0)"
         }
       },
       "FastEndpoints": {

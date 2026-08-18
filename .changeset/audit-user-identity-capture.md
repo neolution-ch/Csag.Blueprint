@@ -1,10 +1,10 @@
 ---
-"@neolution-ch/csag-blueprint-domain": minor
-"@neolution-ch/csag-blueprint-application": minor
-"@neolution-ch/csag-blueprint-infrastructure": minor
-"@neolution-ch/csag-blueprint-web": minor
-"@neolution-ch/csag-blueprint-testing": minor
-"@neolution-ch/csag-blueprint-source-generators": minor
+"@neolution-ch/csag-blueprint-domain": patch
+"@neolution-ch/csag-blueprint-application": patch
+"@neolution-ch/csag-blueprint-infrastructure": patch
+"@neolution-ch/csag-blueprint-web": patch
+"@neolution-ch/csag-blueprint-testing": patch
+"@neolution-ch/csag-blueprint-source-generators": patch
 ---
 
 Add the email address and the display name of the user to audit events

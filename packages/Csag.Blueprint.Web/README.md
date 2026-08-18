@@ -70,6 +70,29 @@ Applications may still append app-specific middleware before endpoint mapping.
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
 | `StartupCompletedHealthCheck` | Reusable readiness gate used with startup orchestration. |
 
+### Audit enrichment
+
+`ConfigureBlueprintAuditLogging` adds data about the user to each audit event. It adds the same data
+to Entity Framework events and to HTTP events. The data is the user ID, the email address and the
+display name of the user. The configuration also adds the correlation ID of the request.
+
+The package reads the three user values from the claims on the request. It does not read them from
+the database. Therefore an application can show the name of the user without a query on the user
+table.
+
+The claims are `ClaimTypes.NameIdentifier`, `ClaimTypes.Email` and `ClaimTypes.Name`. One helper
+reads these claims for both write paths. A service account has no email address. Therefore its email
+value is null, and its display name is the account name from the token.
+
+The audit provider writes only `UserId` to a column. It writes the email address and the display name
+to the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Audit.NET serializes custom fields
+as JSON extension data.
+
+This design does not change the schema. An application can install the new version without a
+migration. But each read of these two values parses the JSON data of one row. If the reads are too
+slow, add a column for each value with the `CustomColumn` mapping of the audit provider. That change
+needs a migration.
+
 ### Tenant resolution (the addressing seam)
 
 `ITenantResolver` decides which tenant an incoming request belongs to. The package ships

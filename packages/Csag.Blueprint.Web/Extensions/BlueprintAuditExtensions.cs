@@ -1,9 +1,9 @@
 namespace Csag.Blueprint.Web.Extensions;
 
-using System.Security.Claims;
 using Audit.Core;
 using Audit.EntityFramework.ConfigurationApi;
 using Csag.Blueprint.Domain.Entities;
+using Csag.Blueprint.Web.Helpers;
 using Csag.Blueprint.Web.Middleware;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
@@ -118,9 +118,11 @@ public static class BlueprintAuditExtensions
 
     /// <summary>
     /// Adds a custom action on every audit scope to enrich events with the current HTTP context:
-    /// the authenticated user ID (from JWT/cookie claims) and the correlation ID
-    /// (set by <see cref="CorrelationIdMiddleware"/> earlier in the pipeline).
-    /// This is what links EF-level entity change events to the specific user and request that caused them.
+    /// the acting user's id, email and display name (from JWT/cookie claims, resolved by
+    /// <see cref="AuditUserIdentity"/>) and the correlation ID (set by <see cref="CorrelationIdMiddleware"/>
+    /// earlier in the pipeline).
+    /// This is what links EF-level entity change events to the specific user and request that caused them,
+    /// and what lets a reader name that user without looking them up in the user table.
     /// </summary>
     private static void ConfigureHttpContextEnrichment(IServiceProvider serviceProvider)
     {
@@ -137,10 +139,20 @@ public static class BlueprintAuditExtensions
                 return;
             }
 
-            var userId = httpContext.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (userId is not null)
+            var actor = AuditUserIdentity.FromPrincipal(httpContext.User);
+            if (actor.UserId is not null)
             {
-                scope.SetCustomField("UserId", userId);
+                scope.SetCustomField("UserId", actor.UserId);
+            }
+
+            if (actor.Email is not null)
+            {
+                scope.SetCustomField("UserEmail", actor.Email);
+            }
+
+            if (actor.DisplayName is not null)
+            {
+                scope.SetCustomField("UserDisplayName", actor.DisplayName);
             }
 
             if (httpContext.Items.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var correlationId)

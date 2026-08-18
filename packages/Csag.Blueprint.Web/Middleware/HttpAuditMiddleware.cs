@@ -74,9 +74,9 @@ public class HttpAuditMiddleware
             scope.SetCustomField("DurationMs", stopwatch.ElapsedMilliseconds);
             scope.SetCustomField("UserId", actor.UserId);
 
-            // Captured here as well as in the global OnScopeCreated enrichment: this scope is saved after
-            // the request completes, and leaving the fields to the global action alone would let an HTTP
-            // entry and an EF entry for the same request name the acting user differently.
+            // Set these two fields here also, not only in the global OnScopeCreated enrichment. This
+            // scope is saved after the request ends. Without these lines, an HTTP entry and an Entity
+            // Framework entry for the same request can show a different user.
             scope.SetCustomField("UserEmail", actor.Email);
             scope.SetCustomField("UserDisplayName", actor.DisplayName);
             scope.SetCustomField("UserType", userType);

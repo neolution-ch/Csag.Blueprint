@@ -117,12 +117,12 @@ public static class BlueprintAuditExtensions
     }
 
     /// <summary>
-    /// Adds a custom action on every audit scope to enrich events with the current HTTP context:
-    /// the acting user's id, email and display name (from JWT/cookie claims, resolved by
-    /// <see cref="AuditUserIdentity"/>) and the correlation ID (set by <see cref="CorrelationIdMiddleware"/>
-    /// earlier in the pipeline).
-    /// This is what links EF-level entity change events to the specific user and request that caused them,
-    /// and what lets a reader name that user without looking them up in the user table.
+    /// Adds a custom action to each audit scope. The action adds data from the HTTP context to the
+    /// event: the ID, the email address and the display name of the user, from the JWT or cookie
+    /// claims through <see cref="AuditUserIdentity"/>. It also adds the correlation ID, which
+    /// <see cref="CorrelationIdMiddleware"/> sets earlier in the pipeline.
+    /// This action connects an entity change event to the user and to the request that caused it.
+    /// An application can then show the name of the user without a query on the user table.
     /// </summary>
     private static void ConfigureHttpContextEnrichment(IServiceProvider serviceProvider)
     {

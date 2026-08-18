@@ -72,26 +72,15 @@ Applications may still append app-specific middleware before endpoint mapping.
 
 ### Audit enrichment
 
-`ConfigureBlueprintAuditLogging` adds data about the user to each audit event. It adds the same data
-to Entity Framework events and to HTTP events. The data is the user ID, the email address and the
-display name of the user. The configuration also adds the correlation ID of the request.
+`ConfigureBlueprintAuditLogging` adds the user ID, the email address, the display name and the
+correlation ID to each audit event. This applies to Entity Framework events and to HTTP events. The
+package reads the three user values from the claims on the request, not from the database. A service
+account has no email address. Therefore its email value is null, and its display name is the account
+name from its token.
 
-The package reads the three user values from the claims on the request. It does not read them from
-the database. Therefore an application can show the name of the user without a query on the user
-table.
-
-The claims are `ClaimTypes.NameIdentifier`, `ClaimTypes.Email` and `ClaimTypes.Name`. One helper
-reads these claims for both write paths. A service account has no email address. Therefore its email
-value is null, and its display name is the account name from the token.
-
-The audit provider writes only `UserId` to a column. It writes the email address and the display name
-to the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Audit.NET serializes custom fields
-as JSON extension data.
-
-This design does not change the schema. An application can install the new version without a
-migration. But each read of these two values parses the JSON data of one row. If the reads are too
-slow, add a column for each value with the `CustomColumn` mapping of the audit provider. That change
-needs a migration.
+The provider writes only `UserId` and `CorrelationId` to columns. The email address and the display
+name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Therefore this change
+needs no migration, but a read of these two values must parse the JSON data of the row.
 
 ### Tenant resolution (the addressing seam)
 

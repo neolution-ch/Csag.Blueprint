@@ -20,7 +20,7 @@ internal readonly record struct AuditUserIdentity(string? UserId, string? Email,
     /// Reads the identity of the user from the principal of the request.
     /// </summary>
     /// <param name="user">The principal of the request. It can be null or unauthenticated.</param>
-    /// <returns>The identity. All values are null if there is no authenticated user.</returns>
+    /// <returns>The identity. All values are null if the principal has no identity claims.</returns>
     public static AuditUserIdentity FromPrincipal(ClaimsPrincipal? user)
     {
         if (user is null)
@@ -28,17 +28,17 @@ internal readonly record struct AuditUserIdentity(string? UserId, string? Email,
             return default;
         }
 
-        // UserClaimsHelper.SetUserProfileClaims sets all three claims for a human user. It is the one
-        // function for login, external sign-in and session refresh. A service account gets its claims
-        // from the token of the client-credentials endpoint. That token has no email address.
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        // UserClaimsHelper.SetUserProfileClaims sets all three claims for a human user. A service account
+        // gets its claims from the token of the client-credentials endpoint, which has no email address.
+        // That token holds the client ID in a raw "sub" claim and the account name in a raw "name" claim.
+        // These two claims become ClaimTypes.NameIdentifier and ClaimTypes.Name only if JWT inbound claim
+        // mapping is on. Therefore read the raw claims also.
+        //
+        // Read the mapped claim first. The values of a human user go directly into the mapped claims, and
+        // they must have priority over a claim from an external provider. CurrentActorMiddleware reads
+        // "sub" first, which is the opposite order.
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
         var email = user.FindFirstValue(ClaimTypes.Email);
-
-        // A service-account token holds its account name in a raw "name" claim. This claim becomes
-        // ClaimTypes.Name only if JWT inbound claim mapping is on. Therefore read the raw claim also,
-        // as CurrentActorMiddleware reads "sub" before ClaimTypes.NameIdentifier. Read ClaimTypes.Name
-        // first: the display name of a human user goes directly into ClaimTypes.Name, and it must have
-        // priority over a "name" claim from an external provider.
         var displayName = user.FindFirstValue(ClaimTypes.Name) ?? user.FindFirstValue("name");
 
         // Keep the full values. The package writes them only to the JSON data, which has no length

@@ -1,10 +1,10 @@
 namespace Csag.Blueprint.Web.Middleware;
 
+using System.Diagnostics;
 using Audit.Core;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Web.Helpers;
 using Microsoft.AspNetCore.Http;
-using System.Diagnostics;
 
 /// <summary>
 /// Middleware that creates an audit event for each HTTP request.

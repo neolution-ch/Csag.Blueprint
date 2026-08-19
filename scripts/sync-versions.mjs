@@ -3,7 +3,7 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 
 // Run changeset version first
-execSync("npx changeset version", { stdio: "inherit" });
+execSync("pnpm exec changeset version", { stdio: "inherit" });
 
 // Find all packages with both package.json and .csproj
 const packagesDir = path.join(import.meta.dirname, "..", "packages");

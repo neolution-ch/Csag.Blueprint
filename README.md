@@ -45,7 +45,7 @@ Requires the .NET SDK pinned in [global.json](global.json). Restore uses NuGet l
 
 This repository follows the [neolution-ch release playbook](https://github.com/neolution-ch/release-playbook) (Changesets, NuGet variant):
 
-1. Every PR that changes a package needs a changeset: run `npx changeset`, pick any one package (all six are a fixed group — they bump together), choose the bump type, and describe the change. CI blocks PRs without one.
+1. Every PR that changes a package needs a changeset: run `pnpm changeset`, pick any one package (all six are a fixed group — they bump together), choose the bump type, and describe the change. CI blocks PRs without one.
 2. On merge to `main`, the Release workflow maintains a **"chore: version packages"** PR that accumulates pending changesets (versions synced into the `.csproj` files via `scripts/sync-versions.mjs`).
 3. Merging that PR creates git tags and GitHub Releases; the **NuGet Publish** workflow then packs and pushes all packages to nuget.org.
 

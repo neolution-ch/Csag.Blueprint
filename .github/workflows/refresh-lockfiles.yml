@@ -1,19 +1,30 @@
 name: Refresh lockfiles
 
-# Regenerates the NuGet lock files so that transitive dependencies are
+# Regenerates the pnpm and NuGet lock files so that transitive dependencies are
 # refreshed to the newest versions still allowed by the declared semver ranges.
 #
-# Why this exists: Dependabot version updates only bump *direct* dependencies in
-# Directory.Packages.props. Transitive dependencies are only ever touched when a
-# security advisory forces a lockfile patch, so they accumulate staleness for
-# months. This scheduled job re-resolves the lock files within the existing
-# ranges (no range bumps), opens a PR with the diff, and lets CI + a human review
-# catch any regression before it merges. See BLUEAPI-75.
+# Why this exists: Dependabot version updates only bump *direct* dependencies.
+# Transitive dependencies are only ever touched when a security advisory forces a
+# lockfile patch, so they accumulate staleness for months. This scheduled job
+# re-resolves the lock files within the existing ranges (no range bumps), opens a
+# PR with the diff, and lets CI + a human review catch any regression before it
+# merges. See BLUEAPI-75.
+#
+# The two ecosystems behave very differently here, which is worth knowing before
+# reading a diff (or an empty one):
+#
+#   pnpm  resolves the HIGHEST version matching each range, so re-resolving after
+#         deleting the lock file genuinely pulls newer transitives. This is the
+#         half that does the work.
+#   NuGet resolves the LOWEST applicable version instead, and every version in
+#         Directory.Packages.props is an exact pin, so re-evaluation normally
+#         reproduces an identical graph. It is kept for the narrow case where a
+#         locked version has been unlisted from the feed and has to re-resolve.
 
 on:
   # First day of every month at 08:00 UTC. Running monthly (rather than weekly)
   # keeps PR noise low and means freshly published transitives have already had
-  # time to "age" past the Dependabot cooldown window (14 days for nuget).
+  # time to "age" past the Dependabot cooldown windows (14 days).
   schedule:
     - cron: "0 8 1 * *"
   # Allow maintainers to trigger an on-demand refresh from the Actions tab.
@@ -58,6 +69,33 @@ jobs:
         run: dotnet restore --force-evaluate
 
       # -----------------------------------------------------------------------
+      # pnpm — delete + reinstall so the lock file is fully re-resolved to the
+      # newest versions allowed by the ranges in package.json. pnpm always writes
+      # a fresh lock file on install, so removing it first is the most reliable
+      # way to pick up new transitives.
+      #
+      # corepack activates the exact pnpm version pinned in package.json's
+      # "packageManager" field, matching how CI installs dependencies.
+      #
+      # Note: pnpm refuses to resolve releases younger than its minimumReleaseAge
+      # window and, unless minimumReleaseAgeStrict is set, records the ones it
+      # allowed through in pnpm-workspace.yaml. That file may therefore appear in
+      # the diff alongside the lock file.
+      # -----------------------------------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Refresh pnpm lock file
+        run: |
+          rm -f pnpm-lock.yaml
+          pnpm install --no-frozen-lockfile
+
+      # -----------------------------------------------------------------------
       # Open (or update) a single PR with whatever changed.
       #
       # IMPORTANT: the PR must be created with a token that is allowed to trigger
@@ -83,9 +121,9 @@ jobs:
             ## Scheduled lockfile refresh
 
             This PR was opened automatically by the **Refresh lockfiles** workflow.
-            It regenerates the NuGet (`packages.lock.json`) lock files to pick
-            up the newest transitive dependency versions that still satisfy the
-            declared semver ranges.
+            It regenerates the pnpm (`pnpm-lock.yaml`) and NuGet
+            (`packages.lock.json`) lock files to pick up the newest transitive
+            dependency versions that still satisfy the declared semver ranges.
 
             ### Why
             Dependabot only bumps *direct* dependencies. Transitive dependencies
@@ -95,13 +133,20 @@ jobs:
             current in small, reviewable increments.
 
             ### What changed
+            - pnpm: `pnpm-lock.yaml` regenerated from scratch, re-resolving every
+              range to its newest matching version.
             - NuGet: `dotnet restore --force-evaluate` re-resolved all lock files
-              within their existing version ranges (no range bumps).
+              within their existing version ranges (no range bumps). NuGet takes
+              the *lowest* applicable version, so an empty NuGet diff is the
+              expected result, not a failure.
 
             ### Safety
             - Only resolves **within** the existing version ranges — no range
-              changes were made to `Directory.Packages.props` / `.csproj`.
+              changes were made to `package.json` / `Directory.Packages.props`.
+            - pnpm's `minimumReleaseAge` policy still applies, so freshly
+              published releases are not pulled in.
             - CI runs on this PR; review the diff before merging.
 
-            > Note on release age: Dependabot already enforces a 14-day cooldown
-            > for nuget updates.
+            > Note on release age: Dependabot enforces a 14-day cooldown on its
+            > own PRs, and pnpm's `minimumReleaseAge` gates what this job can
+            > resolve.

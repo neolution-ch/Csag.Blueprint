@@ -1,0 +1,19 @@
+packages:
+  - "packages/*"
+
+# Reject package versions published less than 14 days ago (14 * 24 * 60 = 20160 minutes).
+# Mitigates supply-chain attacks by giving freshly published (potentially malicious) versions
+# time to be detected and pulled before they can be installed.
+minimumReleaseAge: 20160
+
+# Fail the install rather than silently recording an exception. Without this, pnpm appends
+# offending versions to minimumReleaseAgeExclude by itself, which would let the scheduled
+# Refresh lockfiles job quietly bypass the policy it is supposed to respect.
+minimumReleaseAgeStrict: true
+
+# Changesets v3 went stable on 2026-08-11, so the whole @changesets/* stack (17 of the 43
+# locked entries) is younger than the floor above and nothing would install without this.
+# It is dev-only release tooling that never ships inside the NuGet packages. Drop this
+# entry once the v3 stack has aged past the window.
+minimumReleaseAgeExclude:
+  - "@changesets/*"

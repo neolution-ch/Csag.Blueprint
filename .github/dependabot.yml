@@ -47,3 +47,21 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+
+  # pnpm dependencies: the changesets release tooling at the repo root.
+  # Dependabot handles pnpm workspaces under the "npm" ecosystem.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # wait for 14 days before updating to minimize the risk of supply chain attacks
+    cooldown:
+      default-days: 14
+    groups:
+      npm-ecosystem:
+        patterns:
+          - "*"
+      npm-ecosystem-security:
+        applies-to: security-updates
+        patterns:
+          - "*"

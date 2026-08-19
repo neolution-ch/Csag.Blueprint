@@ -1,0 +1,107 @@
+name: Refresh lockfiles
+
+# Regenerates the NuGet lock files so that transitive dependencies are
+# refreshed to the newest versions still allowed by the declared semver ranges.
+#
+# Why this exists: Dependabot version updates only bump *direct* dependencies in
+# Directory.Packages.props. Transitive dependencies are only ever touched when a
+# security advisory forces a lockfile patch, so they accumulate staleness for
+# months. This scheduled job re-resolves the lock files within the existing
+# ranges (no range bumps), opens a PR with the diff, and lets CI + a human review
+# catch any regression before it merges. See BLUEAPI-75.
+
+on:
+  # First day of every month at 08:00 UTC. Running monthly (rather than weekly)
+  # keeps PR noise low and means freshly published transitives have already had
+  # time to "age" past the Dependabot cooldown window (14 days for nuget).
+  schedule:
+    - cron: "0 8 1 * *"
+  # Allow maintainers to trigger an on-demand refresh from the Actions tab.
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      # -----------------------------------------------------------------------
+      # NuGet — refresh the transitive versions inside every packages.lock.json.
+      #
+      # We use `dotnet restore --force-evaluate` instead of deleting the lock
+      # files. `--force-evaluate` re-resolves every dependency within its declared
+      # range and rewrites the existing lock files in place. It is the idiomatic,
+      # surgical way to refresh transitives and avoids any window where the lock
+      # files are missing. (Deleting them would also work here because
+      # RestorePackagesWithLockFile=true is set in Directory.Build.props, but
+      # force-evaluate is cleaner.)
+      #
+      # Central Package Management with transitive pinning is enabled, so the
+      # whole solution is restored in one pass and every project's
+      # packages.lock.json is updated.
+      # -----------------------------------------------------------------------
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.4.0
+        with:
+          global-json-file: global.json
+
+      - name: Refresh NuGet lock files
+        run: dotnet restore --force-evaluate
+
+      # -----------------------------------------------------------------------
+      # Open (or update) a single PR with whatever changed.
+      #
+      # IMPORTANT: the PR must be created with a token that is allowed to trigger
+      # other workflows. The default GITHUB_TOKEN deliberately does NOT trigger
+      # `pull_request` events for commits it creates (GitHub prevents recursive
+      # workflow runs). To get the existing CI workflow to run on this PR, supply
+      # a fine-grained PAT or GitHub App token via the LOCKFILE_REFRESH_TOKEN
+      # secret (needs: contents:write, pull-requests:write).
+      #
+      # The expression falls back to GITHUB_TOKEN so the workflow still opens a PR
+      # if the secret is absent — but in that case CI must be kicked off manually
+      # (e.g. close/reopen the PR) until the secret is configured.
+      # -----------------------------------------------------------------------
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.LOCKFILE_REFRESH_TOKEN || secrets.GITHUB_TOKEN }}
+          branch: chore/refresh-lockfiles
+          delete-branch: true
+          commit-message: "chore: refresh lockfiles (transitive dependency update)"
+          title: "chore: refresh lockfiles (transitive dependency update)"
+          body: |
+            ## Scheduled lockfile refresh
+
+            This PR was opened automatically by the **Refresh lockfiles** workflow.
+            It regenerates the NuGet (`packages.lock.json`) lock files to pick
+            up the newest transitive dependency versions that still satisfy the
+            declared semver ranges.
+
+            ### Why
+            Dependabot only bumps *direct* dependencies. Transitive dependencies
+            are otherwise never refreshed unless a security advisory forces a
+            patch — so they accumulate staleness (bug fixes, perf improvements)
+            and the eventual forced jump is large and risky. This keeps them
+            current in small, reviewable increments.
+
+            ### What changed
+            - NuGet: `dotnet restore --force-evaluate` re-resolved all lock files
+              within their existing version ranges (no range bumps).
+
+            ### Safety
+            - Only resolves **within** the existing version ranges — no range
+              changes were made to `Directory.Packages.props` / `.csproj`.
+            - CI runs on this PR; review the diff before merging.
+
+            > Note on release age: Dependabot already enforces a 14-day cooldown
+            > for nuget updates.

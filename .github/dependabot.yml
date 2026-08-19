@@ -1,50 +1,49 @@
-# Dependabot configuration. The Dependabot Changeset workflow auto-generates a
-# changeset for every PR opened here, so these updates flow through the normal
-# release process.
 version: 2
 updates:
-  # NuGet dependencies (all versions are centralized in Directory.Packages.props).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # wait for a month before updating to minimize the risk of supply chain attacks
+    cooldown:
+      default-days: 30
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+      # groups default to `applies-to: version-updates`, so security PRs need their own entry.
+      # note: cooldown does not apply to security updates, they still land immediately.
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
   - package-ecosystem: "nuget"
     directory: "/"
     schedule:
       interval: "weekly"
+    # wait for 14 days before updating to minimize the risk of supply chain attacks
     cooldown:
       default-days: 14
     ignore:
-      # Major versions of these track the .NET target framework (net10.0);
-      # they are bumped manually together with a TFM upgrade.
+      # ignore major version updates for specific dependencies because we want to match them to the .dotnet version
       - dependency-name: "Microsoft.EntityFrameworkCore*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.AspNetCore*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "Microsoft.Extensions*"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "System.Text*"
+        update-types: ["version-update:semver-major"]
+      # waiting for the nlog target to also be updated to 3.x
+      # https://www.nuget.org/packages/Microsoft.ApplicationInsights.NLogTarget/
       - dependency-name: "Microsoft.ApplicationInsights*"
         update-types: ["version-update:semver-major"]
     groups:
-      # Batch all updates into one PR to reduce noise (and one changeset).
       nuget-ecosystem:
-        patterns: ["*"]
-
-  # npm dependencies: only the changesets release tooling at the root.
-  # (The packages/* package.json files are version-tracking stubs with no deps.)
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 14
-    groups:
-      npm-non-major:
-        update-types: ["minor", "patch"]
-
-  # Keep the pinned GitHub Actions in these workflows up to date too.
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 30
-    groups:
-      github-actions:
-        patterns: ["*"]
+        patterns:
+          - "*"
+      nuget-ecosystem-security:
+        applies-to: security-updates
+        patterns:
+          - "*"

@@ -53,14 +53,13 @@ jobs:
 
       - name: Create Release Pull Request or Publish
         id: changesets
-        uses: changesets/action@v1.8.0
+        uses: changesets/action@v2.1.1
         with:
-          version: node scripts/sync-versions.js
-          publish: npx changeset publish ${{ steps.publish-config.outputs.tag }}
-          title: "chore: version packages"
-          commit: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ steps.app-token.outputs.token }}
+          version-script: node scripts/sync-versions.js
+          publish-script: npx changeset publish ${{ steps.publish-config.outputs.tag }}
+          pr-title: "chore: version packages"
+          commit-message: "chore: version packages"
 
       - name: Create release branch on major version bump
         if: steps.changesets.outputs.published == 'true' && github.ref ==
@@ -68,7 +67,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const published = JSON.parse('${{ steps.changesets.outputs.publishedPackages }}');
+            const published = JSON.parse('${{ steps.changesets.outputs.published-packages }}');
             if (!published.length) return;
 
             const newVersion = published[0].version;

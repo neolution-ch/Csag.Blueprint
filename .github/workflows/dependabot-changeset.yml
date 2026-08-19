@@ -65,7 +65,7 @@ jobs:
 
       - name: Generate changeset
         if: steps.check-changeset.outputs.exists == 'false'
-        run: node scripts/generate-dependabot-changeset.js
+        run: node scripts/generate-dependabot-changeset.mjs
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}

@@ -19,8 +19,8 @@
  * @see https://docs.github.com/en/rest/dependency-graph/dependency-submission
  */
 
-const fs = require("fs");
-const path = require("path");
+import fs from "node:fs";
+import path from "node:path";
 
 const DETECTOR = {
   name: "dotnet-list-package",

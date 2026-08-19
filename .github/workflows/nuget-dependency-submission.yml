@@ -31,7 +31,7 @@ jobs:
       - name: Build dependency snapshot
         run: |
           dotnet list package --include-transitive --format json > deps.json
-          node scripts/build-dependency-snapshot.js deps.json snapshot.json
+          node scripts/build-dependency-snapshot.mjs deps.json snapshot.json
 
       - name: Submit snapshot
         if: inputs.dry-run != true

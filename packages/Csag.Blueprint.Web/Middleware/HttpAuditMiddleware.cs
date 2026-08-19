@@ -1,9 +1,10 @@
 namespace Csag.Blueprint.Web.Middleware;
 
-using System.Diagnostics;
 using Audit.Core;
+using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Web.Helpers;
 using Microsoft.AspNetCore.Http;
+using System.Diagnostics;
 
 /// <summary>
 /// Middleware that creates an audit event for each HTTP request.
@@ -27,8 +28,9 @@ public class HttpAuditMiddleware
     /// Processes an HTTP request by wrapping it in an audit scope.
     /// </summary>
     /// <param name="context">The HTTP context for the current request.</param>
+    /// <param name="tenantService">Service used to retrieve the current tenant identifier.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, ITenantService tenantService)
     {
         var path = context.Request.Path.Value;
         if (path != null && (path.StartsWith("/health", StringComparison.OrdinalIgnoreCase)
@@ -73,6 +75,7 @@ public class HttpAuditMiddleware
             scope.SetCustomField("StatusCode", context.Response.StatusCode);
             scope.SetCustomField("DurationMs", stopwatch.ElapsedMilliseconds);
             scope.SetCustomField("UserId", actor.UserId);
+            scope.SetCustomField("TenantId", tenantService.CurrentTenantId);
 
             // Set these two fields here also, not only in the global OnScopeCreated enrichment. This
             // scope is saved after the request ends. Without these lines, an HTTP entry and an Entity

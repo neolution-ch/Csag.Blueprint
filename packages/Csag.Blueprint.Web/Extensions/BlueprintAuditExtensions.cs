@@ -67,6 +67,8 @@ public static class BlueprintAuditExtensions
                 .CustomColumn("CreatedAt", _ => DateTimeOffset.UtcNow)
                 .CustomColumn("UserId", ev =>
                     ev.CustomFields.TryGetValue("UserId", out var val) ? val?.ToString() : null)
+                .CustomColumn("TenantId", ev =>
+                    ev.CustomFields.TryGetValue("TenantId", out var val) ? val?.ToString() : null)
                 .CustomColumn("CorrelationId", ev =>
                     ev.CustomFields.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var val) ? val?.ToString() : null));
     }

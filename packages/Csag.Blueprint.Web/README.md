@@ -70,6 +70,18 @@ Applications may still append app-specific middleware before endpoint mapping.
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
 | `StartupCompletedHealthCheck` | Reusable readiness gate used with startup orchestration. |
 
+### Audit enrichment
+
+`ConfigureBlueprintAuditLogging` adds the user ID, the email address, the display name and the
+correlation ID to each audit event. This applies to Entity Framework events and to HTTP events. The
+package reads the three user values from the claims on the request, not from the database. A service
+account has no email address. Therefore its email value is null, and its display name is the account
+name from its token.
+
+The provider writes only `UserId` and `CorrelationId` to columns. The email address and the display
+name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Therefore this change
+needs no migration, but a read of these two values must parse the JSON data of the row.
+
 ### Tenant resolution (the addressing seam)
 
 `ITenantResolver` decides which tenant an incoming request belongs to. The package ships

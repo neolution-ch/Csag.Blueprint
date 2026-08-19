@@ -1,8 +1,8 @@
 namespace Csag.Blueprint.Web.Middleware;
 
 using System.Diagnostics;
-using System.Security.Claims;
 using Audit.Core;
+using Csag.Blueprint.Web.Helpers;
 using Microsoft.AspNetCore.Http;
 
 /// <summary>
@@ -61,7 +61,7 @@ public class HttpAuditMiddleware
             stopwatch.Stop();
 
             // Enrich the scope with response data after the request completes
-            var userId = context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var actor = AuditUserIdentity.FromPrincipal(context.User);
             var userType = context.User?.FindFirst("type")?.Value ?? "Unknown";
             var correlationId = context.Items.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var cid)
                 ? cid?.ToString() : null;
@@ -72,7 +72,13 @@ public class HttpAuditMiddleware
             scope.SetCustomField("Url", $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}");
             scope.SetCustomField("StatusCode", context.Response.StatusCode);
             scope.SetCustomField("DurationMs", stopwatch.ElapsedMilliseconds);
-            scope.SetCustomField("UserId", userId);
+            scope.SetCustomField("UserId", actor.UserId);
+
+            // Set these two fields here also, not only in the global OnScopeCreated enrichment. This
+            // scope is saved after the request ends. Without these lines, an HTTP entry and an Entity
+            // Framework entry for the same request can show a different user.
+            scope.SetCustomField("UserEmail", actor.Email);
+            scope.SetCustomField("UserDisplayName", actor.DisplayName);
             scope.SetCustomField("UserType", userType);
             scope.SetCustomField(CorrelationIdMiddleware.CorrelationIdKey, correlationId);
             scope.SetCustomField("UserAgent", context.Request.Headers.UserAgent.ToString());

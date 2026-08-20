@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="AutoFixture.Xunit3" />
+    <PackageReference Include="FastEndpoints.Testing" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="xunit.runner.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="AutoFixture.Xunit3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Testing\Csag.Blueprint.Testing.csproj" />
+    <ProjectReference Include="..\Csag.Blueprint.Tests.Shared\Csag.Blueprint.Tests.Shared.csproj" />
+    <ProjectReference Include="..\Csag.Blueprint.TestHost\Csag.Blueprint.TestHost.csproj" />
+  </ItemGroup>
+
+</Project>

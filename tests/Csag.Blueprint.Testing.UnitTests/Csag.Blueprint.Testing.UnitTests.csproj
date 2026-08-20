@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="AutoFixture.Xunit3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="AutoFixture.Xunit3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Testing\Csag.Blueprint.Testing.csproj" />
+    <ProjectReference Include="..\Csag.Blueprint.Tests.Shared\Csag.Blueprint.Tests.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

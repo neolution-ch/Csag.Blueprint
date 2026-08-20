@@ -1,0 +1,51 @@
+name: NuGet Dependency Submission
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Generate snapshot without submitting to GitHub"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  dependency-submission:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.4.0
+        with:
+          dotnet-version: "10.x"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build dependency snapshot
+        run: |
+          dotnet list package --include-transitive --format json > deps.json
+          node scripts/build-dependency-snapshot.mjs deps.json snapshot.json
+
+      - name: Submit snapshot
+        if: inputs.dry-run != true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api \
+            --method POST \
+            repos/${{ github.repository }}/dependency-graph/snapshots \
+            --input snapshot.json
+
+      - name: Upload snapshot artifact
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: dependency-snapshot
+          path: snapshot.json

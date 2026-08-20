@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-    <Version>0.1.2</Version>
+    <Version>0.1.3</Version>
         <Description>Core domain contracts, entities, and Identity base types for CSAG Blueprint applications.</Description>
     </PropertyGroup>
     <ItemGroup>

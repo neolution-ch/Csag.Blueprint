@@ -2,6 +2,7 @@ namespace Csag.Blueprint.Web.Extensions;
 
 using Audit.Core;
 using Audit.EntityFramework.ConfigurationApi;
+using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Web.Helpers;
 using Csag.Blueprint.Web.Middleware;
@@ -116,6 +117,14 @@ public static class BlueprintAuditExtensions
             .Ignore<IdentityUserLogin<Guid>>()
             .Ignore<IdentityUserRole<Guid>>()
             .Ignore<IdentityUserToken<Guid>>();
+
+        Configuration.AddCustomAction(ActionType.OnScopeCreated, scope =>
+        {
+            if (TenantContext.Current is Guid tenantId)
+            {
+                scope.SetCustomField("TenantId", tenantId);
+            }
+        });
     }
 
     /// <summary>

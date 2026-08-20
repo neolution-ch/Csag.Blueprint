@@ -11,8 +11,9 @@ using Neolution.Extensions.Caching.Abstractions;
 /// <summary>
 /// Unit tests for <see cref="TranslationCacheInvalidator"/>. The invalidator and
 /// <see cref="TranslationProvider{TContext}"/> share the L1 key format <c>translations:{lang}</c>
-/// only by convention, so the eviction is exercised through a real provider populating a real
-/// <see cref="MemoryCache"/> — a drifting key literal on either side would make this fail.
+/// (composed from the canonical lowercase language code) only by convention, so the eviction is
+/// exercised through a real provider populating a real <see cref="MemoryCache"/> — a drifting key
+/// literal or normalization mismatch on either side would make this fail.
 /// </summary>
 public sealed class TranslationCacheInvalidatorTests
 {
@@ -30,11 +31,13 @@ public sealed class TranslationCacheInvalidatorTests
 
         var invalidator = new TranslationCacheInvalidator(l2.Object, memoryCache);
 
-        // Act
-        await invalidator.InvalidateAsync("de-CH", TestContext.Current.CancellationToken);
+        // Act — invalidate with a casing that differs from the populating requests; normalization
+        // must still land on the same entries.
+        await invalidator.InvalidateAsync("DE-CH", TestContext.Current.CancellationToken);
 
-        // Assert — L2 eviction is delegated to the distributed cache under the Translation cache id.
-        l2.Verify(c => c.RemoveAsync(CacheId.Translation, "de-CH", It.IsAny<CancellationToken>()), Times.Once);
+        // Assert — L2 eviction is delegated to the distributed cache under the Translation cache
+        // id, keyed by the canonical lowercase code the provider stores under.
+        l2.Verify(c => c.RemoveAsync(CacheId.Translation, "de-ch", It.IsAny<CancellationToken>()), Times.Once);
 
         // The invalidated language falls through to the DB again (L1 entry gone) while the other
         // language is still served from L1.

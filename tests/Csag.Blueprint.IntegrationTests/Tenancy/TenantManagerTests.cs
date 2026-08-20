@@ -169,7 +169,7 @@ public sealed class TenantManagerTests(AppFixture app) : IntegrationTestBase(app
         using var controlClient = await this.SignInAsync(controlUser.Email!);
 
         var doomedBefore = await doomedClient.GetAsync(AuthProbeUri, ct);
-        await doomedBefore.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await doomedBefore.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         // Act — revoke every session scoped to the doomed tenant (what a tenant delete triggers so
         // no cached ticket keeps authorizing requests against a tenant that no longer exists).
@@ -185,10 +185,10 @@ public sealed class TenantManagerTests(AppFixture app) : IntegrationTestBase(app
         revokedCount.ShouldBe(1);
 
         var doomedAfter = await doomedClient.GetAsync(AuthProbeUri, ct);
-        await doomedAfter.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, "a session scoped to the revoked tenant must be signed out immediately");
+        await doomedAfter.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, "a session scoped to the revoked tenant must be signed out immediately", ct);
 
         var controlAfter = await controlClient.GetAsync(AuthProbeUri, ct);
-        await controlAfter.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "sessions scoped to other tenants must survive");
+        await controlAfter.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "sessions scoped to other tenants must survive", ct);
 
         using var scope = this.App.CreateDbContextScope();
         (await scope.Context.ActiveSessions.AnyAsync(s => s.UserId == doomedUser.Id, ct)).ShouldBeFalse(

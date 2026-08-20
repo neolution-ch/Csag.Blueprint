@@ -38,12 +38,11 @@ public sealed class TableViewFilterExpressionTests
     [InlineData("Doors", "10.5")] // int columns reject decimal input
     [InlineData("Doors", "2147483648")] // int overflow
     [InlineData("PricePerHour", "ten")] // unparsable decimal
-    [InlineData("IsElectric", "true")] // Equals has no boolean branch; boolean columns need the Boolean operator
+    [InlineData("IsElectric", "maybe")] // invalid bool literal for Equals
     [InlineData("IsActive", "maybe")] // invalid bool literal
     [InlineData("Capacity", "abc-def")] // unparsable range bounds
     [InlineData("Capacity", "10")] // range without separator
     [InlineData("Capacity", "")] // empty range
-    [InlineData("Capacity", "-5-10")] // '-' doubles as separator, so negative minimums are unrepresentable
     [InlineData("RetiredOn", "1-10")] // Range only supports number columns, not dates
     [InlineData("Category", ",,")] // In-list with only empty entries
     [InlineData("Mileage", "x,y")] // In-list where no entry parses
@@ -108,6 +107,15 @@ public sealed class TableViewFilterExpressionTests
     }
 
     [Theory]
+    [InlineData("false", true)]
+    [InlineData("False", true)]
+    [InlineData("true", false)]
+    public void GetFilterExpression_EqualsOnBoolColumn_ComparesParsedValue(string filterValue, bool expected)
+    {
+        Matches("IsElectric", filterValue, CreateVehicle()).ShouldBe(expected);
+    }
+
+    [Theory]
     [InlineData(9, false)]
     [InlineData(10, true)]
     [InlineData(15, true)]
@@ -143,6 +151,33 @@ public sealed class TableViewFilterExpressionTests
 
         vehicle.Capacity = 21;
         Matches("Capacity", "-20", vehicle).ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData(-6, false)]
+    [InlineData(-5, true)]
+    [InlineData(0, true)]
+    [InlineData(10, true)]
+    [InlineData(11, false)]
+    public void GetFilterExpression_NumericRangeWithNegativeMinimum_BoundsAreInclusive(int capacity, bool expected)
+    {
+        var vehicle = CreateVehicle();
+        vehicle.Capacity = capacity;
+
+        // The leading '-' belongs to the minimum bound; the second '-' separates the bounds.
+        Matches("Capacity", "-5-10", vehicle).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void GetFilterExpression_NumericRangeWithNegativeBounds_ComparesParsedBounds()
+    {
+        var vehicle = CreateVehicle();
+
+        vehicle.Capacity = -3;
+        Matches("Capacity", "-5--1", vehicle).ShouldBeTrue();
+
+        vehicle.Capacity = 0;
+        Matches("Capacity", "-5--1", vehicle).ShouldBeFalse();
     }
 
     [Fact]
@@ -190,14 +225,11 @@ public sealed class TableViewFilterExpressionTests
     }
 
     [Fact]
-    public void GetFilterExpression_EnumFilterWithUndefinedNumericValue_YieldsExpressionThatMatchesNothing()
+    public void GetFilterExpression_EnumFilterWithUndefinedNumericValue_ReturnsNull()
     {
-        // Enum.TryParse accepts any numeric string, defined or not, so an undefined value slips
-        // through validation and produces a filter that simply matches no rows.
-        var expression = Definition.GetFilterExpression("Kind", "999");
-
-        expression.ShouldNotBeNull();
-        expression.Compile()(CreateVehicle()).ShouldBeFalse();
+        // Numeric strings only pass when they name a defined member, so an undefined value is
+        // rejected like any other malformed filter input.
+        Definition.GetFilterExpression("Kind", "999").ShouldBeNull();
     }
 
     [Theory]

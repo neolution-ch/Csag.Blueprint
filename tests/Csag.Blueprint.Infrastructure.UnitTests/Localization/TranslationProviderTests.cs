@@ -16,12 +16,18 @@ using Neolution.Extensions.Caching.Abstractions;
 /// Unit tests for <see cref="TranslationProvider{TContext}"/> using a real L1
 /// <see cref="MemoryCache"/>, a mocked L2 distributed cache, and an in-memory DB context factory.
 /// Covers the L1 → L2 → DB fallthrough order, the merge of DB rows over the default-language rows
-/// and the code defaults, cache population on miss, and resilience against a failing L2.
+/// and the code defaults, cache population on miss, resilience against a failing L2, and the
+/// canonical lowercase normalization of language codes for cache keys and database lookups.
 /// </summary>
 public sealed class TranslationProviderTests
 {
     private const string DefaultLanguage = "en-GB";
     private const string RequestedLanguage = "de-CH";
+
+    // Canonical lowercase forms of the language codes above, as used by the provider for cache
+    // keys and database lookups. Translation rows are expected to store this form.
+    private const string NormalizedDefaultLanguage = "en-gb";
+    private const string NormalizedRequestedLanguage = "de-ch";
 
     private static readonly IReadOnlyDictionary<string, string> Defaults = new Dictionary<string, string>
     {
@@ -33,12 +39,14 @@ public sealed class TranslationProviderTests
     [Fact]
     public void GetTranslations_L1Hit_ReturnsCachedSnapshotWithoutTouchingL2OrDb()
     {
-        // Arrange — the L1 entry uses the "translations:{lang}" key the provider composes itself.
+        // Arrange — the L1 entry uses the "translations:{lang}" key the provider composes itself,
+        // built from the canonical lowercase language code, so the mixed-case request below must
+        // hit this entry.
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var l2 = new Mock<IDistributedCache<CacheId>>();
         var factory = new CountingDbContextFactory();
         var snapshot = new TranslationSnapshot { Translations = new Dictionary<string, string> { ["Key.A"] = "cached" } };
-        memoryCache.Set($"translations:{RequestedLanguage}", snapshot);
+        memoryCache.Set($"translations:{NormalizedRequestedLanguage}", snapshot);
         var provider = CreateProvider(memoryCache, l2.Object, factory);
 
         // Act
@@ -53,12 +61,13 @@ public sealed class TranslationProviderTests
     [Fact]
     public void GetTranslations_L2Hit_ReturnsSnapshotAndPopulatesL1()
     {
-        // Arrange
+        // Arrange — the L2 entry lives under the canonical lowercase code, matching how the
+        // provider stores and reads it.
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var l2 = new Mock<IDistributedCache<CacheId>>();
         var factory = new CountingDbContextFactory();
         var snapshot = new TranslationSnapshot { Translations = new Dictionary<string, string> { ["Key.A"] = "from L2" } };
-        l2.Setup(c => c.Get<TranslationSnapshot>(CacheId.Translation, RequestedLanguage)).Returns(snapshot);
+        l2.Setup(c => c.Get<TranslationSnapshot>(CacheId.Translation, NormalizedRequestedLanguage)).Returns(snapshot);
         var provider = CreateProvider(memoryCache, l2.Object, factory);
 
         // Act — two calls: the first fills L1 from L2, the second must be served from L1.
@@ -68,23 +77,24 @@ public sealed class TranslationProviderTests
         // Assert
         first.ShouldBeSameAs(snapshot);
         second.ShouldBeSameAs(snapshot);
-        l2.Verify(c => c.Get<TranslationSnapshot>(CacheId.Translation, RequestedLanguage), Times.Once);
+        l2.Verify(c => c.Get<TranslationSnapshot>(CacheId.Translation, NormalizedRequestedLanguage), Times.Once);
         factory.CreateCount.ShouldBe(0);
     }
 
     [Fact]
     public void GetTranslations_CacheMiss_LoadsFromDbAndPopulatesBothCacheLayers()
     {
-        // Arrange — both caches empty; the DB has a row overriding one code default.
+        // Arrange — both caches empty; the DB has a row (stored under the canonical code)
+        // overriding one code default.
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var l2 = new Mock<IDistributedCache<CacheId>>();
         var factory = new CountingDbContextFactory();
         var updatedAt = new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero);
-        factory.Seed(CreateTranslation("Key.A", RequestedLanguage, "DB A", updatedAt));
+        factory.Seed(CreateTranslation("Key.A", NormalizedRequestedLanguage, "DB A", updatedAt));
 
         CacheEntryOptions? capturedOptions = null;
         l2
-            .Setup(c => c.SetWithOptions(CacheId.Translation, RequestedLanguage, It.IsAny<TranslationSnapshot>(), It.IsAny<CacheEntryOptions>()))
+            .Setup(c => c.SetWithOptions(CacheId.Translation, NormalizedRequestedLanguage, It.IsAny<TranslationSnapshot>(), It.IsAny<CacheEntryOptions>()))
             .Callback((CacheId _, string _, TranslationSnapshot _, CacheEntryOptions options) => capturedOptions = options);
         var provider = CreateProvider(memoryCache, l2.Object, factory);
 
@@ -108,14 +118,15 @@ public sealed class TranslationProviderTests
     {
         // Arrange — Key.A exists in both languages, Key.B only in the default language, and Key.C
         // exists in the requested language but with a NULL value (translation not provided yet).
+        // Rows are stored under the canonical lowercase codes the provider queries with.
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var l2 = new Mock<IDistributedCache<CacheId>>();
         var factory = new CountingDbContextFactory();
         factory.Seed(
-            CreateTranslation("Key.A", RequestedLanguage, "de A", DateTimeOffset.UtcNow),
-            CreateTranslation("Key.A", DefaultLanguage, "en A", DateTimeOffset.UtcNow),
-            CreateTranslation("Key.B", DefaultLanguage, "en B", DateTimeOffset.UtcNow),
-            CreateTranslation("Key.C", RequestedLanguage, value: null, DateTimeOffset.UtcNow));
+            CreateTranslation("Key.A", NormalizedRequestedLanguage, "de A", DateTimeOffset.UtcNow),
+            CreateTranslation("Key.A", NormalizedDefaultLanguage, "en A", DateTimeOffset.UtcNow),
+            CreateTranslation("Key.B", NormalizedDefaultLanguage, "en B", DateTimeOffset.UtcNow),
+            CreateTranslation("Key.C", NormalizedRequestedLanguage, value: null, DateTimeOffset.UtcNow));
         var provider = CreateProvider(memoryCache, l2.Object, factory);
 
         // Act
@@ -135,7 +146,7 @@ public sealed class TranslationProviderTests
         using var memoryCache = new MemoryCache(new MemoryCacheOptions());
         var l2 = new Mock<IDistributedCache<CacheId>>();
         var factory = new CountingDbContextFactory();
-        factory.Seed(CreateTranslation("Key.A", RequestedLanguage, "DB A", DateTimeOffset.UtcNow));
+        factory.Seed(CreateTranslation("Key.A", NormalizedRequestedLanguage, "DB A", DateTimeOffset.UtcNow));
         l2
             .Setup(c => c.Get<TranslationSnapshot>(It.IsAny<CacheId>(), It.IsAny<string>()))
             .Throws(new InvalidOperationException("cache unavailable"));

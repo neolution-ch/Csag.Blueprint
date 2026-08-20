@@ -1,18 +1,21 @@
 namespace Csag.Blueprint.Infrastructure.Translations;
 
+using Csag.Blueprint.Infrastructure.Localization;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 /// <summary>
 /// Extension methods for <see cref="MigrationBuilder"/> to simplify translation seeding in EF migrations.
+/// Language codes are normalized to canonical lowercase before seeding, so rows always match the
+/// casing the translation provider looks up.
 /// </summary>
 /// <remarks>
 /// Example usage in a migration:
 /// <code>
-/// migrationBuilder.SeedTranslation("Validation.EmailRequired", "de-CH", "E-Mail ist erforderlich");
+/// migrationBuilder.SeedTranslation("Validation.EmailRequired", "de-ch", "E-Mail ist erforderlich");
 ///
 /// migrationBuilder.SeedTranslations("Errors.InvoiceNotFound",
-///     ("de-CH", "Rechnung nicht gefunden"),
-///     ("fr-CH", "Facture introuvable"));
+///     ("de-ch", "Rechnung nicht gefunden"),
+///     ("fr-ch", "Facture introuvable"));
 /// </code>
 /// </remarks>
 public static class MigrationBuilderExtensions
@@ -23,14 +26,14 @@ public static class MigrationBuilderExtensions
     /// </summary>
     /// <param name="migrationBuilder">The migration builder.</param>
     /// <param name="key">The translation key (e.g., "Validation.EmailRequired").</param>
-    /// <param name="languageCode">The language code (e.g., "de-CH").</param>
+    /// <param name="languageCode">The language code; stored in canonical lowercase (e.g., "de-ch").</param>
     /// <param name="value">The translated text.</param>
     public static void SeedTranslation(this MigrationBuilder migrationBuilder, string key, string languageCode, string value)
     {
         ArgumentNullException.ThrowIfNull(migrationBuilder);
 
         var escapedKey = key.Replace("'", "''");
-        var escapedLanguageCode = languageCode.Replace("'", "''");
+        var escapedLanguageCode = TranslationLanguage.Normalize(languageCode).Replace("'", "''");
         var escapedValue = value.Replace("'", "''");
 
         migrationBuilder.Sql($"""

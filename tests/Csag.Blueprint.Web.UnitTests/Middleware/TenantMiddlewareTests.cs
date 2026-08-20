@@ -8,9 +8,10 @@ using Microsoft.AspNetCore.Http;
 /// <summary>
 /// Unit tests for <see cref="TenantMiddleware"/>, covering the two resolver outcomes (tenant resolved →
 /// stamped into <see cref="TenantContext"/> for the downstream pipeline; not resolved → ambient context
-/// left untouched) and the per-request clear-in-<c>finally</c> lifecycle, including the failure path.
-/// The stamped tenant is observed by reading <see cref="TenantContext.Current"/> inside the terminal
-/// delegate, because the middleware clears it again before returning.
+/// explicitly cleared for the downstream pipeline) and the per-request clear-in-<c>finally</c>
+/// lifecycle, including the failure path. The stamped tenant is observed by reading
+/// <see cref="TenantContext.Current"/> inside the terminal delegate, because the middleware clears it
+/// again before returning.
 /// </summary>
 public sealed class TenantMiddlewareTests : IDisposable
 {
@@ -52,11 +53,12 @@ public sealed class TenantMiddlewareTests : IDisposable
     }
 
     [Fact]
-    public async Task InvokeAsync_TenantNotResolved_PreexistingAmbientTenantFlowsDownstreamAsync()
+    public async Task InvokeAsync_TenantNotResolved_ClearsPreexistingAmbientTenantAsync()
     {
-        // Arrange — the middleware only stamps when the resolver yields a tenant; it does not
-        // defensively clear beforehand, so an ambient value set earlier in the calling execution
-        // context is still visible downstream.
+        // Arrange — an ambient value stamped earlier in the calling execution context (e.g. an
+        // in-process caller) must never masquerade as the request's tenant: when the resolver
+        // yields nothing, the middleware clears the context before invoking downstream so the
+        // query filters fail closed.
         var preexisting = Guid.NewGuid();
         TenantContext.SetTenant(preexisting);
         var context = new DefaultHttpContext();
@@ -64,10 +66,10 @@ public sealed class TenantMiddlewareTests : IDisposable
         // Act
         await this.CreateMiddleware().InvokeAsync(context, new FakeTenantResolver(tenantId: null));
 
-        // Assert — the caller still sees its own value afterwards: AsyncLocal writes inside the
-        // awaited middleware (including the finally-clear) affect only the middleware's execution
-        // context and everything downstream of it, never the caller's.
-        this.tenantSeenByNext.ShouldBe(preexisting);
+        // Assert — downstream saw no tenant. The caller still sees its own value afterwards:
+        // AsyncLocal writes inside the awaited middleware (including the clear) affect only the
+        // middleware's execution context and everything downstream of it, never the caller's.
+        this.tenantSeenByNext.ShouldBeNull();
         TenantContext.Current.ShouldBe(preexisting);
     }
 

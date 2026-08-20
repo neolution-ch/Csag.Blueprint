@@ -34,10 +34,10 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
         // The fixture already waited for the startup gate, so readiness converges quickly; the
         // small retry loop keeps the assertion robust on slow runners.
         var readyz = await GetUntilOkAsync(this.App.AnonymousClient, new Uri("/health/readyz", UriKind.Relative), ct);
-        await readyz.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await readyz.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         var livez = await this.App.AnonymousClient.GetAsync(new Uri("/health/livez", UriKind.Relative), ct);
-        await livez.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await livez.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
                 Password = SeedData.DefaultPassword,
             });
 
-        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: TestContext.Current.CancellationToken);
 
         rsp.Headers.TryGetValues("Set-Cookie", out var setCookies).ShouldBeTrue();
         var cookies = setCookies!.ToList();
@@ -82,7 +82,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
         };
 
         var createResponse = await this.App.ManagerAClient.PostAsJsonAsync(VehiclesUri, request, BlueprintJsonOptions.Default, ct);
-        await createResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.Created);
+        await createResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.Created, cancellationToken: ct);
 
         var created = await createResponse.Content.ReadFromJsonAsync<VehicleResponse>(BlueprintJsonOptions.Default, ct);
         created.ShouldNotBeNull();
@@ -90,7 +90,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
         created.Kind.ShouldBe(TestVehicleKind.Kayak);
 
         var readResponse = await this.App.ManagerAClient.GetAsync(new Uri($"/api/vehicles/{created.Id}", UriKind.Relative), ct);
-        await readResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await readResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         var read = await readResponse.Content.ReadFromJsonAsync<VehicleResponse>(BlueprintJsonOptions.Default, ct);
         read.ShouldNotBeNull();
@@ -112,7 +112,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
 
         using var client = this.CreateClientForCulture("de");
         var response = await client.GetAsync(new Uri("/api/localization/greeting", UriKind.Relative), ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         var greeting = await response.Content.ReadFromJsonAsync<GreetingResponse>(BlueprintJsonOptions.Default, ct);
         greeting.ShouldNotBeNull();
@@ -135,7 +135,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
             new TableViewDataRequest { Page = 1, PageSize = 10 },
             BlueprintJsonOptions.Default,
             ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         var result = await response.Content.ReadFromJsonAsync<TableViewDataResponse<VehicleTableViewDto>>(BlueprintJsonOptions.Default, ct);
         result.ShouldNotBeNull();
@@ -160,7 +160,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
         };
 
         var response = await this.App.ViewerAClient.PostAsJsonAsync(VehiclesUri, request, BlueprintJsonOptions.Default, ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Forbidden);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Forbidden, cancellationToken: ct);
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
         var ct = TestContext.Current.CancellationToken;
 
         var response = await this.App.AnonymousClient.GetAsync(VehiclesUri, ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
     }
 
     /// <summary>

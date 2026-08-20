@@ -12,4 +12,14 @@
     <Project Path="packages/Csag.Blueprint.SourceGenerators/Csag.Blueprint.SourceGenerators.csproj" />
     <Project Path="packages/Csag.Blueprint.Testing/Csag.Blueprint.Testing.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Csag.Blueprint.Tests.Shared/Csag.Blueprint.Tests.Shared.csproj" />
+    <Project Path="tests/Csag.Blueprint.Application.UnitTests/Csag.Blueprint.Application.UnitTests.csproj" />
+    <Project Path="tests/Csag.Blueprint.Infrastructure.UnitTests/Csag.Blueprint.Infrastructure.UnitTests.csproj" />
+    <Project Path="tests/Csag.Blueprint.Web.UnitTests/Csag.Blueprint.Web.UnitTests.csproj" />
+    <Project Path="tests/Csag.Blueprint.SourceGenerators.UnitTests/Csag.Blueprint.SourceGenerators.UnitTests.csproj" />
+    <Project Path="tests/Csag.Blueprint.Testing.UnitTests/Csag.Blueprint.Testing.UnitTests.csproj" />
+    <Project Path="tests/Csag.Blueprint.TestHost/Csag.Blueprint.TestHost.csproj" />
+    <Project Path="tests/Csag.Blueprint.IntegrationTests/Csag.Blueprint.IntegrationTests.csproj" />
+  </Folder>
 </Solution>

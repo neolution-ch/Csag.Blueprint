@@ -12,6 +12,11 @@ public sealed class BlueprintAuditLog
     public long Id { get; set; }
 
     /// <summary>
+    /// Gets or sets the tenant identifier where the audit log entry was created.
+    /// </summary>
+    public Guid? TenantId { get; set; }
+
+    /// <summary>
     /// Gets or sets the type of audit event (e.g., entity type or HTTP method/path).
     /// </summary>
     public string EventType { get; set; } = string.Empty;

@@ -2,6 +2,7 @@ namespace Csag.Blueprint.Web.Extensions;
 
 using Audit.Core;
 using Audit.EntityFramework.ConfigurationApi;
+using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Web.Helpers;
 using Csag.Blueprint.Web.Middleware;
@@ -67,6 +68,8 @@ public static class BlueprintAuditExtensions
                 .CustomColumn("CreatedAt", _ => DateTimeOffset.UtcNow)
                 .CustomColumn("UserId", ev =>
                     ev.CustomFields.TryGetValue("UserId", out var val) ? val?.ToString() : null)
+                .CustomColumn("TenantId", ev =>
+                    ev.CustomFields.TryGetValue("TenantId", out var val) ? val?.ToString() : null)
                 .CustomColumn("CorrelationId", ev =>
                     ev.CustomFields.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var val) ? val?.ToString() : null));
     }
@@ -114,6 +117,14 @@ public static class BlueprintAuditExtensions
             .Ignore<IdentityUserLogin<Guid>>()
             .Ignore<IdentityUserRole<Guid>>()
             .Ignore<IdentityUserToken<Guid>>();
+
+        Configuration.AddCustomAction(ActionType.OnScopeCreated, scope =>
+        {
+            if (TenantContext.Current is Guid tenantId)
+            {
+                scope.SetCustomField("TenantId", tenantId);
+            }
+        });
     }
 
     /// <summary>

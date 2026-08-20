@@ -53,6 +53,8 @@ Issues surfaced while building the unit-test layer (2026-08-20). Every behaviora
 
 ## P3 — process and housekeeping
 
+0. **Suppress NU5128 in `Csag.Blueprint.SourceGenerators.csproj`.** The pack step warns ("Add lib or ref assemblies for the netstandard2.0 target framework") on every CI run because analyzer packages intentionally ship under `analyzers/dotnet/cs` with no `lib/` folder. Validated fix: change the `NoWarn` line to `<NoWarn>$(NoWarn);RS2008;NU5128</NoWarn>` (also fixing it to append rather than replace the inherited list) — pack output verified identical. Deliberately left out of the test-suite PR so that PR could carry an empty changeset; apply it in this fix PR, which bumps the packages anyway.
+
 19. **SSH.NET 2025.1.0 advisory (NU1903, high severity, GHSA-q939-rpr3-3284)** — transitive via `Csag.Blueprint.Testing`'s Testcontainers chain; bump when an updated dependency chain is available.
 20. **CI shape:** once integration tests land, consider splitting `dotnet test` into unit and integration jobs (integration needs Docker and container startup time; unit feedback stays fast).
 21. Downstream (`csag-blueprint-web`): delete/thin the ported test files only after these packages are released with the tests running in CI and the web repo's pin is bumped; keep the consumer smoke tests per `docs/architecture/PACKAGES.md`. Move `parseServerErrors.test.ts` into `src/packages/react-form-kit/__tests__/` before any npm extraction.

@@ -28,6 +28,7 @@ public sealed class BlueprintAuditLogConfiguration : IEntityTypeConfiguration<Bl
 
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).UseIdentityColumn();
+        builder.Property(e => e.TenantId).IsRequired(false);
         builder.Property(e => e.EventType).HasMaxLength(100).IsRequired();
         builder.Property(e => e.CreatedAt).IsRequired();
         builder.Property(e => e.JsonData).IsRequired();

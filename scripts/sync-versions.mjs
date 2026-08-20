@@ -1,12 +1,12 @@
-const fs = require("fs");
-const path = require("path");
-const { execSync } = require("child_process");
+import fs from "node:fs";
+import path from "node:path";
+import { execSync } from "node:child_process";
 
 // Run changeset version first
-execSync("npx changeset version", { stdio: "inherit" });
+execSync("pnpm exec changeset version", { stdio: "inherit" });
 
 // Find all packages with both package.json and .csproj
-const packagesDir = path.join(__dirname, "..", "packages");
+const packagesDir = path.join(import.meta.dirname, "..", "packages");
 for (const dir of fs.readdirSync(packagesDir)) {
   const pkgJsonPath = path.join(packagesDir, dir, "package.json");
   const projDir = path.join(packagesDir, dir);

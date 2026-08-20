@@ -1,17 +1,20 @@
-﻿const fs = require("fs");
-const path = require("path");
-const crypto = require("crypto");
+﻿import fs from "node:fs";
+import path from "node:path";
+import crypto from "node:crypto";
 
 const prTitle = process.env.PR_TITLE || "";
 const prBody = process.env.PR_BODY || "";
 const workspacePackagesChanged =
   process.env.WORKSPACE_PACKAGES_CHANGED === "true";
 
+// The script lives in scripts/, so the repository root is one level up.
+const repoRoot = path.resolve(import.meta.dirname, "..");
+
 /**
  * Read the fixed package groups from .changeset/config.json
  */
 function getFixedPackages() {
-  const configPath = path.resolve(__dirname, "..", ".changeset", "config.json");
+  const configPath = path.join(repoRoot, ".changeset", "config.json");
   const raw = fs.readFileSync(configPath, "utf8").replace(/^\uFEFF/, "");
   const config = JSON.parse(raw);
   // fixed is an array of arrays; flatten all groups
@@ -139,7 +142,7 @@ const content = buildChangeset(fixedPackages, updates);
 
 const id = crypto.randomBytes(8).toString("hex");
 const filename = `dependabot-${id}.md`;
-const changesetDir = path.resolve(__dirname, "..", ".changeset");
+const changesetDir = path.join(repoRoot, ".changeset");
 const filepath = path.join(changesetDir, filename);
 
 fs.writeFileSync(filepath, content, "utf8");

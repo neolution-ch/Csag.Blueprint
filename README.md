@@ -17,6 +17,21 @@ All packages are published to [nuget.org](https://www.nuget.org/packages?q=Csag.
 
 The package architecture (generic type strategy, app-owned migrations, upgrade rules) is documented in the blueprint repository: [docs/architecture/PACKAGES.md](https://github.com/neolution-ch/csag-blueprint-web/blob/main/docs/architecture/PACKAGES.md).
 
+## SDK requirement
+
+Consuming the packages requires the **.NET SDK 10.0.4xx** feature band (10.0.400 or newer).
+
+`Csag.Blueprint.SourceGenerators` is built against Roslyn 5.9.0, and the C# compiler refuses to load an analyzer that references a Roslyn newer than the one running the build. On an older feature band the translation-key generator is skipped with a `CS9057` warning, and the generated types then surface as `CS0103`/`CS0246` errors rather than as an obvious SDK problem.
+
+| SDK feature band | Bundled Roslyn | Generator loads |
+| --- | --- | --- |
+| 10.0.1xx | 5.0.0 | no |
+| 10.0.2xx | 5.3.0 | no |
+| 10.0.3xx | 5.6.0 | no |
+| 10.0.4xx | 5.9.0 | yes |
+
+IDEs run their own Roslyn for design-time generation, so Visual Studio / Rider must be new enough too — otherwise the generated types are missing from IntelliSense even when the command-line build succeeds.
+
 ## Local development
 
 ```bash
@@ -30,8 +45,8 @@ Requires the .NET SDK pinned in [global.json](global.json). Restore uses NuGet l
 
 This repository follows the [neolution-ch release playbook](https://github.com/neolution-ch/release-playbook) (Changesets, NuGet variant):
 
-1. Every PR that changes a package needs a changeset: run `npx changeset`, pick any one package (all six are a fixed group — they bump together), choose the bump type, and describe the change. CI blocks PRs without one.
-2. On merge to `main`, the Release workflow maintains a **"chore: version packages"** PR that accumulates pending changesets (versions synced into the `.csproj` files via `scripts/sync-versions.js`).
+1. Every PR that changes a package needs a changeset: run `pnpm changeset`, pick any one package (all six are a fixed group — they bump together), choose the bump type, and describe the change. CI blocks PRs without one.
+2. On merge to `main`, the Release workflow maintains a **"chore: version packages"** PR that accumulates pending changesets (versions synced into the `.csproj` files via `scripts/sync-versions.mjs`).
 3. Merging that PR creates git tags and GitHub Releases; the **NuGet Publish** workflow then packs and pushes all packages to nuget.org.
 
 Conventions:

@@ -26,18 +26,22 @@ jobs:
           private-key: ${{ secrets.CHANGESETS_BOT_PRIVATE_KEY }}
 
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 
+      # Activates the pnpm version pinned in package.json's "packageManager".
+      - name: Enable Corepack
+        run: corepack enable
+
       - name: Install Dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Determine publish config
         id: publish-config
@@ -53,14 +57,13 @@ jobs:
 
       - name: Create Release Pull Request or Publish
         id: changesets
-        uses: changesets/action@v1.8.0
+        uses: changesets/action@v2.1.1
         with:
-          version: node scripts/sync-versions.js
-          publish: npx changeset publish ${{ steps.publish-config.outputs.tag }}
-          title: "chore: version packages"
-          commit: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          github-token: ${{ steps.app-token.outputs.token }}
+          version-script: node scripts/sync-versions.mjs
+          publish-script: pnpm exec changeset publish ${{ steps.publish-config.outputs.tag }}
+          pr-title: "chore: version packages"
+          commit-message: "chore: version packages"
 
       - name: Create release branch on major version bump
         if: steps.changesets.outputs.published == 'true' && github.ref ==
@@ -68,7 +71,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const published = JSON.parse('${{ steps.changesets.outputs.publishedPackages }}');
+            const published = JSON.parse('${{ steps.changesets.outputs.published-packages }}');
             if (!published.length) return;
 
             const newVersion = published[0].version;

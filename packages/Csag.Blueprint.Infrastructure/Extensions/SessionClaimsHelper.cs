@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Infrastructure.Extensions;
 
 using System.Security.Claims;
+using Csag.Blueprint.Application.Claims;
 using Csag.Blueprint.Domain.Contracts;
 
 /// <summary>
@@ -16,8 +17,9 @@ public static class SessionClaimsHelper
 {
     /// <summary>
     /// Applies the tenant, profile, and authorization claims for a session scoped to
-    /// <paramref name="tenantId"/>. The tenant claim is written only when a tenant is active (a
-    /// tenant-less session carries none); profile and authorization claims are always (re)written.
+    /// <paramref name="tenantId"/>. The tenant claim is written when a tenant is active and removed
+    /// when none is (a tenant-less session carries none); profile and authorization claims are
+    /// always (re)written.
     /// </summary>
     /// <param name="identity">The session ticket's identity to update in place.</param>
     /// <param name="user">The account whose profile claims are written.</param>
@@ -36,6 +38,16 @@ public static class SessionClaimsHelper
         if (tenantId.HasValue)
         {
             identity.SetTenantClaim(tenantId.Value);
+        }
+        else
+        {
+            // A rebuild can move a session from an active tenant to none (e.g. the user's last
+            // membership was removed). Strip any tenant claim so the ticket cannot keep scoping
+            // the session to a tenant it no longer has.
+            foreach (var claim in identity.FindAll(IdentityClaimTypes.TenantId).ToList())
+            {
+                identity.RemoveClaim(claim);
+            }
         }
 
         identity.SetUserProfileClaims(user);

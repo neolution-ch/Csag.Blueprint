@@ -70,7 +70,7 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
         var response = await this.App.ManagerAClient.PostAsJsonAsync(
             VehiclesUri, CreateVehicleRequestFor("Audited Mutation Vehicle"), BlueprintJsonOptions.Default, ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Created);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Created, cancellationToken: ct);
 
         // Assert — the HTTP audit entry for this exact request (keyed by correlation ID) captures
         // the acting user's ID from the session claims.
@@ -88,7 +88,7 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
         var response = await this.App.ManagerAClient.PostAsJsonAsync(
             VehiclesUri, CreateVehicleRequestFor("Audited Enrichment Vehicle"), BlueprintJsonOptions.Default, ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Created);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Created, cancellationToken: ct);
 
         // Assert — the entry holds the email address and the display name. The middleware takes
         // both from the claims; TestUser does not override DisplayName, so the Blueprint base
@@ -111,7 +111,7 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
         var response = await this.App.ManagerAClient.PostAsJsonAsync(
             VehiclesUri, CreateVehicleRequestFor("Audited Entity Change Vehicle"), BlueprintJsonOptions.Default, ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Created);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Created, cancellationToken: ct);
 
         // Assert — the EF entity event carries the same correlation ID and acting user as the
         // request, because the audit scope enrichment reads both from the ambient HTTP context.
@@ -128,7 +128,7 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
 
         // Act — any audited request; the correlation middleware generates an ID when none is sent.
         var response = await this.App.ManagerAClient.GetAsync(VehiclesUri, ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         // Assert — the correlation ID from the response header identifies the stored audit entry.
         var correlationId = GetCorrelationId(response);
@@ -145,7 +145,7 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
         // Act — an anonymous request to an endpoint that allows anonymous access, so it passes
         // authorization and reaches the audit middleware.
         var response = await this.App.AnonymousClient.GetAsync(new Uri("/api/localization/greeting", UriKind.Relative), ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         // Assert — the request is audited, but with no user identity to capture.
         var auditLog = await this.FindAuditLogAsync(GetCorrelationId(response), "HTTP:GET:", ct);
@@ -161,7 +161,7 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
         // Act — an anonymous request to a protected endpoint is rejected with 401 by the
         // authorization middleware, which sits before the audit middleware in the pipeline.
         var response = await this.App.AnonymousClient.GetAsync(VehiclesUri, ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
 
         // The correlation middleware runs first, so even the rejected request carries the header.
         var correlationId = GetCorrelationId(response);

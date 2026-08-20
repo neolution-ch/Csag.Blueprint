@@ -91,7 +91,9 @@ namespace Csag.Blueprint.Web.Options.Api.Security
                 .NotEmpty()
                 .WithMessage("At least one CORS policy must be defined in Blueprint:Security:CorsPolicies");
 
-            this.When(x => !string.IsNullOrEmpty(x.DefaultCorsPolicy), () =>
+            // The existence check needs a dictionary to look in; a null CorsPolicies is already
+            // reported by its own NotNull rule, so the check is skipped rather than dereferencing null.
+            this.When(x => !string.IsNullOrEmpty(x.DefaultCorsPolicy) && x.CorsPolicies is not null, () =>
             {
                 this.RuleFor(x => x.DefaultCorsPolicy)
                     .Must((settings, defaultPolicy) => settings.CorsPolicies.ContainsKey(defaultPolicy!))

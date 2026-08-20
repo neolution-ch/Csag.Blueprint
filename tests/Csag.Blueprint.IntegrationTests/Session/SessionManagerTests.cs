@@ -70,8 +70,8 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
 
         var rsp1 = await client1.GetAsync(AuthProbeUri, ct);
         var rsp2 = await client2.GetAsync(AuthProbeUri, ct);
-        await rsp1.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
-        await rsp2.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
+        await rsp1.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
+        await rsp2.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
     }
 
     [Fact]
@@ -106,8 +106,8 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
 
         var tenantARsp = await tenantAClient.GetAsync(AuthProbeUri, ct);
         var tenantBRsp = await tenantBClient.GetAsync(AuthProbeUri, ct);
-        await tenantARsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
-        await tenantBRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "sessions scoped to other tenants must survive a tenant-scoped revocation");
+        await tenantARsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
+        await tenantBRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "sessions scoped to other tenants must survive a tenant-scoped revocation", ct);
     }
 
     [Fact]
@@ -159,9 +159,9 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
         var keptRsp = await keptClient.GetAsync(AuthProbeUri, ct);
         var other1Rsp = await otherClient1.GetAsync(AuthProbeUri, ct);
         var other2Rsp = await otherClient2.GetAsync(AuthProbeUri, ct);
-        await keptRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "the preserved session must stay authenticated");
-        await other1Rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
-        await other2Rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
+        await keptRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "the preserved session must stay authenticated", ct);
+        await other1Rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
+        await other2Rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
     }
 
     [Theory]
@@ -199,7 +199,7 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
         }
 
         var beforeRsp = await client.GetAsync(AuthProbeUri, ct);
-        await beforeRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await beforeRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         // Act — revoke that single session by its key.
         bool revoked;
@@ -222,7 +222,7 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
         }
 
         var afterRsp = await client.GetAsync(AuthProbeUri, ct);
-        await afterRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
+        await afterRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
 
         // Revoking the same key again finds nothing to remove.
         using (var serviceScope = this.App.Services.CreateScope())

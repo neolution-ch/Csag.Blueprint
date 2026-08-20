@@ -161,14 +161,12 @@ public sealed class PersistenceArchitectureTests(AppFixture app) : IntegrationTe
 
         totalVehicleCountIgnoringFilters.ShouldBeGreaterThan(0, "The seeded dataset should contain tenant-owned rows so fail-closed behavior is meaningful");
 
-        // Without an ambient tenant the filter fails closed, but by throwing rather than returning
-        // no rows: the filter is "CurrentTenantId.HasValue && TenantId == CurrentTenantId.Value",
-        // yet EF funcletizes ".Value" into a query parameter that is evaluated eagerly, before the
-        // HasValue guard can short-circuit.
-        var exception = await Should.ThrowAsync<InvalidOperationException>(
-            () => scope.Context.Vehicles.Select(v => v.Id).ToListAsync(ct));
+        // Without an ambient tenant the filter compares TenantId against a null parameter in the
+        // lifted nullable form — SQL "TenantId = NULL" matches nothing — so the query returns no
+        // rows deterministically instead of leaking any tenant's data.
+        var visibleVehicleIds = await scope.Context.Vehicles.Select(v => v.Id).ToListAsync(ct);
 
-        exception.Message.ShouldContain("Nullable object must have a value");
+        visibleVehicleIds.ShouldBeEmpty("Tenant-owned rows must be invisible when no ambient tenant is set");
     }
 
     [Fact]

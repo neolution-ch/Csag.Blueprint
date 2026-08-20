@@ -20,8 +20,8 @@ public static class TestDbContextFactory
     /// <summary>
     /// Creates a <see cref="TestDbContext"/> configured with an in-memory database.
     /// Each call creates a new database instance with a unique name.
-    /// Sets TenantContext.Current to <see cref="TestTenantId"/> so that
-    /// global query filters can evaluate without throwing.
+    /// Sets TenantContext.Current to <see cref="TestTenantId"/> so that the fail-closed
+    /// global tenant query filters match that tenant's rows instead of filtering everything out.
     /// </summary>
     /// <param name="interceptors">Optional interceptors to register on the context options (e.g. the save interceptors under test).</param>
     /// <returns>A disposable wrapper containing the <see cref="TestDbContext"/>.</returns>
@@ -33,8 +33,8 @@ public static class TestDbContextFactory
     /// <summary>
     /// Creates a <see cref="TestDbContext"/> configured with an in-memory database.
     /// Each call creates a new database instance with a unique name.
-    /// Sets TenantContext.Current to <paramref name="tenantId"/> so that
-    /// global query filters can evaluate without throwing.
+    /// Sets TenantContext.Current to <paramref name="tenantId"/> so that the fail-closed
+    /// global tenant query filters match that tenant's rows instead of filtering everything out.
     /// </summary>
     /// <param name="tenantId">The tenant ID to set as the ambient tenant before the context is created.</param>
     /// <param name="interceptors">Optional interceptors to register on the context options (e.g. the save interceptors under test).</param>

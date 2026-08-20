@@ -4,7 +4,8 @@ using Csag.Blueprint.Web.Options.Api.Security.Jwt;
 using FluentValidation.TestHelper;
 
 /// <summary>
-/// Unit tests for <see cref="JwtSettingsValidator"/>, covering issuer, audience, expiration, and signing key rules.
+/// Unit tests for <see cref="JwtSettingsValidator"/>, covering issuer, audience, expiration, and the
+/// signing key strength rule (key presence is deferred to the host's generation-mode-gated check).
 /// </summary>
 public sealed class JwtSettingsValidatorTests
 {
@@ -59,16 +60,30 @@ public sealed class JwtSettingsValidatorTests
     }
 
     [Fact]
-    public void Validate_EmptySigningKey_Fails()
+    public void Validate_EmptySigningKey_Passes()
     {
-        // Despite the validator's XML doc claiming the signing key is validated only in Program.cs,
-        // the rule set does enforce NotEmpty + MinimumLength(32) here; this pins that behavior.
+        // Key presence is deferred to the host's generation-mode-gated startup check: this validator
+        // runs unconditionally, including generation mode where no signing key is configured, so an
+        // absent key must not fail options validation.
         var settings = CreateValidSettings();
         settings.SigningKey = string.Empty;
 
         var result = this.validator.TestValidate(settings);
 
-        result.ShouldHaveValidationErrorFor(x => x.SigningKey);
+        result.ShouldNotHaveValidationErrorFor(x => x.SigningKey);
+    }
+
+    [Fact]
+    public void Validate_NullSigningKey_Passes()
+    {
+        // Binding leaves the key null when the configuration section omits it entirely; like the
+        // empty string, that is the generation-mode shape and must pass.
+        var settings = CreateValidSettings();
+        settings.SigningKey = null!;
+
+        var result = this.validator.TestValidate(settings);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.SigningKey);
     }
 
     [Fact]

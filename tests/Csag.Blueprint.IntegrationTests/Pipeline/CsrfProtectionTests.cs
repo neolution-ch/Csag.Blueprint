@@ -30,7 +30,7 @@ public sealed class CsrfProtectionTests(AppFixture app) : IntegrationTestBase(ap
 
         using var response = await client.DeleteAsync(new Uri($"/api/vehicles/{Guid.NewGuid()}", UriKind.Relative), ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Forbidden);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Forbidden, cancellationToken: ct);
 
         var body = await response.Content.ReadAsStringAsync(ct);
         using var json = JsonDocument.Parse(body);
@@ -53,7 +53,7 @@ public sealed class CsrfProtectionTests(AppFixture app) : IntegrationTestBase(ap
         using var response = await this.App.ManagerAClient.DeleteAsync(
             new Uri($"/api/vehicles/{Guid.NewGuid()}", UriKind.Relative), ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, cancellationToken: ct);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class CsrfProtectionTests(AppFixture app) : IntegrationTestBase(ap
         // GET is a safe method and must not require a CSRF token.
         using var response = await client.GetAsync(VehiclesUri, ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class CsrfProtectionTests(AppFixture app) : IntegrationTestBase(ap
 
         using var response = await client.DeleteAsync(new Uri($"/api/vehicles/{Guid.NewGuid()}", UriKind.Relative), ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Forbidden);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Forbidden, cancellationToken: ct);
     }
 
     [Fact]
@@ -93,7 +93,7 @@ public sealed class CsrfProtectionTests(AppFixture app) : IntegrationTestBase(ap
 
         // Authentication rejects the request before CSRF validation is ever reached: CSRF
         // protection only applies to cookie-authenticated callers.
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
     }
 
     /// <summary>

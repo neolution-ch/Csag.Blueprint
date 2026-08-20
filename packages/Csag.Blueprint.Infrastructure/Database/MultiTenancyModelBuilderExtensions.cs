@@ -15,6 +15,8 @@ public static class MultiTenancyModelBuilderExtensions
     /// Configures multi-tenancy for all entities implementing <see cref="IMustHaveTenant"/>.
     /// Applies global query filters tied to the <paramref name="context"/> instance and creates
     /// indexes on <c>TenantId</c>. Also establishes foreign key relationships to the tenant table.
+    /// The filter fails closed: when no ambient tenant is set, tenant-owned queries return no rows;
+    /// use <c>IgnoreQueryFilters()</c> for deliberate cross-tenant access.
     /// </summary>
     /// <typeparam name="TTenant">The concrete tenant type (must derive from <see cref="BlueprintTenant"/>).</typeparam>
     /// <typeparam name="TContext">The <see cref="DbContext"/> type that exposes <c>CurrentTenantId</c>.</typeparam>
@@ -87,11 +89,17 @@ public static class MultiTenancyModelBuilderExtensions
 
         var contextConstant = Expression.Constant(context, contextType);
         var currentTenantId = Expression.Property(contextConstant, currentTenantIdProp);
-        var hasValueProperty = Expression.Property(currentTenantId, "HasValue");
-        var currentTenantIdValue = Expression.Property(currentTenantId, "Value");
 
-        var equalExpression = Expression.Equal(tenantIdProperty, currentTenantIdValue);
-        var filterExpression = Expression.AndAlso(hasValueProperty, equalExpression);
+        // Build "e => (Guid?)e.TenantId == context.CurrentTenantId", keeping the comparison in the
+        // lifted nullable form. EF funcletizes the right side into a nullable query parameter, so
+        // with no ambient tenant the filter compares TenantId against NULL — which matches no rows.
+        // That makes the no-tenant case fail closed with a deterministic empty result; callers that
+        // really need cross-tenant access must opt out via IgnoreQueryFilters(). Accessing ".Value"
+        // here instead would be funcletized eagerly and throw at query time whenever the ambient
+        // tenant is missing. The Convert is required because expression trees do not lift operand
+        // types the way the C# compiler does.
+        var liftedTenantId = Expression.Convert(tenantIdProperty, currentTenantIdProp.PropertyType);
+        var filterExpression = Expression.Equal(liftedTenantId, currentTenantId);
         var lambda = Expression.Lambda(filterExpression, parameter);
 
         modelBuilder.Entity(entityType).HasQueryFilter(lambda);

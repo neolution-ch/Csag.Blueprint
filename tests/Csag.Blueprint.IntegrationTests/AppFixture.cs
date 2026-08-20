@@ -103,10 +103,10 @@ public class AppFixture : AppFixture<Program>, IResettableFixture
     /// </summary>
     /// <param name="tenantId">
     /// Ambient tenant to set for the scope. Required for touching tenant-owned sets such as
-    /// <see cref="TestDbContext.Vehicles"/> — querying them with no ambient tenant throws; when
-    /// passing null, use <c>IgnoreQueryFilters()</c> deliberately on tenant-owned sets. The
-    /// ambient value is scoped to the calling test's async context, so it cannot leak into other
-    /// tests.
+    /// <see cref="TestDbContext.Vehicles"/> — the tenant query filter fails closed, so querying
+    /// them with no ambient tenant matches no rows; when passing null, use
+    /// <c>IgnoreQueryFilters()</c> deliberately on tenant-owned sets. The ambient value is scoped
+    /// to the calling test's async context, so it cannot leak into other tests.
     /// </param>
     /// <returns>A disposable scope owning the context.</returns>
     public TestDbContextScope<TestDbContext> CreateDbContextScope(Guid? tenantId = null)

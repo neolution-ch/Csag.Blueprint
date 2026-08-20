@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.SourceGenerators.UnitTests;
 
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Reflection;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -66,7 +67,7 @@ public sealed class TranslationKeysGeneratorTests
     private const string IneligibleMembersSource = """
         namespace TestApp.Translations;
 
-        public static class TranslationDefaults
+        public static partial class TranslationDefaults
         {
             public const string Kept = "kept";
             public const int AnswerNumber = 42;
@@ -104,7 +105,7 @@ public sealed class TranslationKeysGeneratorTests
     private const string DuplicateKeyAcrossNamespacesSource = """
         namespace First
         {
-            public static class TranslationDefaults
+            public static partial class TranslationDefaults
             {
                 public const string Greeting = "Hello";
             }
@@ -112,7 +113,7 @@ public sealed class TranslationKeysGeneratorTests
 
         namespace Second
         {
-            public static class TranslationDefaults
+            public static partial class TranslationDefaults
             {
                 public const string Greeting = "Goodbye";
             }
@@ -131,9 +132,10 @@ public sealed class TranslationKeysGeneratorTests
     private const string UnsortedKeysSource = """
         namespace TestApp.Translations;
 
-        public static class TranslationDefaults
+        public static partial class TranslationDefaults
         {
             public const string Zebra = "Z";
+            public const string Ärger = "trouble";
             public const string Apple = "A";
 
             public static class Middle
@@ -144,6 +146,15 @@ public sealed class TranslationKeysGeneratorTests
         """;
 
     private const string GlobalNamespaceSource = """
+        public static partial class TranslationDefaults
+        {
+            public const string Key = "value";
+        }
+        """;
+
+    private const string NonPartialClassSource = """
+        namespace TestApp.Translations;
+
         public static class TranslationDefaults
         {
             public const string Key = "value";
@@ -299,19 +310,20 @@ public sealed class TranslationKeysGeneratorTests
     {
         // Act — each partial declaration resolves to the same symbol, so every entry is collected
         // once per declaration; the generator must fold them back into a single entry per key.
-        var (runResult, _, _) = RunGenerator(PartialDeclarationsSource);
+        var (runResult, _, generatorDiagnostics) = RunGenerator(PartialDeclarationsSource);
 
-        // Assert
+        // Assert — partial declarations of one class are not "multiple classes", so no diagnostic.
+        generatorDiagnostics.ShouldBeEmpty();
         var defaults = GetGeneratedText(runResult, "TranslationDefaults.g.cs");
         CountOccurrences(defaults, """["First.Alpha"]""").ShouldBe(1);
         CountOccurrences(defaults, """["Second.Beta"]""").ShouldBe(1);
     }
 
     [Fact]
-    public void RunGenerator_WithSameKeyInMultipleClasses_FirstClassWins()
+    public void RunGenerator_WithSameKeyInMultipleClasses_FirstClassWinsAndReportsWarning()
     {
         // Act — two unrelated TranslationDefaults classes in different namespaces produce the same key.
-        var (runResult, _, _) = RunGenerator(DuplicateKeyAcrossNamespacesSource);
+        var (runResult, _, generatorDiagnostics) = RunGenerator(DuplicateKeyAcrossNamespacesSource);
 
         // Assert — the entry from the class that appears first in source order wins, and the output
         // is emitted into that class's namespace.
@@ -320,6 +332,16 @@ public sealed class TranslationKeysGeneratorTests
         defaults.ShouldContain("""["Greeting"] = "Hello",""");
         defaults.ShouldNotContain("Goodbye");
         CountOccurrences(defaults, """["Greeting"]""").ShouldBe(1);
+
+        // The merge is surfaced as a warning that names both classes and carries both locations.
+        var diagnostic = generatorDiagnostics.ShouldHaveSingleItem();
+        diagnostic.Id.ShouldBe("CSAGGEN002");
+        diagnostic.Severity.ShouldBe(DiagnosticSeverity.Warning);
+        var message = diagnostic.GetMessage(CultureInfo.InvariantCulture);
+        message.ShouldContain("First.TranslationDefaults");
+        message.ShouldContain("Second.TranslationDefaults");
+        diagnostic.Location.ShouldNotBe(Location.None);
+        diagnostic.AdditionalLocations.ShouldHaveSingleItem();
     }
 
     [Fact]
@@ -340,19 +362,23 @@ public sealed class TranslationKeysGeneratorTests
     }
 
     [Fact]
-    public void RunGenerator_WithUnsortedInput_OrdersDictionaryEntriesByKey()
+    public void RunGenerator_WithUnsortedInput_OrdersDictionaryEntriesByOrdinalKey()
     {
         // Act
         var (runResult, _, _) = RunGenerator(UnsortedKeysSource);
 
-        // Assert — entries are emitted sorted by full key, not in declaration order.
+        // Assert — entries are emitted sorted by full key using ordinal comparison, not in
+        // declaration order: "Ärger" (U+00C4) sorts after every ASCII key, whereas a
+        // culture-sensitive comparison would place it right after "Apple".
         var defaults = GetGeneratedText(runResult, "TranslationDefaults.g.cs");
         var appleIndex = defaults.IndexOf("""["Apple"]""", StringComparison.Ordinal);
         var middleIndex = defaults.IndexOf("""["Middle.Item"]""", StringComparison.Ordinal);
         var zebraIndex = defaults.IndexOf("""["Zebra"]""", StringComparison.Ordinal);
+        var aergerIndex = defaults.IndexOf("""["Ärger"]""", StringComparison.Ordinal);
         appleIndex.ShouldBeGreaterThanOrEqualTo(0);
         middleIndex.ShouldBeGreaterThan(appleIndex);
         zebraIndex.ShouldBeGreaterThan(middleIndex);
+        aergerIndex.ShouldBeGreaterThan(zebraIndex);
     }
 
     [Fact]
@@ -378,18 +404,45 @@ public sealed class TranslationKeysGeneratorTests
     }
 
     [Fact]
-    public void RunGenerator_WithClassInGlobalNamespace_EmitsInvalidNamespaceDeclaration()
+    public void RunGenerator_WithClassInGlobalNamespace_EmitsCompilableSourcesWithoutNamespaceDeclaration()
     {
         // Act — a TranslationDefaults class declared outside any namespace.
-        var (runResult, outputCompilation, _) = RunGenerator(GlobalNamespaceSource);
+        var (runResult, outputCompilation, generatorDiagnostics) = RunGenerator(GlobalNamespaceSource);
 
-        // Assert — the generator emits the display string of the global namespace verbatim, which is
-        // not a legal namespace name, so the generated sources do not compile.
+        // Assert — the generated sources omit the namespace declaration entirely so the types land
+        // in the global namespace alongside the input class, and the output compiles cleanly.
+        generatorDiagnostics.ShouldBeEmpty();
         runResult.GeneratedTrees.Length.ShouldBe(3);
         var defaults = GetGeneratedText(runResult, "TranslationDefaults.g.cs");
-        defaults.ShouldContain("namespace <global namespace>;");
+        defaults.ShouldNotContain("namespace");
         outputCompilation.GetDiagnostics(TestContext.Current.CancellationToken)
-            .ShouldContain(d => d.Severity == DiagnosticSeverity.Error);
+            .Where(d => d.Severity >= DiagnosticSeverity.Warning)
+            .ShouldBeEmpty();
+
+        var assembly = EmitAndLoad(outputCompilation);
+        var defaultsType = assembly.GetType("TranslationDefaults").ShouldNotBeNull();
+        var all = (IReadOnlyDictionary<string, string>)defaultsType.GetProperty("All").ShouldNotBeNull().GetValue(null)!;
+        all["Key"].ShouldBe("value");
+        assembly.GetType("TranslationKeys").ShouldNotBeNull();
+        assembly.GetType("TranslationValues").ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void RunGenerator_WithNonPartialClass_ReportsWarningAndSkipsGeneration()
+    {
+        // Act — a TranslationDefaults class with translation entries but no partial modifier, which
+        // the generated registry (a partial declaration of the same class) could not merge with.
+        var (runResult, _, generatorDiagnostics) = RunGenerator(NonPartialClassSource);
+
+        // Assert — the class is skipped entirely and the author is pointed at the missing modifier.
+        runResult.GeneratedTrees.ShouldBeEmpty();
+        var diagnostic = generatorDiagnostics.ShouldHaveSingleItem();
+        diagnostic.Id.ShouldBe("CSAGGEN001");
+        diagnostic.Severity.ShouldBe(DiagnosticSeverity.Warning);
+        var message = diagnostic.GetMessage(CultureInfo.InvariantCulture);
+        message.ShouldContain("TestApp.Translations.TranslationDefaults");
+        message.ShouldContain("partial");
+        diagnostic.Location.ShouldNotBe(Location.None);
     }
 
     private static (GeneratorDriverRunResult RunResult, Compilation OutputCompilation, ImmutableArray<Diagnostic> GeneratorDiagnostics) RunGenerator(string source)

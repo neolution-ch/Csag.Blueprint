@@ -22,13 +22,15 @@ public sealed class MigrationBuilderExtensionsTests
         // Act
         migrationBuilder.SeedTranslation("Validation.EmailRequired", "de-CH", "E-Mail ist erforderlich");
 
-        // Assert — one operation containing both branches of the UPSERT against the translations table.
+        // Assert — one operation containing both branches of the UPSERT against the translations
+        // table; the mixed-case input language code is stored in canonical lowercase so the row
+        // matches what the translation provider looks up.
         var sql = migrationBuilder.Operations.ShouldHaveSingleItem().ShouldBeOfType<SqlOperation>().Sql;
-        sql.ShouldContain("IF EXISTS (SELECT 1 FROM [BlueprintTranslations] WHERE [Key] = 'Validation.EmailRequired' AND [LanguageCode] = 'de-CH')");
+        sql.ShouldContain("IF EXISTS (SELECT 1 FROM [BlueprintTranslations] WHERE [Key] = 'Validation.EmailRequired' AND [LanguageCode] = 'de-ch')");
         sql.ShouldContain("UPDATE [BlueprintTranslations]");
         sql.ShouldContain("SET [Value] = 'E-Mail ist erforderlich', [UpdatedAt] = GETUTCDATE()");
         sql.ShouldContain("INSERT INTO [BlueprintTranslations] ([Key], [LanguageCode], [Value], [CreatedAt])");
-        sql.ShouldContain("VALUES ('Validation.EmailRequired', 'de-CH', 'E-Mail ist erforderlich', GETUTCDATE())");
+        sql.ShouldContain("VALUES ('Validation.EmailRequired', 'de-ch', 'E-Mail ist erforderlich', GETUTCDATE())");
     }
 
     [Fact]
@@ -43,7 +45,7 @@ public sealed class MigrationBuilderExtensionsTests
         // Assert — every quote is doubled; no unescaped original remains to terminate the literal early.
         var sql = migrationBuilder.Operations.ShouldHaveSingleItem().ShouldBeOfType<SqlOperation>().Sql;
         sql.ShouldContain("'Errors.L''Etat'");
-        sql.ShouldContain("'d''-CH'");
+        sql.ShouldContain("'d''-ch'");
         sql.ShouldContain("'L''état de l''art'");
         sql.ShouldNotContain("'L'état");
     }
@@ -79,9 +81,9 @@ public sealed class MigrationBuilderExtensionsTests
         migrationBuilder.Operations.Count.ShouldBe(2);
         var first = migrationBuilder.Operations[0].ShouldBeOfType<SqlOperation>().Sql;
         var second = migrationBuilder.Operations[1].ShouldBeOfType<SqlOperation>().Sql;
-        first.ShouldContain("'de-CH'");
+        first.ShouldContain("'de-ch'");
         first.ShouldContain("'Rechnung nicht gefunden'");
-        second.ShouldContain("'fr-CH'");
+        second.ShouldContain("'fr-ch'");
         second.ShouldContain("'Facture introuvable'");
     }
 

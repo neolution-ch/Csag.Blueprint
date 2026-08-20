@@ -5,7 +5,8 @@ using FluentValidation.TestHelper;
 
 /// <summary>
 /// Unit tests for <see cref="LocalizationOptionsValidator"/>, covering the default language,
-/// supported languages list, and the containment rule between them.
+/// supported languages list, the containment rule between them, and the L1 translation cache
+/// expiration.
 /// </summary>
 public sealed class LocalizationOptionsValidatorTests
 {
@@ -71,14 +72,32 @@ public sealed class LocalizationOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_NullSupportedLanguages_Throws()
+    public void Validate_NullSupportedLanguages_FailsWithNotEmptyError()
     {
-        // Pins current behavior: the containment rule dereferences SupportedLanguages without a null
-        // guard, so a null list throws instead of surfacing the NotEmpty validation error.
+        // A null list is a validation failure in its own right; the containment rule is skipped
+        // because there is no list to search.
         var options = CreateValidOptions();
         options.SupportedLanguages = null!;
 
-        Should.Throw<NullReferenceException>(() => this.validator.TestValidate(options));
+        var result = this.validator.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.SupportedLanguages)
+            .WithErrorMessage("At least one supported language must be specified");
+        result.Errors.ShouldNotContain(error => error.ErrorMessage == "Default language must be included in the supported languages list");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Validate_NonPositiveTranslationCacheL1Expiration_Fails(int expirationMinutes)
+    {
+        var options = CreateValidOptions();
+        options.TranslationCacheL1ExpirationMinutes = expirationMinutes;
+
+        var result = this.validator.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.TranslationCacheL1ExpirationMinutes)
+            .WithErrorMessage("TranslationCacheL1ExpirationMinutes must be greater than 0");
     }
 
     private static LocalizationOptions CreateValidOptions()

@@ -236,15 +236,18 @@ public sealed class SecuritySettingsValidatorTests
     }
 
     [Fact]
-    public void Validate_DefaultCorsPolicySetWithNullCorsPolicies_Throws()
+    public void Validate_DefaultCorsPolicySetWithNullCorsPolicies_FailsWithNullPoliciesError()
     {
-        // Pins current behavior: the DefaultCorsPolicy existence rule dereferences CorsPolicies without
-        // a null guard, so a null dictionary combined with a configured default policy throws instead of
-        // surfacing the "CorsPolicies cannot be null" validation error.
+        // A null dictionary is a validation failure in its own right; the DefaultCorsPolicy existence
+        // check is skipped because there is no dictionary to look in.
         var settings = CreateValidSettings();
         settings.CorsPolicies = null!;
 
-        Should.Throw<NullReferenceException>(() => this.validator.TestValidate(settings));
+        var result = this.validator.TestValidate(settings);
+
+        result.ShouldHaveValidationErrorFor(x => x.CorsPolicies)
+            .WithErrorMessage("CorsPolicies cannot be null");
+        result.ShouldNotHaveValidationErrorFor(x => x.DefaultCorsPolicy);
     }
 
     private static CorsSettings CreateValidCorsSettings()

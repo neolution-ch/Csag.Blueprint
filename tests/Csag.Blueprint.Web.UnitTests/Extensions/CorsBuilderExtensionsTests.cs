@@ -13,6 +13,7 @@ using Microsoft.Extensions.Options;
 /// real <see cref="WebApplicationBuilder"/>, resolves <see cref="CorsOptions"/> from the built host and
 /// asserts the named <see cref="CorsPolicy"/> that the semicolon-delimited settings produced:
 /// origin/method/header splitting, wildcard handling, credentials, and the preflight cache toggle.
+/// Wildcard misconfigurations are asserted to fail at registration time, before any host is built.
 /// </summary>
 public sealed class CorsBuilderExtensionsTests
 {
@@ -39,16 +40,22 @@ public sealed class CorsBuilderExtensionsTests
     }
 
     [Fact]
-    public async Task AddConfiguredCors_WildcardAmongOtherOrigins_IsPassedThroughLiterallyAsync()
+    public void AddConfiguredCors_WildcardAmongOtherOrigins_ThrowsAtRegistration()
     {
-        // The any-origin branch only fires for a lone "*"; mixed with explicit origins the wildcard is
-        // handed to WithOrigins as-is (which CorsPolicy still reports as AllowAnyOrigin).
-        var policy = await BuildPolicyAsync(new CorsSettings
+        // The wildcard only means "any origin" when it stands alone; mixed with explicit origins it
+        // would become the literal origin "*" (which no browser ever sends) while CorsPolicy reports
+        // AllowAnyOrigin. Registration rejects the ambiguity outright.
+        var securitySettings = new SecuritySettings();
+        securitySettings.CorsPolicies[PolicyName] = new CorsSettings
         {
             AllowedOrigins = "*;https://app.example.com",
-        });
+        };
+        var builder = WebApplication.CreateBuilder();
 
-        policy.Origins.ShouldBe(new[] { "*", "https://app.example.com" });
+        var exception = Should.Throw<InvalidOperationException>(() => builder.AddConfiguredCors(securitySettings));
+
+        exception.Message.ShouldContain(PolicyName);
+        exception.Message.ShouldContain("wildcard");
     }
 
     [Fact]
@@ -131,23 +138,23 @@ public sealed class CorsBuilderExtensionsTests
     }
 
     [Fact]
-    public async Task AddConfiguredCors_WildcardOriginWithCredentials_FailsWhenOptionsAreResolvedAsync()
+    public void AddConfiguredCors_WildcardOriginWithCredentials_ThrowsAtRegistration()
     {
-        // The CORS protocol forbids any-origin + credentials; CorsPolicyBuilder.Build enforces that.
-        // The policies are built when CorsOptions is first resolved (options pattern), so that is where
-        // the misconfiguration surfaces — not at AddConfiguredCors time.
+        // The CORS protocol forbids any-origin + credentials. The combination is validated up front,
+        // at AddConfiguredCors time, so the misconfiguration cannot lie dormant until CorsOptions is
+        // first resolved.
         var securitySettings = new SecuritySettings();
         securitySettings.CorsPolicies[PolicyName] = new CorsSettings
         {
             AllowedOrigins = "*",
             AllowCredentials = true,
         };
-
         var builder = WebApplication.CreateBuilder();
-        builder.AddConfiguredCors(securitySettings);
-        await using var app = builder.Build();
 
-        Should.Throw<InvalidOperationException>(() => app.Services.GetRequiredService<IOptions<CorsOptions>>().Value);
+        var exception = Should.Throw<InvalidOperationException>(() => builder.AddConfiguredCors(securitySettings));
+
+        exception.Message.ShouldContain(PolicyName);
+        exception.Message.ShouldContain("AllowCredentials");
     }
 
     [Fact]

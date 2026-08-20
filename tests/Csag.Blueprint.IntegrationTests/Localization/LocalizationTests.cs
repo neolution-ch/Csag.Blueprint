@@ -116,7 +116,7 @@ public sealed class LocalizationTests(AppFixture app) : IntegrationTestBase(app)
                 Email = SeedData.ViewerAEmail,
                 Password = SeedData.DefaultPassword,
             });
-        await loginRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await loginRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         // The header asks for English, but the session claim must win.
         client.DefaultRequestHeaders.AcceptLanguage.Clear();
@@ -142,7 +142,7 @@ public sealed class LocalizationTests(AppFixture app) : IntegrationTestBase(app)
                 Email = SeedData.ManagerAEmail,
                 Password = SeedData.DefaultPassword,
             });
-        await loginRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await loginRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         client.DefaultRequestHeaders.AcceptLanguage.Clear();
         client.DefaultRequestHeaders.AcceptLanguage.Add(new StringWithQualityHeaderValue("de"));
@@ -203,7 +203,7 @@ public sealed class LocalizationTests(AppFixture app) : IntegrationTestBase(app)
     private static async Task<GreetingResponse> GetGreetingAsync(HttpClient client, CancellationToken ct)
     {
         var response = await client.GetAsync(GreetingUri, ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         var greeting = await response.Content.ReadFromJsonAsync<GreetingResponse>(BlueprintJsonOptions.Default, ct);
         greeting.ShouldNotBeNull();

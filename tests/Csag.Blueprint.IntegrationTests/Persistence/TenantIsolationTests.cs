@@ -55,7 +55,7 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
 
         // Assert — the query filter hides the row, so the endpoint reports 404 rather than 403,
         // leaking nothing about the row's existence in another tenant.
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Tenant A should not be able to see Tenant B's vehicle");
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Tenant A should not be able to see Tenant B's vehicle", ct);
     }
 
     [Fact]
@@ -70,7 +70,7 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
         var response = await this.App.ManagerBClient.GetAsync(VehicleUri(tenantBVehicleId), ct);
 
         // Assert — Tenant B can access its own data.
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
         var vehicle = await response.Content.ReadFromJsonAsync<VehicleResponse>(BlueprintJsonOptions.Default, ct);
         vehicle.ShouldNotBeNull();
         vehicle.Id.ShouldBe(tenantBVehicleId);
@@ -88,11 +88,11 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
         var deleteResponse = await this.App.ManagerAClient.DeleteAsync(VehicleUri(tenantBVehicleId), ct);
 
         // Assert — the query filter prevents access, so the endpoint reports 404.
-        await deleteResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Tenant A should not be able to delete Tenant B's vehicle");
+        await deleteResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Tenant A should not be able to delete Tenant B's vehicle", ct);
 
         // Assert — Tenant B's vehicle still exists.
         var verifyResponse = await this.App.ManagerBClient.GetAsync(VehicleUri(tenantBVehicleId), ct);
-        await verifyResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "Tenant B's vehicle should still exist");
+        await verifyResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "Tenant B's vehicle should still exist", ct);
     }
 
     [Fact]
@@ -115,7 +115,7 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
             BlueprintJsonOptions.Default,
             ct);
 
-        await createResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.Created);
+        await createResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.Created, cancellationToken: ct);
         var created = await createResponse.Content.ReadFromJsonAsync<VehicleResponse>(BlueprintJsonOptions.Default, ct);
         created.ShouldNotBeNull();
 
@@ -123,11 +123,11 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
         var deleteResponse = await this.App.ManagerBClient.DeleteAsync(VehicleUri(created.Id), ct);
 
         // Assert — Tenant B can delete its own data.
-        await deleteResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NoContent);
+        await deleteResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NoContent, cancellationToken: ct);
 
         // Assert — the vehicle is actually gone.
         var verifyResponse = await this.App.ManagerBClient.GetAsync(VehicleUri(created.Id), ct);
-        await verifyResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Deleted vehicle should not be found");
+        await verifyResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Deleted vehicle should not be found", ct);
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
             BlueprintJsonOptions.Default,
             ct);
 
-        await createResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.Created);
+        await createResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.Created, cancellationToken: ct);
         var created = await createResponse.Content.ReadFromJsonAsync<VehicleResponse>(BlueprintJsonOptions.Default, ct);
         created.ShouldNotBeNull();
 
@@ -164,11 +164,11 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
 
         // Assert — Tenant A can read the new vehicle back.
         var readResponse = await this.App.ManagerAClient.GetAsync(VehicleUri(created.Id), ct);
-        await readResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "Tenant A should see its own newly created vehicle");
+        await readResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "Tenant A should see its own newly created vehicle", ct);
 
         // Assert — Tenant B cannot see the new vehicle.
         var crossTenantResponse = await this.App.ManagerBClient.GetAsync(VehicleUri(created.Id), ct);
-        await crossTenantResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Tenant B should not see Tenant A's newly created vehicle");
+        await crossTenantResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "Tenant B should not see Tenant A's newly created vehicle", ct);
 
         // Assert — Tenant B's vehicle count is unchanged.
         var tenantBVehicles = await ListVehiclesAsync(this.App.ManagerBClient, ct);
@@ -180,7 +180,7 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
     private static async Task<List<VehicleResponse>> ListVehiclesAsync(HttpClient client, CancellationToken ct)
     {
         var response = await client.GetAsync(VehiclesUri, ct);
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
 
         var vehicles = await response.Content.ReadFromJsonAsync<List<VehicleResponse>>(BlueprintJsonOptions.Default, ct);
         vehicles.ShouldNotBeNull();

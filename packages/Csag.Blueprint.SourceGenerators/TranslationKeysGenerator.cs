@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 
@@ -18,6 +20,35 @@ namespace Csag.Blueprint.SourceGenerators
     public class TranslationKeysGenerator : IIncrementalGenerator
     {
         private const string TranslationKeysClassName = "TranslationDefaults";
+
+        private const string DiagnosticCategory = "CsagBlueprint.SourceGenerators";
+
+        /// <summary>
+        /// The generated registry is a partial declaration of the user's <c>TranslationDefaults</c>
+        /// class, so a non-partial declaration would make the consuming compilation fail with CS0260.
+        /// The generator skips such classes and points the author at the missing modifier instead.
+        /// </summary>
+        private static readonly DiagnosticDescriptor NonPartialClassDescriptor = new DiagnosticDescriptor(
+            id: "CSAGGEN001",
+            title: "TranslationDefaults class must be partial",
+            messageFormat: "The class '{0}' must be declared partial so the generated translation registry can extend it; translation key generation was skipped for this class",
+            category: DiagnosticCategory,
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
+
+        /// <summary>
+        /// Entries from every <c>TranslationDefaults</c> class in the compilation are merged into a
+        /// single registry, with the class that appears first in source order winning the target
+        /// namespace and any duplicate keys. That merge is easy to trigger accidentally, so it is
+        /// surfaced as a warning naming every participating class.
+        /// </summary>
+        private static readonly DiagnosticDescriptor MultipleClassesDescriptor = new DiagnosticDescriptor(
+            id: "CSAGGEN002",
+            title: "Multiple TranslationDefaults classes are merged",
+            messageFormat: "Multiple TranslationDefaults classes were found ({0}); their entries are merged into a single registry where the first class in source order determines the namespace and wins duplicate keys",
+            category: DiagnosticCategory,
+            defaultSeverity: DiagnosticSeverity.Warning,
+            isEnabledByDefault: true);
 
         /// <inheritdoc/>
         public void Initialize(IncrementalGeneratorInitializationContext context)
@@ -50,8 +81,17 @@ namespace Csag.Blueprint.SourceGenerators
                 return null;
             }
 
+            // The global namespace has no legal declaration syntax, so it is represented as an
+            // empty string and the generated sources simply omit the namespace declaration.
+            var namespaceName = symbol.ContainingNamespace.IsGlobalNamespace
+                ? string.Empty
+                : symbol.ContainingNamespace.ToDisplayString();
+
             return new TranslationKeysInfo(
-                symbol.ContainingNamespace.ToDisplayString(),
+                namespaceName,
+                symbol.ToDisplayString(),
+                classDeclaration.Identifier.GetLocation(),
+                classDeclaration.Modifiers.Any(SyntaxKind.PartialKeyword),
                 entries);
         }
 
@@ -78,14 +118,33 @@ namespace Csag.Blueprint.SourceGenerators
 
         private static void GenerateSource(SourceProductionContext context, ImmutableArray<TranslationKeysInfo?> classes)
         {
-            var allEntries = new Dictionary<string, TranslationEntry>();
+            var allEntries = new Dictionary<string, TranslationEntry>(StringComparer.Ordinal);
             string? namespaceName = null;
+
+            // Partial declarations of the same class all resolve to the same symbol and therefore
+            // share a namespace, so tracking one class info per namespace distinguishes genuinely
+            // separate TranslationDefaults classes from partial declarations of a single one.
+            var distinctClasses = new List<TranslationKeysInfo>();
 
             foreach (var classInfo in classes)
             {
                 if (classInfo == null)
                 {
                     continue;
+                }
+
+                if (!classInfo.IsPartial)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        NonPartialClassDescriptor,
+                        classInfo.ClassLocation,
+                        classInfo.ClassDisplayName));
+                    continue;
+                }
+
+                if (!distinctClasses.Any(c => string.Equals(c.Namespace, classInfo.Namespace, StringComparison.Ordinal)))
+                {
+                    distinctClasses.Add(classInfo);
                 }
 
                 namespaceName ??= classInfo.Namespace;
@@ -100,19 +159,28 @@ namespace Csag.Blueprint.SourceGenerators
                 }
             }
 
+            if (distinctClasses.Count > 1)
+            {
+                var classNames = string.Join(", ", distinctClasses.Select(c => "'" + c.ClassDisplayName + "'"));
+                context.ReportDiagnostic(Diagnostic.Create(
+                    MultipleClassesDescriptor,
+                    distinctClasses[0].ClassLocation,
+                    distinctClasses.Skip(1).Select(c => c.ClassLocation),
+                    classNames));
+            }
+
             if (namespaceName == null || allEntries.Count == 0)
             {
                 return;
             }
 
-            var sortedEntries = allEntries.Values.OrderBy(e => e.Key).ToList();
+            var sortedEntries = allEntries.Values.OrderBy(e => e.Key, StringComparer.Ordinal).ToList();
 
             var sb = new StringBuilder();
             sb.AppendLine("// <auto-generated/>");
             sb.AppendLine("#nullable enable");
             sb.AppendLine();
-            sb.AppendLine("namespace " + namespaceName + ";");
-            sb.AppendLine();
+            AppendNamespaceDeclaration(sb, namespaceName);
             sb.AppendLine("/// <summary>");
             sb.AppendLine("/// Auto-generated registry of all translation keys and their English default values.");
             sb.AppendLine("/// </summary>");
@@ -139,6 +207,20 @@ namespace Csag.Blueprint.SourceGenerators
 
             GenerateTranslationKeyPathsSource(context, namespaceName, sortedEntries);
             GenerateTranslationValuesSource(context, namespaceName, sortedEntries);
+        }
+
+        private static void AppendNamespaceDeclaration(StringBuilder sb, string namespaceName)
+        {
+            // An empty name means the TranslationDefaults class lives in the global namespace,
+            // which cannot be declared explicitly; the generated types stay in the global
+            // namespace by omitting the declaration entirely.
+            if (namespaceName.Length == 0)
+            {
+                return;
+            }
+
+            sb.AppendLine("namespace " + namespaceName + ";");
+            sb.AppendLine();
         }
 
         private static string EscapeString(string value)
@@ -193,8 +275,7 @@ namespace Csag.Blueprint.SourceGenerators
             sb.AppendLine("// <auto-generated/>");
             sb.AppendLine("#nullable enable");
             sb.AppendLine();
-            sb.AppendLine("namespace " + namespaceName + ";");
-            sb.AppendLine();
+            AppendNamespaceDeclaration(sb, namespaceName);
             sb.AppendLine("/// <summary>");
             sb.AppendLine("/// Auto-generated key path constants mirroring the <see cref=\"TranslationDefaults\"/> hierarchy.");
             sb.AppendLine("/// Pass these to <c>IStringLocalizer</c> for database-backed translation lookup.");
@@ -206,14 +287,14 @@ namespace Csag.Blueprint.SourceGenerators
             sb.AppendLine("public static class TranslationKeys");
             sb.AppendLine("{");
 
-            foreach (var leaf in root.Leaves.OrderBy(l => l.PropertyName))
+            foreach (var leaf in root.Leaves.OrderBy(l => l.PropertyName, StringComparer.Ordinal))
             {
                 var escapedKey = EscapeString(leaf.FullKey);
                 sb.AppendLine("    public const string " + leaf.PropertyName + " = \"" + escapedKey + "\";");
                 sb.AppendLine();
             }
 
-            foreach (var child in root.Children.OrderBy(c => c.Key))
+            foreach (var child in root.Children.OrderBy(c => c.Key, StringComparer.Ordinal))
             {
                 GenerateKeyPathsNestedClass(sb, child.Key, child.Value, "    ");
             }
@@ -228,14 +309,14 @@ namespace Csag.Blueprint.SourceGenerators
             sb.AppendLine(indent + "public static class " + name);
             sb.AppendLine(indent + "{");
 
-            foreach (var leaf in node.Leaves.OrderBy(l => l.PropertyName))
+            foreach (var leaf in node.Leaves.OrderBy(l => l.PropertyName, StringComparer.Ordinal))
             {
                 var escapedKey = EscapeString(leaf.FullKey);
                 sb.AppendLine(indent + "    public const string " + leaf.PropertyName + " = \"" + escapedKey + "\";");
                 sb.AppendLine();
             }
 
-            foreach (var child in node.Children.OrderBy(c => c.Key))
+            foreach (var child in node.Children.OrderBy(c => c.Key, StringComparer.Ordinal))
             {
                 GenerateKeyPathsNestedClass(sb, child.Key, child.Value, indent + "    ");
             }
@@ -252,8 +333,7 @@ namespace Csag.Blueprint.SourceGenerators
             sb.AppendLine("// <auto-generated/>");
             sb.AppendLine("#nullable enable");
             sb.AppendLine();
-            sb.AppendLine("namespace " + namespaceName + ";");
-            sb.AppendLine();
+            AppendNamespaceDeclaration(sb, namespaceName);
             sb.AppendLine("/// <summary>");
             sb.AppendLine("/// Strongly-typed translation values DTO mirroring the <c>TranslationDefaults</c> hierarchy.");
             sb.AppendLine("/// Generated automatically by the <c>TranslationKeysGenerator</c>.");
@@ -262,7 +342,7 @@ namespace Csag.Blueprint.SourceGenerators
             sb.AppendLine("public sealed class TranslationValues");
             sb.AppendLine("{");
 
-            foreach (var child in root.Children.OrderBy(c => c.Key))
+            foreach (var child in root.Children.OrderBy(c => c.Key, StringComparer.Ordinal))
             {
                 var typeName = child.Key + "Values";
                 sb.AppendLine("    /// <summary>");
@@ -273,7 +353,7 @@ namespace Csag.Blueprint.SourceGenerators
                 sb.AppendLine();
             }
 
-            foreach (var leaf in root.Leaves.OrderBy(l => l.PropertyName))
+            foreach (var leaf in root.Leaves.OrderBy(l => l.PropertyName, StringComparer.Ordinal))
             {
                 sb.AppendLine("    /// <summary>");
                 sb.AppendLine("    /// Gets or sets the translated value for " + leaf.PropertyName + ".");
@@ -300,7 +380,7 @@ namespace Csag.Blueprint.SourceGenerators
             sb.AppendLine("    }");
             sb.AppendLine();
 
-            foreach (var child in root.Children.OrderBy(c => c.Key))
+            foreach (var child in root.Children.OrderBy(c => c.Key, StringComparer.Ordinal))
             {
                 GenerateNestedClass(sb, child.Key, child.Value, "    ");
             }
@@ -319,7 +399,7 @@ namespace Csag.Blueprint.SourceGenerators
             sb.AppendLine(indent + "public sealed class " + typeName);
             sb.AppendLine(indent + "{");
 
-            foreach (var child in node.Children.OrderBy(c => c.Key))
+            foreach (var child in node.Children.OrderBy(c => c.Key, StringComparer.Ordinal))
             {
                 var childTypeName = child.Key + "Values";
                 sb.AppendLine(indent + "    /// <summary>");
@@ -330,7 +410,7 @@ namespace Csag.Blueprint.SourceGenerators
                 sb.AppendLine();
             }
 
-            foreach (var leaf in node.Leaves.OrderBy(l => l.PropertyName))
+            foreach (var leaf in node.Leaves.OrderBy(l => l.PropertyName, StringComparer.Ordinal))
             {
                 sb.AppendLine(indent + "    /// <summary>");
                 sb.AppendLine(indent + "    /// Gets or sets the translated value for " + leaf.PropertyName + ".");
@@ -340,7 +420,7 @@ namespace Csag.Blueprint.SourceGenerators
                 sb.AppendLine();
             }
 
-            foreach (var child in node.Children.OrderBy(c => c.Key))
+            foreach (var child in node.Children.OrderBy(c => c.Key, StringComparer.Ordinal))
             {
                 GenerateNestedClass(sb, child.Key, child.Value, indent + "    ");
             }
@@ -351,7 +431,7 @@ namespace Csag.Blueprint.SourceGenerators
 
         private static void GenerateFromDictionaryAssignments(StringBuilder sb, TranslationTreeNode node, string path, ref int varIndex, string indent)
         {
-            foreach (var leaf in node.Leaves.OrderBy(l => l.PropertyName))
+            foreach (var leaf in node.Leaves.OrderBy(l => l.PropertyName, StringComparer.Ordinal))
             {
                 var varName = "v" + varIndex++;
                 var escapedKey = EscapeString(leaf.FullKey);
@@ -362,7 +442,7 @@ namespace Csag.Blueprint.SourceGenerators
                 sb.AppendLine();
             }
 
-            foreach (var child in node.Children.OrderBy(c => c.Key))
+            foreach (var child in node.Children.OrderBy(c => c.Key, StringComparer.Ordinal))
             {
                 GenerateFromDictionaryAssignments(sb, child.Value, path + "." + child.Key, ref varIndex, indent);
             }
@@ -370,13 +450,34 @@ namespace Csag.Blueprint.SourceGenerators
 
         private sealed class TranslationKeysInfo
         {
-            public TranslationKeysInfo(string ns, List<TranslationEntry> entries)
+            public TranslationKeysInfo(string ns, string classDisplayName, Location classLocation, bool isPartial, List<TranslationEntry> entries)
             {
                 this.Namespace = ns;
+                this.ClassDisplayName = classDisplayName;
+                this.ClassLocation = classLocation;
+                this.IsPartial = isPartial;
                 this.Entries = entries;
             }
 
+            /// <summary>
+            /// Gets the containing namespace, or an empty string for the global namespace.
+            /// </summary>
             public string Namespace { get; }
+
+            /// <summary>
+            /// Gets the fully qualified class name used in diagnostic messages.
+            /// </summary>
+            public string ClassDisplayName { get; }
+
+            /// <summary>
+            /// Gets the location of the class identifier that diagnostics point at.
+            /// </summary>
+            public Location ClassLocation { get; }
+
+            /// <summary>
+            /// Gets a value indicating whether the inspected declaration carries the partial modifier.
+            /// </summary>
+            public bool IsPartial { get; }
 
             public List<TranslationEntry> Entries { get; }
         }

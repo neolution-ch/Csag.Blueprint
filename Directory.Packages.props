@@ -48,7 +48,7 @@
     <!-- Unit tests (tests/, not packed) -->
     <PackageVersion Include="AutoFixture.AutoMoq" Version="4.18.1" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageVersion Include="Neolution.CodeAnalysis.TestsRuleset" Version="3.3.0-beta.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />

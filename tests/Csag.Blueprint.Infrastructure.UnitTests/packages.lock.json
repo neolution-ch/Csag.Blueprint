@@ -30,11 +30,11 @@
       },
       "Microsoft.EntityFrameworkCore.InMemory": {
         "type": "Direct",
-        "requested": "[10.0.10, )",
-        "resolved": "10.0.10",
-        "contentHash": "QRsBDbyAoEVwPu/jesXXs4/uomaA577+hl+HsPfSuFq+uxAd6TyAklU/+OB/7bYvb+eikDuC41VTEFz9l79otA==",
+        "requested": "[10.0.11, )",
+        "resolved": "10.0.11",
+        "contentHash": "QBMaEmLIAzUUnH7+1Vbui+9Ui0dSsglkKxjW4sofOHycB3218UrnrUzq+Y75syrR4krUCtY7loWKaVBOeU3qKw==",
         "dependencies": {
-          "Microsoft.EntityFrameworkCore": "10.0.10"
+          "Microsoft.EntityFrameworkCore": "10.0.11"
         }
       },
       "Microsoft.NET.Test.Sdk": {
@@ -1091,7 +1091,7 @@
         "dependencies": {
           "Csag.Blueprint.Infrastructure": "[0.1.3, )",
           "Csag.Blueprint.Testing": "[0.1.3, )",
-          "Microsoft.EntityFrameworkCore.InMemory": "[10.0.10, )",
+          "Microsoft.EntityFrameworkCore.InMemory": "[10.0.11, )",
           "Microsoft.NET.Test.Sdk": "[18.7.0, )",
           "Shouldly": "[4.3.0, )",
           "xunit.v3": "[3.2.2, )"

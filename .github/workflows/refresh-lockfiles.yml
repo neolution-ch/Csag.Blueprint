@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7.0.0
+      - uses: actions/checkout@v7.0.1
 
       # -----------------------------------------------------------------------
       # NuGet — refresh the transitive versions inside every packages.lock.json.
@@ -61,7 +61,7 @@ jobs:
       # packages.lock.json is updated.
       # -----------------------------------------------------------------------
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5.4.0
+        uses: actions/setup-dotnet@v6.0.0
         with:
           global-json-file: global.json
 
@@ -83,7 +83,7 @@ jobs:
       # the diff alongside the lock file.
       # -----------------------------------------------------------------------
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
 

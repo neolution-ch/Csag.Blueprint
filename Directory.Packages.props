@@ -19,8 +19,7 @@
     <!-- Application -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
     <!-- Infrastructure -->
-    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore"
-      Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.11" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.11" />
     <PackageVersion Include="Neolution.Extensions.Caching.Distributed" Version="3.0.0-beta.0" />
     <!-- Web -->
@@ -42,6 +41,7 @@
     <!-- Testing -->
     <PackageVersion Include="AutoFixture.Xunit3" Version="5.0.0-rc.1" />
     <PackageVersion Include="FastEndpoints.Testing" Version="8.2.0" />
+    <PackageVersion Include="QuestPDF" Version="2026.7.3" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.14.0" />
     <PackageVersion Include="WireMock.Net.Testcontainers" Version="2.15.0" />

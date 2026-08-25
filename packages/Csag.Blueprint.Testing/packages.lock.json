@@ -942,7 +942,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[0.1.1, )",
+          "Csag.Blueprint.Domain": "[0.1.2, )",
           "Microsoft.EntityFrameworkCore": "[10.0.11, )"
         }
       },
@@ -955,8 +955,8 @@
       "csag.blueprint.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Application": "[0.1.1, )",
-          "Csag.Blueprint.Domain": "[0.1.1, )",
+          "Csag.Blueprint.Application": "[0.1.2, )",
+          "Csag.Blueprint.Domain": "[0.1.2, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.11, )",
           "Microsoft.EntityFrameworkCore": "[10.0.11, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.11, )",
@@ -970,7 +970,7 @@
           "Audit.NET": "[32.3.1, )",
           "Audit.NET.SqlServer": "[32.3.1, )",
           "ClosedXML": "[0.105.1, )",
-          "Csag.Blueprint.Infrastructure": "[0.1.1, )",
+          "Csag.Blueprint.Infrastructure": "[0.1.2, )",
           "FastEndpoints": "[8.2.0, )",
           "FastEndpoints.Swagger": "[8.2.0, )",
           "FluentValidation": "[12.1.1, )",
@@ -982,7 +982,8 @@
           "Microsoft.Extensions.Caching.StackExchangeRedis": "[10.0.11, )",
           "NLog.Web.AspNetCore": "[6.2.0, )",
           "Neolution.Extensions.Caching.Distributed": "[3.0.0-beta.0, )",
-          "Neolution.Extensions.Configuration.GoogleSecrets": "[1.6.0, )"
+          "Neolution.Extensions.Configuration.GoogleSecrets": "[1.6.0, )",
+          "QuestPDF": "[2026.7.3, )"
         }
       },
       "Audit.EntityFramework.Core": {
@@ -1164,6 +1165,12 @@
         "dependencies": {
           "NLog.Extensions.Logging": "6.2.0"
         }
+      },
+      "QuestPDF": {
+        "type": "CentralTransitive",
+        "requested": "[2026.7.3, )",
+        "resolved": "2026.7.3",
+        "contentHash": "MYpJrSLwUkgaX/POQj+9GY8QreFoLXjHCiUPCNl0XrHF+nLDT9KeUFZbeaUNu1P5spt5QeYzCbf2tDF0z5idHg=="
       }
     }
   }

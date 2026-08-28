@@ -64,7 +64,7 @@ Applications may still append app-specific middleware before endpoint mapping.
 | --- | --- |
 | `CorrelationIdMiddleware` | Adds/propagates correlation IDs per request. |
 | `TenantMiddleware` | Establishes the ambient tenant context for the request. Delegates *how* the tenant is determined to `ITenantResolver`. |
-| `HttpAuditMiddleware` | Emits audit events for HTTP requests. |
+| `AuthorizationAuditMiddleware` | Records an audit event for a denied request (401 or 403). Register it **before** `UseBlueprintMiddleware()`. See [Audit enrichment](#audit-enrichment). |
 | `CorrelationIdDelegatingHandler` | Propagates correlation IDs to outbound HTTP requests. |
 | `SessionClaimRequestCultureProvider` | Resolves request culture from claims and `Accept-Language`. |
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
@@ -72,15 +72,22 @@ Applications may still append app-specific middleware before endpoint mapping.
 
 ### Audit enrichment
 
-`ConfigureBlueprintAuditLogging` adds the user ID, the email address, the display name and the
-correlation ID to each audit event. This applies to Entity Framework events and to HTTP events. The
-package reads the three user values from the claims on the request, not from the database. A service
-account has no email address. Therefore its email value is null, and its display name is the account
-name from its token.
+`ConfigureBlueprintAuditLogging` adds the user ID, the email address, the display name, and the
+correlation ID to each EF and HTTP audit event alike. It reads the three user values from the
+claims on the request, not from the database. A service account has no email address, so its email
+value is null and its display name is the account name from its token.
 
 The provider writes only `UserId` and `CorrelationId` to columns. The email address and the display
-name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Therefore this change
-needs no migration, but a read of these two values must parse the JSON data of the row.
+name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either value
+requires parsing the JSON data of the row.
+
+`AuthorizationAuditMiddleware` writes an event for a denied request (401 or 403). It wraps
+authentication and authorization in a `try`/`finally` block. So it must run before
+`UseBlueprintMiddleware()`. The ASP.NET Core authorization middleware does not call the next
+middleware for a denied request. A copy registered after `UseBlueprintMiddleware()` does not run
+for a denied request. It writes nothing. A successful request writes no event. The EF Core
+interceptor already covers the writes. GCP and Application Insights already record general request
+data. This table does not need that data.
 
 ### Tenant resolution (the addressing seam)
 

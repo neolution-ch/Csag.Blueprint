@@ -31,19 +31,25 @@ public static class CultureNormalizationHelper
             return exactMatch.Name;
         }
 
-        // Language-only match (e.g., "de" matches "de-CH")
-        try
+        // Language-only match only for bare 2-letter codes (e.g. "de" matches "de-CH").
+        // A full IETF tag like "fr-FR" intentionally does NOT match "fr-CH" — use the exact
+        // code if you want a specific regional variant.
+        if (!normalizedRequest.Contains('-', StringComparison.Ordinal))
         {
-            var requestedLanguage = new CultureInfo(normalizedRequest).TwoLetterISOLanguageName;
-            var languageMatch = supportedCultures.FirstOrDefault(c =>
-                string.Equals(c.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase));
-            return languageMatch?.Name;
+            try
+            {
+                var requestedLanguage = new CultureInfo(normalizedRequest).TwoLetterISOLanguageName;
+                var languageMatch = supportedCultures.FirstOrDefault(c =>
+                    string.Equals(c.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase));
+                return languageMatch?.Name;
+            }
+            catch (CultureNotFoundException)
+            {
+                // Unrecognized culture — skip it
+            }
         }
-        catch (CultureNotFoundException)
-        {
-            // Unrecognized culture — skip it
-            return null;
-        }
+
+        return null;
     }
 
     /// <summary>
@@ -70,29 +76,38 @@ public static class CultureNormalizationHelper
             return exactMatch;
         }
 
-        // Language-only match (e.g., "de" matches "de-CH")
-        try
+        // Language-only match only for bare 2-letter codes (e.g. "de" matches "de-CH").
+        // A full IETF tag like "fr-FR" intentionally does NOT match "fr-CH" — use the exact
+        // code if you want a specific regional variant.
+        if (!normalizedRequest.Contains('-', StringComparison.Ordinal))
         {
-            var requestedLanguage = new CultureInfo(normalizedRequest).TwoLetterISOLanguageName;
-            var languageMatch = supportedLanguages.FirstOrDefault(l =>
+            try
             {
-                try
+                var requestedLanguage = new CultureInfo(normalizedRequest).TwoLetterISOLanguageName;
+                var languageMatch = supportedLanguages.FirstOrDefault(l =>
                 {
-                    var supportedCulture = new CultureInfo(l);
-                    return string.Equals(supportedCulture.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase);
-                }
-                catch (CultureNotFoundException)
+                    try
+                    {
+                        var supportedCulture = new CultureInfo(l);
+                        return string.Equals(supportedCulture.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase);
+                    }
+                    catch (CultureNotFoundException)
+                    {
+                        return false;
+                    }
+                });
+                if (languageMatch != null)
                 {
-                    return false;
+                    return languageMatch;
                 }
-            });
-            return languageMatch;
+            }
+            catch (CultureNotFoundException)
+            {
+                // Unrecognized culture — skip it
+            }
         }
-        catch (CultureNotFoundException)
-        {
-            // Unrecognized culture — skip it
-            return null;
-        }
+
+        return null;
     }
 
     /// <summary>

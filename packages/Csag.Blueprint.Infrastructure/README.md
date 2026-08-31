@@ -15,6 +15,9 @@ It contains the reusable EF Core persistence backbone, session/auth infrastructu
 | `BlueprintDbContext<TAppTenant, TAppUser, TAppRole>` | Shared EF Core base context that owns the blueprint persistence model. |
 | `Blueprint*Configuration` classes | EF Core mappings for blueprint-owned entities and inheritance roots. |
 | `MultiTenancyModelBuilderExtensions` | Applies tenant filters/indexing/model conventions for tenant-scoped entities. See [Data isolation topology](#data-isolation-topology) for the database-per-tenant option. |
+| `EntityFilteringModelBuilderExtensions` | Registers the named soft-delete query filter and the supporting indexes for `ISoftDeletable` / `IHasActiveRange`. |
+| `LocalizationModelBuilderExtensions` | Wires `IHasLocalizedTexts` entities to their `ILocalizedText` side, with the per-language unique constraint and indexes. |
+| `ContractModelBuilderExtensions` | Applies the model conventions the domain contracts imply (GUID key defaults, `IHasInternalName` constraints, localized text constraints). |
 
 ### Data isolation topology
 
@@ -43,6 +46,48 @@ modelBuilder.ConfigureBlueprintMultiTenancy<ApplicationTenant, BusinessDbContext
 Note that `IMustHaveTenant` is **not** a synonym for "shardable". Some tenant-owned entities are
 identity concerns — a service account is tenant-scoped but authentication needs it, so it must stay in
 the central database. Classify each entity by plane before splitting anything.
+
+### Named global query filters
+
+Both blueprint-owned global filters are registered under a name (`BlueprintQueryFilters.Tenant` and
+`BlueprintQueryFilters.SoftDelete`) so a query can drop one without dropping the other. Parameterless
+`IgnoreQueryFilters()` disables *every* filter on the entity, which would silently remove tenant
+isolation — never use it to reach soft-deleted rows.
+
+```csharp
+// Reads deleted rows, still scoped to the current tenant.
+var pedalo = await context.Pedalos
+    .IgnoreSoftDeleteFilter()
+    .FirstOrDefaultAsync(p => p.PedaloId == id, ct);
+
+// Same, but restricted to the deleted rows only.
+var deleted = await context.Pedalos.OnlySoftDeleted().ToListAsync(ct);
+```
+
+There is deliberately no convenience extension for opting out of the tenant filter: crossing tenants
+must stay an explicit, reviewed `IgnoreQueryFilters(BlueprintQueryFilters.Tenant)` at the call site.
+
+### Query extensions for the domain contracts
+
+`EntityFilteringExtensions` and `StaticLocalizationExtensions` provide the query-side counterparts to
+the `Csag.Blueprint.Domain` contracts:
+
+| Contract | Extensions |
+| --- | --- |
+| `ISoftDeletable` | `WhereNotDeleted()`, `WhereDeleted()`, `WhereDeletedBefore()` |
+| `IHasActiveRange` | `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveToday()`, `WhereActiveInRange()`, `WhereInactiveNow()`, `WhereActiveAndNotDeleted()` |
+| `IHasLocalizedTexts` / `ILocalizedText` | `IncludeCurrentLanguageText()`, `WhereHasCurrentLanguageText()`, `GetCurrentLanguageText()`, `GetCurrentLanguageTextValue()` |
+
+**`IHasActiveRange` is deliberately not a global query filter.** An active range is evaluated against
+a point in time chosen by the caller, and "now" is only one of them — availability searches look at a
+future window, and administrators legitimately need to see entities that are not active yet or no
+longer active. Pick the point in time explicitly with the `WhereActive*` extensions.
+
+Language resolution goes through `ICurrentLanguageProvider`; `DefaultLanguageProvider` reads
+`CultureInfo.CurrentUICulture` and consuming apps can swap it via
+`StaticLocalizationExtensions.SetDefaultLanguageProvider()`. The fallback ranking is exact current
+language → same current-language prefix → exact fallback → same fallback prefix, compared
+case-insensitively.
 
 ### Interceptors
 

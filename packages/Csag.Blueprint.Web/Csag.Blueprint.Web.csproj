@@ -23,6 +23,7 @@
         <PackageReference Include="Neolution.Extensions.Caching.Distributed" />
         <PackageReference Include="Neolution.Extensions.Configuration.GoogleSecrets" />
         <PackageReference Include="NLog.Web.AspNetCore" />
+        <PackageReference Include="QuestPDF" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.Data.SqlClient" />

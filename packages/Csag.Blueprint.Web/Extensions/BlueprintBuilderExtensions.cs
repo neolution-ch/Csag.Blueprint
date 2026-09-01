@@ -1,11 +1,13 @@
 namespace Csag.Blueprint.Web.Extensions;
 
+using Csag.Blueprint.Web.Documents;
 using Csag.Blueprint.Web.Tenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using QuestPDF.Infrastructure;
 
 /// <summary>
 /// Aggregate extension methods that compose individual Blueprint builder extensions
@@ -65,6 +67,13 @@ public static class BlueprintBuilderExtensions
         // Addressing seam: how a request declares which tenant it belongs to. TryAdd, so an
         // ITenantResolver registered before this call wins over the claims-based default.
         builder.Services.TryAddScoped<ITenantResolver, ClaimsTenantResolver>();
+
+        // Addressing seam: how a PDF document is rendered. Register the QuestPDF-based
+        // implementation so consumers can depend on the IDocumentRenderer abstraction.
+        builder.Services.AddScoped<IDocumentRenderer, QuestPdfDocumentRenderer>();
+
+        // License Configuration for QuestPDF
+        QuestPDF.Settings.License = LicenseType.Community;
 
         return builder;
     }

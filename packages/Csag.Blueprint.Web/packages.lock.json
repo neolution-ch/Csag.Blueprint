@@ -181,6 +181,12 @@
           "NLog.Extensions.Logging": "6.2.0"
         }
       },
+      "QuestPDF": {
+        "type": "Direct",
+        "requested": "[2026.7.3, )",
+        "resolved": "2026.7.3",
+        "contentHash": "MYpJrSLwUkgaX/POQj+9GY8QreFoLXjHCiUPCNl0XrHF+nLDT9KeUFZbeaUNu1P5spt5QeYzCbf2tDF0z5idHg=="
+      },
       "Audit.EntityFramework.Abstractions": {
         "type": "Transitive",
         "resolved": "32.3.1",
@@ -817,7 +823,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[0.1.1, )",
+          "Csag.Blueprint.Domain": "[0.1.2, )",
           "Microsoft.EntityFrameworkCore": "[10.0.11, )"
         }
       },
@@ -830,8 +836,8 @@
       "csag.blueprint.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Application": "[0.1.1, )",
-          "Csag.Blueprint.Domain": "[0.1.1, )",
+          "Csag.Blueprint.Application": "[0.1.2, )",
+          "Csag.Blueprint.Domain": "[0.1.2, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.11, )",
           "Microsoft.EntityFrameworkCore": "[10.0.11, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.11, )",

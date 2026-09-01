@@ -75,31 +75,6 @@ public static class LocalizationModelBuilderExtensions
     }
 
     /// <summary>
-    /// Configures indexes for entities implementing <see cref="ILocalizedText"/>.
-    /// Creates indexes on LanguageCode for better query performance.
-    /// Note: String property constraints are configured by <see cref="ContractModelBuilderExtensions.ConfigureLocalizedTextConstraints"/>.
-    /// </summary>
-    /// <param name="modelBuilder">The model builder to configure.</param>
-    /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
-    public static ModelBuilder ConfigureLocalizedTextIndexes(this ModelBuilder modelBuilder)
-    {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            if (typeof(ILocalizedText).IsAssignableFrom(entityType.ClrType))
-            {
-                var tableName = entityType.GetTableName();
-
-                // Index on LanguageCode for efficient language filtering
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex(nameof(ILocalizedText.LanguageCode))
-                    .HasDatabaseName($"IX_{tableName}_LanguageCode");
-            }
-        }
-
-        return modelBuilder;
-    }
-
-    /// <summary>
     /// Configures relationships for entities implementing <see cref="IHasLocalizedTexts{TLocalizedText}"/>.
     /// Sets up the one-to-many relationship between entities and their localized texts.
     /// </summary>
@@ -180,7 +155,6 @@ public static class LocalizationModelBuilderExtensions
     {
         return modelBuilder
             .ConfigureLocalizedTextConstraints()
-            .ConfigureLocalizedTextIndexes()
             .ConfigureLocalizedTextRelationship<TEntity, TLocalizedText>(foreignKeyPropertyName)
             .ConfigureLocalizedTextUniqueConstraint<TLocalizedText>(foreignKeyPropertyName);
     }

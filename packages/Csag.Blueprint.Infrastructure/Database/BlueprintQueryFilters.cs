@@ -12,18 +12,18 @@ namespace Csag.Blueprint.Infrastructure.Database;
 public static class BlueprintQueryFilters
 {
     /// <summary>
-    /// Gets the key of the tenant isolation filter applied to every <c>IMustHaveTenant</c> entity.
+    /// The key of the tenant isolation filter applied to every <c>IMustHaveTenant</c> entity.
     /// <para>
     /// This filter is the multi-tenancy security boundary and is deliberately not exposed through a
     /// convenience opt-out extension. Bypassing it requires an explicit
     /// <c>IgnoreQueryFilters([BlueprintQueryFilters.Tenant])</c> call at the call site.
     /// </para>
     /// </summary>
-    public static string Tenant => "Tenant";
+    public static readonly string Tenant = "Tenant";
 
     /// <summary>
-    /// Gets the key of the soft deletion filter applied to every <c>ISoftDeletable</c> entity.
+    /// The key of the soft deletion filter applied to every <c>ISoftDeletable</c> entity.
     /// Opt out with <c>IgnoreSoftDeleteFilter()</c> to query deleted rows while keeping tenant isolation.
     /// </summary>
-    public static string SoftDelete => "SoftDelete";
+    public static readonly string SoftDelete = "SoftDelete";
 }

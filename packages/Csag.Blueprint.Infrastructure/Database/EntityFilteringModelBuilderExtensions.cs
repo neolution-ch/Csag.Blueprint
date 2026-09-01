@@ -35,13 +35,14 @@ public static class EntityFilteringModelBuilderExtensions
 
     /// <summary>
     /// Configures the global query filters that make sense to apply unconditionally — currently soft
-    /// deletion only.
+    /// deletion only — together with the indexes backing them.
     /// <para>
     /// <see cref="IHasActiveRange"/> is deliberately <b>not</b> turned into a global filter: an active
     /// range is evaluated against a point in time chosen by the caller, and "now" is only one of them.
     /// Availability searches look at a future window and administrators legitimately need to see and
     /// edit entities that are not active yet or no longer active. Use the explicit
     /// <c>WhereActiveNow()</c> / <c>WhereActiveAt()</c> / <c>WhereActiveInRange()</c> query extensions instead.
+    /// Its index is still created, because those extensions are the expected access path.
     /// </para>
     /// </summary>
     /// <param name="modelBuilder">The model builder to configure.</param>
@@ -49,7 +50,9 @@ public static class EntityFilteringModelBuilderExtensions
     public static ModelBuilder ConfigureEntityFiltering(this ModelBuilder modelBuilder)
     {
         return modelBuilder
-            .ConfigureSoftDeleteFiltering();
+            .ConfigureSoftDeleteFiltering()
+            .ConfigureSoftDeleteIndexes()
+            .ConfigureActiveRangeIndexes();
     }
 
     /// <summary>
@@ -74,8 +77,9 @@ public static class EntityFilteringModelBuilderExtensions
     }
 
     /// <summary>
-    /// Configures indexes for active range columns to improve query performance.
-    /// Creates indexes on the ActiveFrom and ActiveUntil columns for entities implementing <see cref="IHasActiveRange"/>.
+    /// Configures the composite index backing the active range queries for entities implementing
+    /// <see cref="IHasActiveRange"/>. A single <c>(ActiveFrom, ActiveUntil)</c> index also serves
+    /// lookups on <c>ActiveFrom</c> alone, so no separate single-column indexes are created.
     /// </summary>
     /// <param name="modelBuilder">The model builder to configure.</param>
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
@@ -85,20 +89,9 @@ public static class EntityFilteringModelBuilderExtensions
         {
             if (typeof(IHasActiveRange).IsAssignableFrom(entityType.ClrType))
             {
-                var tableName = entityType.GetTableName();
-
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex(nameof(IHasActiveRange.ActiveFrom))
-                    .HasDatabaseName($"IX_{tableName}_ActiveFrom");
-
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex(nameof(IHasActiveRange.ActiveUntil))
-                    .HasDatabaseName($"IX_{tableName}_ActiveUntil");
-
-                // Composite index for better range query performance
                 modelBuilder.Entity(entityType.ClrType)
                     .HasIndex(nameof(IHasActiveRange.ActiveFrom), nameof(IHasActiveRange.ActiveUntil))
-                    .HasDatabaseName($"IX_{tableName}_ActiveRange");
+                    .HasDatabaseName($"IX_{entityType.GetTableName()}_ActiveRange");
             }
         }
 

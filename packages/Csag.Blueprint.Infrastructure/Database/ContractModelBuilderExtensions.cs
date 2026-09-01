@@ -10,36 +10,6 @@ using Microsoft.EntityFrameworkCore;
 public static class ContractModelBuilderExtensions
 {
     /// <summary>
-    /// Configures default value SQL for single-column Guid primary keys.
-    /// Applies <c>NEWSEQUENTIALID()</c> to keys that do not already define a default value SQL.
-    /// </summary>
-    /// <param name="modelBuilder">The model builder to configure.</param>
-    /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
-    public static ModelBuilder ConfigureGuidPrimaryKeyDefaults(this ModelBuilder modelBuilder)
-    {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            var primaryKey = entityType.FindPrimaryKey();
-            if (primaryKey == null || primaryKey.Properties.Count != 1)
-            {
-                continue;
-            }
-
-            var keyProperty = primaryKey.Properties[0];
-            if (keyProperty.ClrType != typeof(Guid) || keyProperty.GetDefaultValueSql() != null)
-            {
-                continue;
-            }
-
-            modelBuilder.Entity(entityType.ClrType)
-                .Property(keyProperty.Name)
-                .HasDefaultValueSql("NEWSEQUENTIALID()");
-        }
-
-        return modelBuilder;
-    }
-
-    /// <summary>
     /// Configures string property constraints and indexes for entities implementing <see cref="IHasInternalName"/>.
     /// Sets the InternalName property to have a maximum length of 200 characters and creates an index for performance.
     /// </summary>
@@ -115,7 +85,6 @@ public static class ContractModelBuilderExtensions
     public static ModelBuilder ConfigureContractConstraints(this ModelBuilder modelBuilder)
     {
         return modelBuilder
-            .ConfigureGuidPrimaryKeyDefaults()
             .ConfigureInternalNameConstraints()
             .ConfigureLocalizedTextConstraints();
     }

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Domain\Csag.Blueprint.Domain.csproj" />
+    <ProjectReference
+      Include="..\..\packages\Csag.Blueprint.Infrastructure\Csag.Blueprint.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Web\Csag.Blueprint.Web.csproj" />
+  </ItemGroup>
+
+</Project>

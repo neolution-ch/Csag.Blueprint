@@ -15,9 +15,10 @@ It contains the reusable EF Core persistence backbone, session/auth infrastructu
 | `BlueprintDbContext<TAppTenant, TAppUser, TAppRole>` | Shared EF Core base context that owns the blueprint persistence model. |
 | `Blueprint*Configuration` classes | EF Core mappings for blueprint-owned entities and inheritance roots. |
 | `MultiTenancyModelBuilderExtensions` | Applies tenant filters/indexing/model conventions for tenant-scoped entities. See [Data isolation topology](#data-isolation-topology) for the database-per-tenant option. |
-| `EntityFilteringModelBuilderExtensions` | Registers the named soft-delete query filter and the supporting indexes for `ISoftDeletable` / `IHasActiveRange`. |
+| `EntityFilteringModelBuilderExtensions` | Registers the named soft-delete query filter and creates the supporting `IX_{table}_DeletedAt` and composite `IX_{table}_ActiveRange` indexes for `ISoftDeletable` / `IHasActiveRange`. |
 | `LocalizationModelBuilderExtensions` | Wires `IHasLocalizedTexts` entities to their `ILocalizedText` side, with the per-language unique constraint and indexes. |
-| `ContractModelBuilderExtensions` | Applies the model conventions the domain contracts imply (GUID key defaults, `IHasInternalName` constraints, localized text constraints). |
+| `ContractModelBuilderExtensions` | Applies the model conventions the domain contracts imply (`IHasInternalName` constraints, localized text constraints). |
+| `KeyConventionModelBuilderExtensions` | Gives every single-column `Guid` primary key a `NEWSEQUENTIALID()` default. This applies to **all** entities, not only contract adopters. |
 
 ### Data isolation topology
 
@@ -69,14 +70,19 @@ must stay an explicit, reviewed `IgnoreQueryFilters(BlueprintQueryFilters.Tenant
 
 ### Query extensions for the domain contracts
 
-`EntityFilteringExtensions` and `StaticLocalizationExtensions` provide the query-side counterparts to
+`EntityFilteringExtensions` and `LocalizationExtensions` provide the query-side counterparts to
 the `Csag.Blueprint.Domain` contracts:
 
 | Contract | Extensions |
 | --- | --- |
 | `ISoftDeletable` | `WhereNotDeleted()`, `WhereDeleted()`, `WhereDeletedBefore()` |
 | `IHasActiveRange` | `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveToday()`, `WhereActiveInRange()`, `WhereInactiveNow()`, `WhereActiveAndNotDeleted()` |
-| `IHasLocalizedTexts` / `ILocalizedText` | `IncludeCurrentLanguageText()`, `WhereHasCurrentLanguageText()`, `GetCurrentLanguageText()`, `GetCurrentLanguageTextValue()` |
+| `IHasLocalizedTexts` / `ILocalizedText` | `SelectWithCurrentLanguageText()`, `CurrentLanguageTextExpression()`, `IncludeCurrentLanguageText()`, `WhereHasCurrentLanguageText()`, `GetCurrentLanguageText()`, `GetCurrentLanguageTextValue()` |
+
+`WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveInRange()` and `WhereInactiveNow()` compare against
+an instant. `WhereActiveToday()` deliberately compares against **midnight of the current UTC day**, so
+an entity whose range starts later today already counts as active — use `WhereActiveNow()` when you
+need instant precision.
 
 **`IHasActiveRange` is deliberately not a global query filter.** An active range is evaluated against
 a point in time chosen by the caller, and "now" is only one of them — availability searches look at a
@@ -84,10 +90,27 @@ future window, and administrators legitimately need to see entities that are not
 longer active. Pick the point in time explicitly with the `WhereActive*` extensions.
 
 Language resolution goes through `ICurrentLanguageProvider`; `DefaultLanguageProvider` reads
-`CultureInfo.CurrentUICulture` and consuming apps can swap it via
-`StaticLocalizationExtensions.SetDefaultLanguageProvider()`. The fallback ranking is exact current
-language → same current-language prefix → exact fallback → same fallback prefix, compared
-case-insensitively.
+`CultureInfo.CurrentUICulture` (set per request by the ASP.NET Core request localization middleware)
+and falls back to a configured language code when the culture is invariant. Use
+`ExplicitLanguageProvider` where the language comes from the call itself (an endpoint parameter,
+a user profile, a tenant setting), or register your own implementation in DI.
+
+The fallback ranking is exact current language → same language in another region (including the bare
+language code, so `de` matches a current language of `de-CH`) → exact fallback → same language as the
+fallback, compared case-insensitively. A language that matches none of these four tiers is **never**
+returned; the projection yields `null` instead of an arbitrary translation.
+
+`SelectWithCurrentLanguageText()` applies that ranking inside a single EF Core query, so the
+translation is resolved by the database rather than in memory:
+
+```csharp
+var cards = await context.Pedalos
+    .WhereActiveNow()
+    .SelectWithCurrentLanguageText<Pedalo, PedaloText, PedaloCard>(
+        languageProvider,
+        (pedalo, name) => new PedaloCard(pedalo.PedaloId, name ?? pedalo.InternalName))
+    .ToListAsync(ct);
+```
 
 ### Interceptors
 

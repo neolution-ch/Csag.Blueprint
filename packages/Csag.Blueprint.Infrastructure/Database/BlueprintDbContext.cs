@@ -154,6 +154,9 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
         // Configure domain contract constraints and indexes
         builder.ConfigureContractConstraints();
 
+        // Sequential GUID defaults for every single-column Guid key, not just contract entities.
+        builder.ConfigureGuidPrimaryKeyDefaults();
+
         // Configure localized text relationships and uniqueness conventions.
         builder.ConfigureLocalizedTextConventions();
 

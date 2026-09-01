@@ -80,17 +80,21 @@ public static class EntityFilteringExtensions
     }
 
     /// <summary>
-    /// Filters the query to include only entities that are active today (based on UTC date).
-    /// An entity is considered active today if it's active at the start of the current UTC day.
+    /// Filters the query to include only entities that are active at the start of the current UTC day
+    /// (midnight), not at the current instant. Use this for day-granular validity such as "valid on
+    /// today's date"; use <see cref="WhereActiveNow{T}"/> when the exact instant matters.
+    /// <para>
+    /// The day boundary is UTC, so an entity becoming active later today in a local timezone already
+    /// counts as active here.
+    /// </para>
     /// </summary>
     /// <typeparam name="T">The entity type that implements <see cref="IHasActiveRange"/>.</typeparam>
     /// <param name="query">The query to filter.</param>
-    /// <returns>A filtered query that includes only entities active today.</returns>
+    /// <returns>A filtered query that includes only entities active at the start of the current UTC day.</returns>
     public static IQueryable<T> WhereActiveToday<T>(this IQueryable<T> query)
         where T : class, IHasActiveRange
     {
-        var today = DateTimeOffset.UtcNow.Date;
-        var todayStart = new DateTimeOffset(today, TimeSpan.Zero);
+        var todayStart = new DateTimeOffset(DateTimeOffset.UtcNow.Date, TimeSpan.Zero);
         return query.WhereActiveAt(todayStart);
     }
 

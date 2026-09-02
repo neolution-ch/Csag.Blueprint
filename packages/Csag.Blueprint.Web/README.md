@@ -64,7 +64,7 @@ Applications may still append app-specific middleware before endpoint mapping.
 | --- | --- |
 | `CorrelationIdMiddleware` | Adds/propagates correlation IDs per request. |
 | `TenantMiddleware` | Establishes the ambient tenant context for the request. Delegates *how* the tenant is determined to `ITenantResolver`. |
-| `AuthorizationAuditMiddleware` | Records an audit event for a denied request (401 or 403). Register it **before** `UseBlueprintMiddleware()`. See [Audit enrichment](#audit-enrichment). |
+| `HttpAuditMiddleware` | Records an audit event for a denied request (401 or 403 by default; configurable). Register it **before** `UseBlueprintMiddleware()`. See [Audit enrichment](#audit-enrichment). |
 | `CorrelationIdDelegatingHandler` | Propagates correlation IDs to outbound HTTP requests. |
 | `SessionClaimRequestCultureProvider` | Resolves request culture from claims and `Accept-Language`. |
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
@@ -77,17 +77,19 @@ correlation ID to each EF and HTTP audit event alike. It reads the three user va
 claims on the request, not from the database. A service account has no email address, so its email
 value is null and its display name is the account name from its token.
 
-The provider writes only `UserId` and `CorrelationId` to columns. The email address and the display
-name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either value
-requires parsing the JSON data of the row.
+The provider writes `UserId`, `TenantId`, and `CorrelationId` to columns. The email address and the
+display name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either
+value requires parsing the JSON data of the row.
 
-`AuthorizationAuditMiddleware` writes an event for a denied request (401 or 403). It wraps
-authentication and authorization in a `try`/`finally` block. So it must run before
-`UseBlueprintMiddleware()`. The ASP.NET Core authorization middleware does not call the next
-middleware for a denied request. A copy registered after `UseBlueprintMiddleware()` does not run
-for a denied request. It writes nothing. A successful request writes no event. The EF Core
-interceptor already covers the writes. GCP and Application Insights already record general request
-data. This table does not need that data.
+`HttpAuditMiddleware` writes an event for a request whose final status code is 401 or 403 by
+default; register `HttpAuditOptions.AuditedStatusCodes` to audit a different set. It also writes the
+client IP address, taken from `HttpContext.Connection.RemoteIpAddress` after
+`ForwardedHeadersMiddleware` has resolved it from `X-Forwarded-For`. It must run before
+`UseBlueprintMiddleware()`, because the ASP.NET Core authorization middleware does not call the next
+middleware for a denied request. A copy registered after `UseBlueprintMiddleware()` never runs for a
+denied request, so it writes nothing for one. A request outside the audited set writes no event: the
+EF Core interceptor already covers the writes, and GCP and Application Insights already record
+general request data.
 
 ### Tenant resolution (the addressing seam)
 

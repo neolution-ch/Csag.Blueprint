@@ -8,8 +8,8 @@ using System.Security.Claims;
 /// </summary>
 /// <remarks>
 /// Both write paths use this type. The global <c>OnScopeCreated</c> enrichment uses it for an
-/// Entity Framework event. <c>AuthorizationAuditMiddleware</c> uses it for a denied HTTP request. So a
-/// denied request and an Entity Framework entry for the same request always show the same user.
+/// Entity Framework event. <c>HttpAuditMiddleware</c> uses it for an audited HTTP request. So an
+/// audited request and an Entity Framework entry for the same request always show the same user.
 /// </remarks>
 /// <param name="UserId">The identifier of the user. Null if the request is anonymous.</param>
 /// <param name="Email">The email address of the user. Null for a service account or an anonymous request.</param>

@@ -196,6 +196,37 @@ public sealed class LocalizedTextRankingTests
         texts.GetCurrentLanguageText(TestDatabase.Language("de-CH", "en"))?.Text.ShouldBe("Beschreibung");
     }
 
+    [Fact]
+    public void WhereHasCurrentLanguageText_MatchesBareAndRegionalVariantsOfTheCurrentLanguage()
+    {
+        using var db = new TestDatabase();
+        db.AddProduct("bare", ("de", "Beschreibung"));
+        db.AddProduct("regional", ("de-DE", "Hochdeutsch"));
+        db.AddProduct("exact", ("de-CH", "Schweizerdeutsch"));
+        db.Save();
+
+        var matches = db.Context.Products
+            .WhereHasCurrentLanguageText<Product, ProductText>(TestDatabase.Language(Current, Fallback))
+            .Select(p => p.InternalName)
+            .OrderBy(name => name)
+            .ToList();
+
+        matches.ShouldBe(["bare", "exact", "regional"]);
+    }
+
+    [Fact]
+    public void WhereHasCurrentLanguageText_ExcludesEntitiesThatOnlyHaveFallbackOrUnrelatedText()
+    {
+        using var db = new TestDatabase();
+        db.AddProduct("fallbackOnly", ("en-GB", "British"));
+        db.AddProduct("unrelated", ("it-IT", "Italiano"));
+        db.Save();
+
+        db.Context.Products
+            .WhereHasCurrentLanguageText<Product, ProductText>(TestDatabase.Language(Current, Fallback))
+            .ShouldBeEmpty();
+    }
+
     private static List<string?> SelectDescriptions(TestDatabase db)
         => [.. db.Context.Products
             .SelectWithCurrentLanguageText<Product, ProductText, string?>(

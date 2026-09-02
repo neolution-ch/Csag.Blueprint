@@ -23,7 +23,9 @@ fallback **inside** an EF Core query, so applications no longer have to hand-wri
 inline to keep it translatable. The ranking is now restricted to the four supported tiers (exact
 current language → same language in another region, including the bare language code → exact
 fallback → same language as the fallback): an entity that only has texts in an unrelated language
-now yields `null` instead of an arbitrary translation.
+now yields `null` instead of an arbitrary translation. `WhereHasCurrentLanguageText()` follows the
+same language matching and no longer requires an exact language-code match, so a `de` text now
+satisfies a current language of `de-CH`.
 
 `DefaultLanguageProvider` now actually reads `CultureInfo.CurrentUICulture`, as its documentation
 always claimed, and falls back to a configured language code for the invariant culture. Its

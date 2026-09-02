@@ -112,21 +112,32 @@ public static class LocalizationExtensions
     }
 
     /// <summary>
-    /// Filters entities to only include those that have localized text for the current language.
+    /// Filters entities to only include those that have localized text in the current language,
+    /// counting any region of that language ("de" and "de-AT" both satisfy a current language of
+    /// "de-CH"). The fallback language is deliberately not considered here — use
+    /// <see cref="SelectWithCurrentLanguageText{TEntity, TLocalizedText, TResult}"/> if you want
+    /// entities that merely have a resolvable text.
     /// </summary>
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
     /// <param name="query">The query to filter.</param>
     /// <param name="languageProvider">Service to determine the current language code.</param>
     /// <returns>Query filtered to entities with text in the current language.</returns>
+    [SuppressMessage("Globalization", "CA1307:Specify StringComparison for clarity", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
+    [SuppressMessage("Globalization", "CA1310:Specify StringComparison for correctness", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
     public static IQueryable<TEntity> WhereHasCurrentLanguageText<TEntity, TLocalizedText>(
         this IQueryable<TEntity> query,
         ICurrentLanguageProvider languageProvider)
         where TEntity : class, IHasLocalizedTexts<TLocalizedText>
         where TLocalizedText : class, ILocalizedText
     {
-        var currentLanguage = languageProvider.CurrentLanguageCode;
-        return query.Where(e => e.LocalizedTexts.Any(t => t.LanguageCode == currentLanguage));
+        ArgumentNullException.ThrowIfNull(languageProvider);
+
+        var currentLanguagePart = LanguagePart(languageProvider.CurrentLanguageCode);
+        var currentRegionalPrefix = currentLanguagePart + "-";
+
+        return query.Where(e => e.LocalizedTexts.Any(t =>
+            t.LanguageCode == currentLanguagePart || t.LanguageCode.StartsWith(currentRegionalPrefix)));
     }
 
     /// <summary>
@@ -147,9 +158,8 @@ public static class LocalizationExtensions
     }
 
     /// <summary>
-    /// Gets the localized text for the current language from an entity, with intelligent fallback support.
-    /// Prioritizes: 1) Exact current language, 2) Same language prefix, 3) Exact fallback, 4) Fallback prefix.
-    /// Use this method on entities that have been loaded with their localized texts.
+    /// Gets the localized text for the current language from an entity, using the standard fallback
+    /// ranking. Use this method on entities that have been loaded with their localized texts.
     /// </summary>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
     /// <param name="localizedTexts">The collection of localized texts.</param>
@@ -195,8 +205,7 @@ public static class LocalizationExtensions
 
     /// <summary>
     /// Gets the localized text for the current language from an entity that exposes localized texts,
-    /// with intelligent fallback support.
-    /// Prioritizes: 1) Exact current language, 2) Same language prefix, 3) Exact fallback, 4) Fallback prefix.
+    /// using the standard fallback ranking.
     /// </summary>
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
@@ -229,8 +238,7 @@ public static class LocalizationExtensions
     }
 
     /// <summary>
-    /// Gets the text content as a string for the current language, with intelligent fallback support.
-    /// Prioritizes: 1) Exact current language, 2) Same language prefix, 3) Exact fallback, 4) Fallback prefix.
+    /// Gets the text content as a string for the current language, using the standard fallback ranking.
     /// Use this method on entities that have been loaded with their localized texts.
     /// </summary>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
@@ -347,11 +355,10 @@ public static class LocalizationExtensions
     }
 
     /// <summary>
-    /// Returns the regional-variant prefix of a language code, e.g. "de-" for both "de" and "de-CH".
-    /// Matching against this prefix deliberately excludes the bare language code itself.
+    /// Returns the language part of a language code, e.g. "de" for both "de" and "de-CH".
     /// </summary>
     /// <param name="languageCode">The language code to reduce.</param>
-    /// <returns>The language part followed by a hyphen.</returns>
+    /// <returns>The language code up to the first hyphen.</returns>
     private static string LanguagePart(string languageCode)
     {
         var separatorIndex = languageCode.IndexOf('-', StringComparison.Ordinal);

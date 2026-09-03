@@ -28,8 +28,8 @@
     <PackageVersion Include="Audit.EntityFramework.Core" Version="32.3.1" />
     <PackageVersion Include="Audit.NET.SqlServer" Version="32.3.1" />
     <PackageVersion Include="ClosedXML" Version="0.105.1" />
-    <PackageVersion Include="FastEndpoints" Version="8.2.0" />
-    <PackageVersion Include="FastEndpoints.Swagger" Version="8.2.0" />
+    <PackageVersion Include="FastEndpoints" Version="8.3.0" />
+    <PackageVersion Include="FastEndpoints.Swagger" Version="8.3.0" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />
     <PackageVersion Include="Microsoft.ApplicationInsights.NLogTarget" Version="2.23.0" />
@@ -41,7 +41,7 @@
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
     <!-- Testing -->
     <PackageVersion Include="AutoFixture.Xunit3" Version="5.0.0-rc.1" />
-    <PackageVersion Include="FastEndpoints.Testing" Version="8.2.0" />
+    <PackageVersion Include="FastEndpoints.Testing" Version="8.3.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.14.0" />
     <PackageVersion Include="WireMock.Net.Testcontainers" Version="2.15.0" />

@@ -33,9 +33,15 @@ public static class BlueprintMiddlewareExtensions
         // Must run before HTTPS redirection and HSTS so the original scheme is visible.
         // Clear KnownProxies/KnownNetworks so headers from any proxy are accepted —
         // Cloud Run and similar platforms use internal IPs that aren't on the default loopback list.
+        // A client cannot reach this app directly on Cloud Run. Its edge appends the real client
+        // address as the last X-Forwarded-For entry and drops anything a client wrote before it.
+        // ForwardLimit 1 reads only that last entry, so a client's own value is never read, even
+        // with no addresses in KnownProxies/KnownIPNetworks to check it against. Do not raise this
+        // limit without a proxy that validates the header first.
         var forwardedHeadersOptions = new ForwardedHeadersOptions
         {
             ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+            ForwardLimit = 1,
         };
         forwardedHeadersOptions.KnownIPNetworks.Clear();
         forwardedHeadersOptions.KnownProxies.Clear();

@@ -13,6 +13,17 @@ using Microsoft.EntityFrameworkCore;
 public sealed class BlueprintAuditOptions<TContext>
     where TContext : DbContext
 {
+    /// <summary>
+    /// Initializes a new instance of the <see cref="BlueprintAuditOptions{TContext}"/> class. The
+    /// <see cref="HttpAudit"/> property holds a standalone instance, not the one
+    /// <c>HttpAuditMiddleware</c> reads. <c>ConfigureBlueprintAuditLogging</c> uses the other
+    /// constructor instead, to bind <see cref="HttpAudit"/> to the middleware's own instance.
+    /// </summary>
+    public BlueprintAuditOptions()
+        : this(new HttpAuditOptions())
+    {
+    }
+
     internal BlueprintAuditOptions(HttpAuditOptions httpAudit)
     {
         this.HttpAudit = httpAudit;

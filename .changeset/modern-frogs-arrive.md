@@ -18,9 +18,10 @@ The audited status codes are configurable through `HttpAuditOptions.AuditedStatu
 by default. Register `services.Configure<HttpAuditOptions>(o => ...)` to audit a different set.
 
 **`app.UseBlueprintMiddleware()` now registers `HttpAuditMiddleware` itself, first, so that it always
-wraps authentication and authorization.** An app must remove its own
-`app.UseMiddleware<HttpAuditMiddleware>()` call. Keeping it registers the middleware twice, which
-records two events per audited request.
+wraps authentication and authorization, and also the exception handler and status code pages.** This
+lets it audit a status code the exception handler itself produces, for example a 500 added to
+`AuditedStatusCodes`. An app must remove its own `app.UseMiddleware<HttpAuditMiddleware>()` call.
+Keeping it registers the middleware twice, which records two events per audited request.
 
 `ConfigureBlueprintAuditLogging` now configures both audit features, the EF Core events and the HTTP
 request events, from this one call. Both are on by default. Its configure callback can set

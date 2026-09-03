@@ -83,11 +83,13 @@ display name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayN
 value requires parsing the JSON data of the row.
 
 `UseBlueprintMiddleware()` always registers `HttpAuditMiddleware`, first, so that it wraps
-authentication and authorization: the ASP.NET Core authorization middleware does not call the next
-middleware for a denied request, so a middleware registered later would never run for one. An app
-does not need to register `HttpAuditMiddleware` itself. Remove any manual
-`app.UseMiddleware<HttpAuditMiddleware>()` call; a duplicate registration records two events per
-audited request.
+everything else in the pipeline: authentication and authorization, and also the exception handler
+and status code pages. The ASP.NET Core authorization middleware does not call the next middleware
+for a denied request, so a middleware registered later would never run for one. A middleware
+registered after the exception handler would never see a status code that an unhandled exception
+produced, so it could never audit one. An app does not need to register `HttpAuditMiddleware`
+itself. Remove any manual `app.UseMiddleware<HttpAuditMiddleware>()` call; a duplicate registration
+records two events per audited request.
 
 `ConfigureBlueprintAuditLogging` configures both audit features, the EF Core events and the HTTP
 request events, from this one call; both are on by default. Its configure callback exposes the same
@@ -101,9 +103,11 @@ taken from `HttpContext.Connection.RemoteIpAddress` after `ForwardedHeadersMiddl
 it from `X-Forwarded-For`. A request outside the audited set writes no event: the EF Core interceptor
 already covers the writes, and GCP and Application Insights already record general request data.
 
-`HttpAuditMiddleware` runs inside the app's exception handler, which `UseBlueprintMiddleware()`
-registers first. It still catches and logs its own failure instead of throwing: a resolver or
-audit-provider failure must not turn an already-decided 401 or 403 response into a 500.
+`HttpAuditMiddleware` wraps the app's exception handler rather than running inside it, so it can
+also audit a status code the handler itself produces, for example a 500 added to
+`HttpAuditOptions.AuditedStatusCodes`. It catches and logs its own failure instead of throwing,
+because sitting outside the exception handler means an unhandled exception here would reach the
+ASP.NET Core default error handling instead of the app's configured one.
 
 ### Tenant resolution (the addressing seam)
 

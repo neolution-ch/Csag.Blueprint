@@ -16,20 +16,24 @@ using Microsoft.Extensions.Options;
 /// </summary>
 /// <remarks>
 /// <c>app.UseBlueprintMiddleware()</c> always registers this middleware, first, so that it wraps
-/// authentication and authorization: the ASP.NET Core authorization middleware does not call the
-/// next middleware for a denied request, so a middleware registered after authorization never runs
-/// for a denied request and never gets the chance to record an event. An app does not need to
-/// register this middleware itself; remove any manual registration of it, because a duplicate
-/// registration records two events per audited request.
+/// everything else in the pipeline: authentication and authorization, and also the app's exception
+/// handler and status code pages. The ASP.NET Core authorization middleware does not call the next
+/// middleware for a denied request, so a middleware registered after authorization never runs for a
+/// denied request and never gets the chance to record an event. A middleware registered after the
+/// exception handler never sees a status code that an unhandled exception produced, so it could
+/// never audit one, for example a 500 added to <see cref="HttpAuditOptions.AuditedStatusCodes"/>.
+/// An app does not need to register this middleware itself; remove any manual registration of it,
+/// because a duplicate registration records two events per audited request.
 /// <see cref="HttpAuditOptions.Enabled"/> gates the actual work; it stays
 /// <see langword="false"/>, and this middleware records nothing, until an app calls
 /// <c>ConfigureBlueprintAuditLogging</c>. An app can set
 /// <c>BlueprintAuditOptions.HttpAudit.Enabled = false</c> in that call's configure callback to keep
-/// HTTP request auditing off. This position places the middleware inside the app's
-/// exception handler, which <c>UseBlueprintMiddleware()</c> registers first. An unhandled exception
-/// here would reach that handler. This middleware still catches and logs its own failure instead of
-/// throwing, because a resolver or audit-provider failure must not turn an already-decided 401 or
-/// 403 response into a 500.
+/// HTTP request auditing off. Because this middleware sits outside the app's exception handler, an
+/// unhandled exception here would not reach that handler; it would reach the ASP.NET Core default
+/// error handling instead of the app's configured one. This middleware catches and logs its own
+/// failure instead of throwing, so that a resolver or audit-provider failure produces neither
+/// outcome: it stays a logged, best-effort miss of one audit event, and the already-decided status
+/// code reaches the client unchanged.
 /// </remarks>
 public class HttpAuditMiddleware
 {

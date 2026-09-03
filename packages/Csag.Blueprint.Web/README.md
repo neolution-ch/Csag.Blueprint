@@ -91,6 +91,10 @@ denied request, so it writes nothing for one. A request outside the audited set 
 EF Core interceptor already covers the writes, and GCP and Application Insights already record
 general request data.
 
+That registration position also places `HttpAuditMiddleware` outside the app's exception handler,
+which `UseBlueprintMiddleware()` registers first. So a failure while resolving the tenant or writing
+the audit event does not fail the request: the middleware logs the failure and moves on.
+
 ### Tenant resolution (the addressing seam)
 
 `ITenantResolver` decides which tenant an incoming request belongs to. The package ships

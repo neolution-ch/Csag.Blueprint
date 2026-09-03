@@ -4,6 +4,7 @@ using Audit.Core;
 using Csag.Blueprint.Web.Helpers;
 using Csag.Blueprint.Web.Tenancy;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 /// <summary>
@@ -17,19 +18,24 @@ using Microsoft.Extensions.Options;
 /// Register this middleware before <c>app.UseBlueprintMiddleware()</c>: it must wrap authentication
 /// and authorization, because the ASP.NET Core authorization middleware does not call the next
 /// middleware for a denied request. A middleware registered after authorization never runs for a
-/// denied request, so it never gets the chance to record an event.
+/// denied request, so it never gets the chance to record an event. That position also places this
+/// middleware's own audit work outside the app's exception handler, which <c>UseBlueprintMiddleware()</c>
+/// registers first. So this middleware catches and logs its own failure instead of throwing.
 /// </remarks>
 public class HttpAuditMiddleware
 {
     private readonly RequestDelegate next;
+    private readonly ILogger<HttpAuditMiddleware> logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HttpAuditMiddleware"/> class.
     /// </summary>
     /// <param name="next">The next middleware in the pipeline.</param>
-    public HttpAuditMiddleware(RequestDelegate next)
+    /// <param name="logger">The logger instance.</param>
+    public HttpAuditMiddleware(RequestDelegate next, ILogger<HttpAuditMiddleware> logger)
     {
         this.next = next;
+        this.logger = logger;
     }
 
     /// <summary>
@@ -63,34 +69,45 @@ public class HttpAuditMiddleware
             return;
         }
 
-        var eventType = $"HTTP:{context.Request.Method}:{context.Request.Path}";
-        if (eventType.Length > 100)
+        // This code runs after UseBlueprintMiddleware(), which holds the app's exception handler.
+        // The exception handler cannot see a failure here, and the audited response may already be
+        // on the wire. So a resolver or audit-provider failure must not become an unhandled
+        // exception: it must stay a logged, best-effort miss of one audit event.
+        try
         {
-            eventType = eventType[..100];
+            var eventType = $"HTTP:{context.Request.Method}:{context.Request.Path}";
+            if (eventType.Length > 100)
+            {
+                eventType = eventType[..100];
+            }
+
+            await using var scope = await AuditScope.CreateAsync(new AuditScopeOptions
+            {
+                EventType = eventType,
+            });
+
+            var actor = AuditUserIdentity.FromPrincipal(context.User);
+            var tenantId = await tenantResolver.ResolveAsync(context, context.RequestAborted);
+            var correlationId = context.Items.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var cid)
+                ? cid?.ToString() : null;
+
+            scope.SetCustomField("StatusCode", context.Response.StatusCode);
+            scope.SetCustomField("UserId", actor.UserId);
+            scope.SetCustomField("TenantId", tenantId);
+            scope.SetCustomField("UserEmail", actor.Email);
+            scope.SetCustomField("UserDisplayName", actor.DisplayName);
+            scope.SetCustomField(CorrelationIdMiddleware.CorrelationIdKey, correlationId);
+            scope.SetCustomField("UserAgent", context.Request.Headers.UserAgent.ToString());
+
+            // ForwardedHeadersMiddleware (in UseBlueprintSecurityHeaders, registered before this
+            // middleware) rewrites RemoteIpAddress from X-Forwarded-For, so this is the client's
+            // address, not the address of a load balancer or a reverse proxy in front of it.
+            scope.SetCustomField("IpAddress", context.Connection.RemoteIpAddress?.ToString());
         }
-
-        await using var scope = await AuditScope.CreateAsync(new AuditScopeOptions
+        catch (Exception ex)
         {
-            EventType = eventType,
-        });
-
-        var actor = AuditUserIdentity.FromPrincipal(context.User);
-        var tenantId = await tenantResolver.ResolveAsync(context, context.RequestAborted);
-        var correlationId = context.Items.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var cid)
-            ? cid?.ToString() : null;
-
-        scope.SetCustomField("StatusCode", context.Response.StatusCode);
-        scope.SetCustomField("UserId", actor.UserId);
-        scope.SetCustomField("TenantId", tenantId);
-        scope.SetCustomField("UserEmail", actor.Email);
-        scope.SetCustomField("UserDisplayName", actor.DisplayName);
-        scope.SetCustomField(CorrelationIdMiddleware.CorrelationIdKey, correlationId);
-        scope.SetCustomField("UserAgent", context.Request.Headers.UserAgent.ToString());
-
-        // ForwardedHeadersMiddleware (in UseBlueprintSecurityHeaders, registered before this
-        // middleware) rewrites RemoteIpAddress from X-Forwarded-For, so this is the client's
-        // address, not the address of a load balancer or a reverse proxy in front of it.
-        scope.SetCustomField("IpAddress", context.Connection.RemoteIpAddress?.ToString());
+            this.logger.LogError(ex, "Failed to record an HTTP audit event for {Method} {Path}", context.Request.Method, context.Request.Path);
+        }
     }
 
     /// <summary>

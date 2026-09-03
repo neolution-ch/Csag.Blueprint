@@ -23,3 +23,8 @@ middleware for a denied request. So `HttpAuditMiddleware` must wrap authenticati
 authorization. It must not follow them. This release does not rename the type, so the compiler
 does not flag a wrong position: an application that keeps the old registration still builds, but it
 silently writes no HTTP audit events after this update.
+
+That required position also places `HttpAuditMiddleware` outside the app's exception handler, which
+`UseBlueprintMiddleware()` registers first. So the middleware now catches its own failure — a
+resolver error or an audit-provider write failure — logs it, and lets the response continue instead
+of turning it into an unhandled exception.

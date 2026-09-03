@@ -51,9 +51,12 @@ public static class BlueprintMiddlewareExtensions
 
     /// <summary>
     /// Applies the core Blueprint middleware pipeline: exception handling, status code pages,
-    /// correlation ID tracking, CORS, authentication, request localization, tenant context, and authorization.
+    /// HTTP audit logging, correlation ID tracking, CORS, authentication, request localization,
+    /// tenant context, and authorization.
     /// Exception handler and status code pages are placed first so they can intercept errors
     /// from all downstream middleware (including authentication/authorization 401/403 responses).
+    /// <see cref="HttpAuditMiddleware"/> comes next so it wraps authentication and authorization;
+    /// it records nothing until an app calls <c>ConfigureBlueprintAuditLogging</c>.
     /// Should only be called when not in generation mode.
     /// </summary>
     /// <param name="app">The web application.</param>
@@ -71,6 +74,7 @@ public static class BlueprintMiddlewareExtensions
 
         app.UseExceptionHandler();
         app.UseStatusCodePages();
+        app.UseMiddleware<HttpAuditMiddleware>();
         app.UseMiddleware<OperationCancelledMiddleware>();
         app.UseMiddleware<CorrelationIdMiddleware>();
         app.UseCorsIfConfigured(securitySettings);

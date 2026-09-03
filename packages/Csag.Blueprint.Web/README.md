@@ -49,6 +49,7 @@ app.UseBlueprintMiddleware();
 
 `UseBlueprintMiddleware()` applies the shared request pipeline:
 
+- HTTP audit logging
 - correlation ID middleware
 - CORS
 - authentication
@@ -64,7 +65,7 @@ Applications may still append app-specific middleware before endpoint mapping.
 | --- | --- |
 | `CorrelationIdMiddleware` | Adds/propagates correlation IDs per request. |
 | `TenantMiddleware` | Establishes the ambient tenant context for the request. Delegates *how* the tenant is determined to `ITenantResolver`. |
-| `HttpAuditMiddleware` | Records an audit event for a denied request (401 or 403 by default; configurable). Register it **before** `UseBlueprintMiddleware()`. See [Audit enrichment](#audit-enrichment). |
+| `HttpAuditMiddleware` | Records an audit event for a denied request (401 or 403 by default; configurable). `UseBlueprintMiddleware()` always registers it; `ConfigureBlueprintAuditLogging` turns it on. See [Audit enrichment](#audit-enrichment). |
 | `CorrelationIdDelegatingHandler` | Propagates correlation IDs to outbound HTTP requests. |
 | `SessionClaimRequestCultureProvider` | Resolves request culture from claims and `Accept-Language`. |
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
@@ -81,19 +82,26 @@ The provider writes `UserId`, `TenantId`, and `CorrelationId` to columns. The em
 display name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either
 value requires parsing the JSON data of the row.
 
-`HttpAuditMiddleware` writes an event for a request whose final status code is 401 or 403 by
-default; register `HttpAuditOptions.AuditedStatusCodes` to audit a different set. It also writes the
-client IP address, taken from `HttpContext.Connection.RemoteIpAddress` after
-`ForwardedHeadersMiddleware` has resolved it from `X-Forwarded-For`. It must run before
-`UseBlueprintMiddleware()`, because the ASP.NET Core authorization middleware does not call the next
-middleware for a denied request. A copy registered after `UseBlueprintMiddleware()` never runs for a
-denied request, so it writes nothing for one. A request outside the audited set writes no event: the
-EF Core interceptor already covers the writes, and GCP and Application Insights already record
-general request data.
+`UseBlueprintMiddleware()` always registers `HttpAuditMiddleware`, first, so that it wraps
+authentication and authorization: the ASP.NET Core authorization middleware does not call the next
+middleware for a denied request, so a middleware registered later would never run for one. No app
+registers `HttpAuditMiddleware` itself, and no app can register it in the wrong place.
 
-That registration position also places `HttpAuditMiddleware` outside the app's exception handler,
-which `UseBlueprintMiddleware()` registers first. So a failure while resolving the tenant or writing
-the audit event does not fail the request: the middleware logs the failure and moves on.
+`ConfigureBlueprintAuditLogging` configures both audit features, the EF Core events and the HTTP
+request events, from this one call; both are on by default. Its configure callback exposes the same
+`HttpAuditOptions` instance the middleware reads, as `BlueprintAuditOptions.HttpAudit`; set
+`HttpAudit.Enabled = false` there to turn HTTP request auditing off.
+Until `ConfigureBlueprintAuditLogging` runs, or when that flag is `false`, the middleware does
+nothing but call the next middleware. Once on, it writes an event
+for a request whose final status code is 401 or 403 by default; register
+`HttpAuditOptions.AuditedStatusCodes` to audit a different set. It also writes the client IP address,
+taken from `HttpContext.Connection.RemoteIpAddress` after `ForwardedHeadersMiddleware` has resolved
+it from `X-Forwarded-For`. A request outside the audited set writes no event: the EF Core interceptor
+already covers the writes, and GCP and Application Insights already record general request data.
+
+`HttpAuditMiddleware` runs inside the app's exception handler, which `UseBlueprintMiddleware()`
+registers first. It still catches and logs its own failure instead of throwing: a resolver or
+audit-provider failure must not turn an already-decided 401 or 403 response into a 500.
 
 ### Tenant resolution (the addressing seam)
 

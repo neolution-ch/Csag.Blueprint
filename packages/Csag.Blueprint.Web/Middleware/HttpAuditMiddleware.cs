@@ -15,12 +15,19 @@ using Microsoft.Extensions.Options;
 /// status code, and the duration. This audit log does not need that data.
 /// </summary>
 /// <remarks>
-/// Register this middleware before <c>app.UseBlueprintMiddleware()</c>: it must wrap authentication
-/// and authorization, because the ASP.NET Core authorization middleware does not call the next
-/// middleware for a denied request. A middleware registered after authorization never runs for a
-/// denied request, so it never gets the chance to record an event. That position also places this
-/// middleware's own audit work outside the app's exception handler, which <c>UseBlueprintMiddleware()</c>
-/// registers first. So this middleware catches and logs its own failure instead of throwing.
+/// <c>app.UseBlueprintMiddleware()</c> always registers this middleware, first, so that it wraps
+/// authentication and authorization: the ASP.NET Core authorization middleware does not call the
+/// next middleware for a denied request, so a middleware registered after authorization never runs
+/// for a denied request and never gets the chance to record an event. No app registers this
+/// middleware itself. <see cref="HttpAuditOptions.Enabled"/> gates the actual work; it stays
+/// <see langword="false"/>, and this middleware records nothing, until an app calls
+/// <c>ConfigureBlueprintAuditLogging</c>. An app can set
+/// <c>BlueprintAuditOptions.HttpAudit.Enabled = false</c> in that call's configure callback to keep
+/// HTTP request auditing off. This position places the middleware inside the app's
+/// exception handler, which <c>UseBlueprintMiddleware()</c> registers first. An unhandled exception
+/// here would reach that handler. This middleware still catches and logs its own failure instead of
+/// throwing, because a resolver or audit-provider failure must not turn an already-decided 401 or
+/// 403 response into a 500.
 /// </remarks>
 public class HttpAuditMiddleware
 {
@@ -53,6 +60,12 @@ public class HttpAuditMiddleware
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task InvokeAsync(HttpContext context, ITenantResolver tenantResolver, IOptions<HttpAuditOptions> options)
     {
+        if (!options.Value.Enabled)
+        {
+            await this.next(context);
+            return;
+        }
+
         var path = context.Request.Path.Value;
         if (IsExemptPath(path))
         {
@@ -69,10 +82,9 @@ public class HttpAuditMiddleware
             return;
         }
 
-        // This code runs after UseBlueprintMiddleware(), which holds the app's exception handler.
-        // The exception handler cannot see a failure here, and the audited response may already be
-        // on the wire. So a resolver or audit-provider failure must not become an unhandled
-        // exception: it must stay a logged, best-effort miss of one audit event.
+        // The audited response may already carry the intended 401 or 403 status code. A resolver or
+        // audit-provider failure must not overwrite that with a 500: it must stay a logged,
+        // best-effort miss of one audit event.
         try
         {
             var eventType = $"HTTP:{context.Request.Method}:{context.Request.Path}";

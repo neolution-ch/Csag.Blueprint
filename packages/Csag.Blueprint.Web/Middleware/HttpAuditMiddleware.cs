@@ -18,8 +18,10 @@ using Microsoft.Extensions.Options;
 /// <c>app.UseBlueprintMiddleware()</c> always registers this middleware, first, so that it wraps
 /// authentication and authorization: the ASP.NET Core authorization middleware does not call the
 /// next middleware for a denied request, so a middleware registered after authorization never runs
-/// for a denied request and never gets the chance to record an event. No app registers this
-/// middleware itself. <see cref="HttpAuditOptions.Enabled"/> gates the actual work; it stays
+/// for a denied request and never gets the chance to record an event. An app does not need to
+/// register this middleware itself; remove any manual registration of it, because a duplicate
+/// registration records two events per audited request.
+/// <see cref="HttpAuditOptions.Enabled"/> gates the actual work; it stays
 /// <see langword="false"/>, and this middleware records nothing, until an app calls
 /// <c>ConfigureBlueprintAuditLogging</c>. An app can set
 /// <c>BlueprintAuditOptions.HttpAudit.Enabled = false</c> in that call's configure callback to keep
@@ -84,7 +86,10 @@ public class HttpAuditMiddleware
 
         // The audited response may already carry the intended 401 or 403 status code. A resolver or
         // audit-provider failure must not overwrite that with a 500: it must stay a logged,
-        // best-effort miss of one audit event.
+        // best-effort miss of one audit event. This code collects every field before it creates
+        // the scope, because the default event creation policy saves the event on disposal. An
+        // earlier scope creation risks a partial event, with only EventType set, before this
+        // catch block runs.
         try
         {
             var eventType = $"HTTP:{context.Request.Method}:{context.Request.Path}";
@@ -93,15 +98,15 @@ public class HttpAuditMiddleware
                 eventType = eventType[..100];
             }
 
-            await using var scope = await AuditScope.CreateAsync(new AuditScopeOptions
-            {
-                EventType = eventType,
-            });
-
             var actor = AuditUserIdentity.FromPrincipal(context.User);
             var tenantId = await tenantResolver.ResolveAsync(context, context.RequestAborted);
             var correlationId = context.Items.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var cid)
                 ? cid?.ToString() : null;
+
+            await using var scope = await AuditScope.CreateAsync(new AuditScopeOptions
+            {
+                EventType = eventType,
+            });
 
             scope.SetCustomField("StatusCode", context.Response.StatusCode);
             scope.SetCustomField("UserId", actor.UserId);

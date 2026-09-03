@@ -84,17 +84,19 @@ value requires parsing the JSON data of the row.
 
 `UseBlueprintMiddleware()` always registers `HttpAuditMiddleware`, first, so that it wraps
 authentication and authorization: the ASP.NET Core authorization middleware does not call the next
-middleware for a denied request, so a middleware registered later would never run for one. No app
-registers `HttpAuditMiddleware` itself, and no app can register it in the wrong place.
+middleware for a denied request, so a middleware registered later would never run for one. An app
+does not need to register `HttpAuditMiddleware` itself. Remove any manual
+`app.UseMiddleware<HttpAuditMiddleware>()` call; a duplicate registration records two events per
+audited request.
 
 `ConfigureBlueprintAuditLogging` configures both audit features, the EF Core events and the HTTP
 request events, from this one call; both are on by default. Its configure callback exposes the same
 `HttpAuditOptions` instance the middleware reads, as `BlueprintAuditOptions.HttpAudit`; set
 `HttpAudit.Enabled = false` there to turn HTTP request auditing off.
 Until `ConfigureBlueprintAuditLogging` runs, or when that flag is `false`, the middleware does
-nothing but call the next middleware. Once on, it writes an event
-for a request whose final status code is 401 or 403 by default; register
-`HttpAuditOptions.AuditedStatusCodes` to audit a different set. It also writes the client IP address,
+nothing but call the next middleware. Once on, it writes an event for a request whose final status
+code is 401 or 403 by default. Call `services.Configure<HttpAuditOptions>(o => ...)` to audit a
+different set. It also writes the client IP address,
 taken from `HttpContext.Connection.RemoteIpAddress` after `ForwardedHeadersMiddleware` has resolved
 it from `X-Forwarded-For`. A request outside the audited set writes no event: the EF Core interceptor
 already covers the writes, and GCP and Application Insights already record general request data.

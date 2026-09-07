@@ -33,9 +33,15 @@ public static class BlueprintMiddlewareExtensions
         // Must run before HTTPS redirection and HSTS so the original scheme is visible.
         // Clear KnownProxies/KnownNetworks so headers from any proxy are accepted —
         // Cloud Run and similar platforms use internal IPs that aren't on the default loopback list.
+        // A client cannot reach this app directly on Cloud Run. Its edge appends the real client
+        // address as the last X-Forwarded-For entry and drops anything a client wrote before it.
+        // ForwardLimit 1 reads only that last entry, so a client's own value is never read, even
+        // with no addresses in KnownProxies/KnownIPNetworks to check it against. Do not raise this
+        // limit without a proxy that validates the header first.
         var forwardedHeadersOptions = new ForwardedHeadersOptions
         {
             ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+            ForwardLimit = 1,
         };
         forwardedHeadersOptions.KnownIPNetworks.Clear();
         forwardedHeadersOptions.KnownProxies.Clear();
@@ -50,10 +56,13 @@ public static class BlueprintMiddlewareExtensions
     }
 
     /// <summary>
-    /// Applies the core Blueprint middleware pipeline: exception handling, status code pages,
-    /// correlation ID tracking, CORS, authentication, request localization, tenant context, and authorization.
-    /// Exception handler and status code pages are placed first so they can intercept errors
-    /// from all downstream middleware (including authentication/authorization 401/403 responses).
+    /// Applies the core Blueprint middleware pipeline: HTTP audit logging, exception handling,
+    /// status code pages, correlation ID tracking, CORS, authentication, request localization,
+    /// tenant context, and authorization.
+    /// <see cref="HttpAuditMiddleware"/> is placed first so it wraps everything: authentication and
+    /// authorization, and also the exception handler and status code pages, so it can see a status
+    /// code that the exception handler itself produces. It records nothing until an app calls
+    /// <c>ConfigureBlueprintAuditLogging</c>.
     /// Should only be called when not in generation mode.
     /// </summary>
     /// <param name="app">The web application.</param>
@@ -63,6 +72,8 @@ public static class BlueprintMiddlewareExtensions
         ArgumentNullException.ThrowIfNull(app);
 
         var securitySettings = app.Services.GetRequiredService<IOptions<SecuritySettings>>().Value;
+
+        app.UseMiddleware<HttpAuditMiddleware>();
 
         if (app.Environment.IsDevelopment())
         {

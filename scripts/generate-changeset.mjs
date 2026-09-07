@@ -7,6 +7,11 @@ const prBody = process.env.PR_BODY || "";
 const workspacePackagesChanged =
   process.env.WORKSPACE_PACKAGES_CHANGED === "true";
 
+// Namespaces the generated file so each automation's changesets stay
+// recognisable in .changeset/. Only the file contents are load-bearing for
+// changesets; the name just has to be unique.
+const changesetPrefix = process.env.CHANGESET_PREFIX || "dependabot";
+
 // The script lives in scripts/, so the repository root is one level up.
 const repoRoot = path.resolve(import.meta.dirname, "..");
 
@@ -141,7 +146,7 @@ const updates = parseDependencyUpdates(prBody);
 const content = buildChangeset(fixedPackages, updates);
 
 const id = crypto.randomBytes(8).toString("hex");
-const filename = `dependabot-${id}.md`;
+const filename = `${changesetPrefix}-${id}.md`;
 const changesetDir = path.join(repoRoot, ".changeset");
 const filepath = path.join(changesetDir, filename);
 

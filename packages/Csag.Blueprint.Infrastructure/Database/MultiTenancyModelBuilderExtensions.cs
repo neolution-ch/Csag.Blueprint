@@ -13,8 +13,9 @@ public static class MultiTenancyModelBuilderExtensions
 {
     /// <summary>
     /// Configures multi-tenancy for all entities implementing <see cref="IMustHaveTenant"/>.
-    /// Applies global query filters tied to the <paramref name="context"/> instance and creates
-    /// indexes on <c>TenantId</c>. Also establishes foreign key relationships to the tenant table.
+    /// Applies a named global query filter (<see cref="BlueprintQueryFilters.Tenant"/>) tied to the
+    /// <paramref name="context"/> instance and creates indexes on <c>TenantId</c>. Also establishes
+    /// foreign key relationships to the tenant table.
     /// </summary>
     /// <typeparam name="TTenant">The concrete tenant type (must derive from <see cref="BlueprintTenant"/>).</typeparam>
     /// <typeparam name="TContext">The <see cref="DbContext"/> type that exposes <c>CurrentTenantId</c>.</typeparam>
@@ -94,7 +95,8 @@ public static class MultiTenancyModelBuilderExtensions
         var filterExpression = Expression.AndAlso(hasValueProperty, equalExpression);
         var lambda = Expression.Lambda(filterExpression, parameter);
 
-        modelBuilder.Entity(entityType).HasQueryFilter(lambda);
+        // Registered as a named filter so unrelated opt-outs (e.g. soft delete) cannot drop tenant isolation.
+        modelBuilder.Entity(entityType).HasQueryFilter(BlueprintQueryFilters.Tenant, lambda);
     }
 
     private static void AddTenantForeignKey<TTenant>(ModelBuilder modelBuilder, Type entityType)

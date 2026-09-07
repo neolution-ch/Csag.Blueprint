@@ -6,7 +6,7 @@ This package provides **application-layer abstractions** for CSAG Blueprint-base
 
 ## Claims
 
-- **`IdentityClaimTypes`**: Static constants for identity claim types used across the application (`TenantId`, `PreferredLanguage`). Stored in the authentication ticket so they are available on every request without a database lookup.
+- **`IdentityClaimTypes`**: Static constants for identity claim types used across the application (`TenantId`, `PreferredLanguage`, `ServiceAccountSessionId`). The first two are stored in the authentication ticket so they are available on every request without a database lookup; `ServiceAccountSessionId` is the opaque session reference carried by a service-account bearer token.
 
 ## Tenant Context
 
@@ -20,6 +20,7 @@ All service contracts are defined as interfaces for dependency injection and tes
 |------------------------------|---------|
 | `ITenantService`             | Reads the current tenant ID from the authenticated user's claims. |
 | `ISessionManager`            | Tracks, revokes, and refreshes authentication sessions. Supports per-user and per-session revocation, cleanup of expired records, and session refresh (role/permission updates). |
+| `IServiceAccountSessionManager` | Tracks, validates, and revokes the server-side sessions behind reference-style service-account JWTs. Validation resolves the account's current tenant, roles, and permissions per request, so revocation, secret rotation, and deactivation take effect immediately. |
 | `IPasswordResetEmailService` | Sends password reset emails containing a reset link. |
 | `IImageStorageService`       | Stores and deletes images with support for multiple backends (database or blob storage). Returns a `StoredImageData` record with binary data or URL depending on the implementation. |
 

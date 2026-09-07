@@ -28,6 +28,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISessionExpirationExtender, SessionExpirationExtender<TContext>>();
         services.AddSingleton<ITicketStore, DistributedCacheTicketStore>();
         services.AddScoped<ISessionManager, SessionManager<TUser, TContext>>();
+
+        // Service-account (reference-style JWT) sessions: revocable, resolved server-side per request.
+        // Reuses the same distributed-cache backing store as user sessions (see ServiceAccountSessionManager).
+        services.AddScoped<IServiceAccountSessionManager, ServiceAccountSessionManager<TContext>>();
+
         services.AddSingleton<IPostConfigureOptions<CookieAuthenticationOptions>>(sp => new PostConfigureCookieAuthenticationOptions(sp.GetRequiredService<ITicketStore>()));
 
         return services;

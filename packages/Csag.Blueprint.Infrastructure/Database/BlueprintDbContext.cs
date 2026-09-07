@@ -70,6 +70,11 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
     public DbSet<BlueprintServiceAccount> ServiceAccounts => this.Set<BlueprintServiceAccount>();
 
     /// <summary>
+    /// Gets the active service-account sessions (server-side backing records for reference-style JWTs).
+    /// </summary>
+    public DbSet<BlueprintServiceAccountSession> ServiceAccountSessions => this.Set<BlueprintServiceAccountSession>();
+
+    /// <summary>
     /// Gets the table view preferences.
     /// </summary>
     public DbSet<BlueprintTableViewPreference<TAppUser>> TableViewPreferences => this.Set<BlueprintTableViewPreference<TAppUser>>();
@@ -135,6 +140,7 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
         builder.ApplyConfiguration(new BlueprintResourceAccessConfiguration());
         builder.ApplyConfiguration(new BlueprintRoleConfiguration<TAppRole>());
         builder.ApplyConfiguration(new BlueprintServiceAccountConfiguration());
+        builder.ApplyConfiguration(new BlueprintServiceAccountSessionConfiguration());
         builder.ApplyConfiguration(new BlueprintTableViewPreferenceConfiguration<TAppUser>());
         builder.ApplyConfiguration(new BlueprintTenantConfiguration<TAppTenant>());
         builder.ApplyConfiguration(new BlueprintTenantMembershipConfiguration<TAppUser, TAppTenant>());

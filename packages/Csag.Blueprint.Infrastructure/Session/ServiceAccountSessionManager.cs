@@ -90,10 +90,11 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
         // 1) Resolve the session to its owning service account. Fast path: the cache marker. If the marker is
         //    missing (cache eviction/flush, or the entry was removed by revocation), fall back to the tracking
-        //    row. We deliberately do NOT re-prime the cache from the fallback: a concurrent revocation deletes
-        //    the row first and then removes the marker, so re-priming here could resurrect a just-revoked
-        //    session that outlives its (now deleted) row. Falling through to the DB on every request after a
-        //    cache flush is a bounded performance cost, not a correctness problem.
+        //    row. We deliberately do NOT re-prime the cache from the fallback: revocation removes the marker
+        //    before deleting the row, so a fallback that landed in that window would write a marker outliving
+        //    the row it was read from, resurrecting a revoked session — and no later revoke could clear it,
+        //    because revocation enumerates rows. Falling through to the DB on every request after a cache
+        //    flush is a bounded performance cost, not a correctness problem.
         var serviceAccountId = await this.ResolveServiceAccountIdAsync(dbContext, sessionKey, cancellationToken);
         if (serviceAccountId is null)
         {

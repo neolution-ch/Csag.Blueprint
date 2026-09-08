@@ -1,5 +1,77 @@
 # @neolution-ch/csag-blueprint-web
 
+## 0.2.0
+
+### Minor Changes
+
+- [#31](https://github.com/neolution-ch/Csag.Blueprint/pull/31) [`8bd90b6`](https://github.com/neolution-ch/Csag.Blueprint/commit/8bd90b60fdc4d43dcc6b6bf79c7b289cfc0f1bbf) Thanks [@neoscie](https://github.com/neoscie)! - Narrow HTTP request auditing to denied requests only, and register it automatically
+  
+  **Breaking change.** `HttpAuditMiddleware` no longer records an event for every HTTP request. It
+  now records one event for a request whose final status code is 401 or 403 by default. GCP and
+  Application Insights already capture general request data. So a request outside the audited set
+  writes no event. The audit log now keeps only the EF Core events and the events for an audited HTTP
+  request.
+  
+  An event keeps `EventType` (method and path), `StatusCode`, `UserId`, `TenantId`, `UserEmail`,
+  `UserDisplayName`, `CorrelationId`, `UserAgent`, and the new `IpAddress`. Every event drops
+  `HttpMethod`, `Url`, `DurationMs`, and `UserType`.
+  
+  The audited status codes are configurable through `HttpAuditOptions.AuditedStatusCodes`, 401 and 403
+  by default. Register `services.Configure<HttpAuditOptions>(o => ...)` to audit a different set.
+  
+  **`app.UseBlueprintMiddleware()` now registers `HttpAuditMiddleware` itself, first, so that it always
+  wraps authentication and authorization, and also the exception handler and status code pages.** This
+  lets it audit a status code the exception handler itself produces, for example a 500 added to
+  `AuditedStatusCodes`. An app must remove its own `app.UseMiddleware<HttpAuditMiddleware>()` call.
+  Keeping it registers the middleware twice, which records two events per audited request.
+  
+  `ConfigureBlueprintAuditLogging` now configures both audit features, the EF Core events and the HTTP
+  request events, from this one call. Both are on by default. Its configure callback can set
+  `BlueprintAuditOptions.HttpAudit.Enabled = false` to turn HTTP request auditing off.
+
+- [#27](https://github.com/neolution-ch/Csag.Blueprint/pull/27) [`92310d6`](https://github.com/neolution-ch/Csag.Blueprint/commit/92310d656e62d5006c5792b0899224d71e5986fa) Thanks [@neotrow](https://github.com/neotrow)! - Web, Application, and Testing fixes:
+  
+  - `SecuritySettingsValidator` and `LocalizationOptionsValidator` report proper validation errors instead of throwing `NullReferenceException` when `CorsPolicies` / `SupportedLanguages` are null; `LocalizationOptions.TranslationCacheL1ExpirationMinutes` is now validated (must be greater than 0).
+  - `AddConfiguredCors` fails fast at wiring time with a clear `InvalidOperationException` for a wildcard origin mixed with explicit origins, and for the wildcard-plus-`AllowCredentials` combination — both previously surfaced late or not at all.
+  - `TenantMiddleware` clears any pre-existing ambient tenant before invoking downstream when the resolver yields no tenant, so stale ambient state never flows into request handling.
+  - `JwtSettingsValidator` no longer requires `SigningKey` to be present (generation-mode startup has no key; presence is enforced by the host at runtime as documented) — a key that *is* provided must still be at least 32 characters, measured after trimming, so a whitespace-only or whitespace-padded value cannot pass as key material.
+  - TableView filters: numeric ranges support negative bounds (`"-5-10"` parses as -5..10), undefined enum values are rejected instead of silently matching nothing, `Equals` works on boolean columns, and `Filterable()` no longer wipes the auto-derived enum `allowedValues` from column metadata when called without an explicit list.
+  - `MigrationBuilderExtensions.SeedTranslation(s)` normalizes language codes to canonical lowercase so seeded rows always match translation lookups.
+  - `MsSqlTestContainerOrchestrator` no longer contacts the Docker daemon at construction time (the container is built in `StartAsync`), and the missing-`Initial Catalog` error no longer embeds the connection string (which contains the SA password). `ShouldHaveStatusCodeAsync` accepts an optional `CancellationToken` — binary-breaking for assemblies compiled against the previous version; recompile against this one.
+
+### Patch Changes
+
+- [#38](https://github.com/neolution-ch/Csag.Blueprint/pull/38) [`f913fee`](https://github.com/neolution-ch/Csag.Blueprint/commit/f913feef2951bf26564b5286225e29590f5efc77) Thanks [@neotrow](https://github.com/neotrow)! - Make the OpenAPI Problem Details unification independent of endpoint compile order
+  
+  Two CLR types reach the OpenAPI document under the same schema name:
+  `Microsoft.AspNetCore.Mvc.ProblemDetails`, which `ProblemDetailsOperationProcessor` attaches to every
+  operation, and FastEndpoints' own `ProblemDetails`, used for validation failures. NSwag gives one of
+  them the bare name and suffixes the other `ProblemDetails2`. Which one wins depends on the order the
+  schema generator first encounters them, which follows endpoint discovery order and therefore compile
+  order.
+  
+  `UnifiedProblemDetailsDocumentProcessor` assumed a fixed winner. It removed `ProblemDetails2` after
+  rewriting references, but the rewrite only walked Paths → Operations → Responses → Content. A
+  reference reachable any other way survived and pointed at a definition that no longer existed, so
+  `OpenApiDocument.ToJson()` threw *"Could not find the JSON path of a referenced schema"*.
+  
+  Because the trigger is compile order, this surfaced in consuming apps as a build that broke when an
+  endpoint folder was renamed — the build-time spec export failed with no obvious connection to the
+  rename.
+  
+  The processor now redirects alias references with a `JsonReferenceVisitorBase` walk over the whole
+  document, so request bodies, parameters, nested properties, array items and composition keywords are
+  covered too, and it folds every `ProblemDetails<N>` alias rather than only `ProblemDetails2`. The
+  generated document is unchanged for consumers that were already working.
+
+- [#34](https://github.com/neolution-ch/Csag.Blueprint/pull/34) [`338208d`](https://github.com/neolution-ch/Csag.Blueprint/commit/338208d4cb833eadfb2aae7fd0bb48447ad17241) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the nuget-ecosystem group with 3 updates
+  
+  | Package | From | To | Bump |
+  |---------|------|----|------|
+  | FastEndpoints | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Swagger | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Testing | 8.2.0 | 8.3.0 | 🟡 minor |
+
 ## 0.1.3
 
 ### Patch Changes

@@ -1,5 +1,30 @@
 # @neolution-ch/csag-blueprint-source-generators
 
+## 0.2.0
+
+### Patch Changes
+
+- [#34](https://github.com/neolution-ch/Csag.Blueprint/pull/34) [`338208d`](https://github.com/neolution-ch/Csag.Blueprint/commit/338208d4cb833eadfb2aae7fd0bb48447ad17241) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the nuget-ecosystem group with 3 updates
+  
+  | Package | From | To | Bump |
+  |---------|------|----|------|
+  | FastEndpoints | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Swagger | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Testing | 8.2.0 | 8.3.0 | 🟡 minor |
+
+- [#27](https://github.com/neolution-ch/Csag.Blueprint/pull/27) [`92310d6`](https://github.com/neolution-ch/Csag.Blueprint/commit/92310d656e62d5006c5792b0899224d71e5986fa) Thanks [@neotrow](https://github.com/neotrow)! - Harden the translation-key generator's edge-case handling and make its output deterministic:
+  
+  - A `TranslationDefaults` class in the global namespace now generates compilable sources: the
+    generated files omit the namespace declaration instead of emitting the invalid
+    `namespace <global namespace>;`.
+  - A non-partial `TranslationDefaults` class no longer breaks the consuming build with an
+    unexplained `CS0260`; the generator reports warning `CSAGGEN001` and skips generation for
+    that class.
+  - Multiple `TranslationDefaults` classes in one compilation are still merged first-wins, but the
+    merge is now surfaced as warning `CSAGGEN002` naming every participating class.
+  - Generated keys, constants, and properties are sorted with ordinal string comparison instead of
+    the culture-sensitive default, so the output no longer depends on the build machine's culture.
+
 ## 0.1.3
 
 ### Patch Changes

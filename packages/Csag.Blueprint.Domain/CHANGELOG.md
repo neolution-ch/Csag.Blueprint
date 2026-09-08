@@ -1,5 +1,17 @@
 # @neolution-ch/csag-blueprint-domain
 
+## 0.2.0
+
+### Patch Changes
+
+- [#34](https://github.com/neolution-ch/Csag.Blueprint/pull/34) [`338208d`](https://github.com/neolution-ch/Csag.Blueprint/commit/338208d4cb833eadfb2aae7fd0bb48447ad17241) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the nuget-ecosystem group with 3 updates
+  
+  | Package | From | To | Bump |
+  |---------|------|----|------|
+  | FastEndpoints | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Swagger | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Testing | 8.2.0 | 8.3.0 | 🟡 minor |
+
 ## 0.1.3
 
 ### Patch Changes

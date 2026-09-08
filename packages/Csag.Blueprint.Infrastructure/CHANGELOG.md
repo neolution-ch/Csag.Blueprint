@@ -1,5 +1,26 @@
 # @neolution-ch/csag-blueprint-infrastructure
 
+## 0.2.0
+
+### Minor Changes
+
+- [#27](https://github.com/neolution-ch/Csag.Blueprint/pull/27) [`92310d6`](https://github.com/neolution-ch/Csag.Blueprint/commit/92310d656e62d5006c5792b0899224d71e5986fa) Thanks [@neotrow](https://github.com/neotrow)! - Infrastructure behavior fixes:
+  
+  - The global tenant query filter now compares `TenantId` against the ambient tenant in lifted nullable form (`e.TenantId == context.CurrentTenantId`). With no ambient tenant, tenant-owned queries deterministically return no rows (fail-closed by empty result) instead of throwing `InvalidOperationException("Nullable object must have a value")`. Callers that need cross-tenant access must use `IgnoreQueryFilters()` deliberately — including idempotent seeders, which must set the ambient tenant before existence checks.
+  - `SessionClaimsHelper.ApplySessionClaims` removes any existing `TenantId` claim when rebuilding a session without a tenant, so a tenant-less session carries no tenant claim (matching its documented contract).
+  - `UserClaimsHelper` profile claim replacement removes all existing claims of a type before adding the fresh value, consistent with the role/permission/tenant helpers; stale duplicates can no longer survive a ticket refresh.
+  - `TranslationProvider` and `TranslationCacheInvalidator` normalize language codes to canonical lowercase for cache keys, database lookups, and the requested-vs-default-language comparison, so translation resolution no longer depends on caller casing or database collation. Translation rows are expected to store the canonical lowercase code.
+
+### Patch Changes
+
+- [#34](https://github.com/neolution-ch/Csag.Blueprint/pull/34) [`338208d`](https://github.com/neolution-ch/Csag.Blueprint/commit/338208d4cb833eadfb2aae7fd0bb48447ad17241) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the nuget-ecosystem group with 3 updates
+  
+  | Package | From | To | Bump |
+  |---------|------|----|------|
+  | FastEndpoints | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Swagger | 8.2.0 | 8.3.0 | 🟡 minor |
+  | FastEndpoints.Testing | 8.2.0 | 8.3.0 | 🟡 minor |
+
 ## 0.1.3
 
 ### Patch Changes

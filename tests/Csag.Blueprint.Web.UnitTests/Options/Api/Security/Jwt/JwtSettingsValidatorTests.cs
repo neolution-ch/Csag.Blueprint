@@ -109,6 +109,31 @@ public sealed class JwtSettingsValidatorTests
         result.ShouldNotHaveValidationErrorFor(x => x.SigningKey);
     }
 
+    [Fact]
+    public void Validate_WhitespaceOnlySigningKey_Fails()
+    {
+        // A whitespace-only key is a provided key with no key material: it is judged by the strength
+        // rule rather than treated as the absent-key generation-mode case.
+        var settings = CreateValidSettings();
+        settings.SigningKey = new string(' ', 32);
+
+        var result = this.validator.TestValidate(settings);
+
+        result.ShouldHaveValidationErrorFor(x => x.SigningKey)
+            .WithErrorMessage("JWT signing key must be at least 32 characters long for HS256 security.");
+    }
+
+    [Fact]
+    public void Validate_PaddedSigningKeyWith32SignificantChars_Passes()
+    {
+        var settings = CreateValidSettings();
+        settings.SigningKey = $"  {new string('k', 32)}  ";
+
+        var result = this.validator.TestValidate(settings);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.SigningKey);
+    }
+
     private static JwtSettings CreateValidSettings()
     {
         return new JwtSettings

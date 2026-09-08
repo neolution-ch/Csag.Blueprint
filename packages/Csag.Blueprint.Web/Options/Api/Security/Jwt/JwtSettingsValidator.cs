@@ -30,8 +30,9 @@ namespace Csag.Blueprint.Web.Options.Api.Security.Jwt
 
             // Only the strength of a provided key is checked; an absent key is the generation-mode
             // case and is left to the host's runtime-gated presence check (see the class doc).
+            // The length is measured on the trimmed key so padding cannot stand in for key material.
             this.RuleFor(x => x.SigningKey)
-                .MinimumLength(32)
+                .Must(signingKey => signingKey.Trim().Length >= 32)
                 .WithMessage("JWT signing key must be at least 32 characters long for HS256 security.")
                 .When(x => !string.IsNullOrEmpty(x.SigningKey));
         }

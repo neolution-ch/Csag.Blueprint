@@ -7,6 +7,7 @@ using Csag.Blueprint.Application.Json;
 using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.TestHost;
+using Csag.Blueprint.TestHost.Endpoints.Auth.Login;
 using Csag.Blueprint.TestHost.Endpoints.Vehicles.Create;
 using Csag.Blueprint.Testing.Extensions;
 using Csag.Blueprint.Tests.Shared.Database;
@@ -25,6 +26,8 @@ using Microsoft.Extensions.DependencyInjection;
 public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
 {
     private static readonly Uri VehiclesUri = new("/api/vehicles", UriKind.Relative);
+
+    private static readonly Uri LoginUri = new("/api/auth/login", UriKind.Relative);
 
     [Fact]
     public async Task SaveChanges_StoresEfAuditLogEntryAsync()
@@ -174,6 +177,27 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
         await this.ShouldHaveNoHttpAuditLogAsync(GetCorrelationId(response), ct);
     }
 
+    [Fact]
+    public async Task EndpointProducedUnauthorized_IsAuditedOnceAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Act — the login endpoint is anonymous, so neither CSRF nor authorization ends the request
+        // early: the 401 for a wrong password comes from the endpoint itself, at the far end of the
+        // pipeline. Every HttpAuditMiddleware in the pipeline therefore sees it, which makes this
+        // request the one that reveals how often the middleware is registered.
+        var response = await this.App.AnonymousClient.PostAsJsonAsync(
+            LoginUri,
+            new LoginRequest { Email = SeedData.ViewerAEmail, Password = "Wrong@123" },
+            BlueprintJsonOptions.Default,
+            ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Unauthorized, cancellationToken: ct);
+
+        // Assert — one entry for the request, not one per registration.
+        await this.ShouldHaveOneHttpAuditLogAsync(GetCorrelationId(response), ct);
+    }
+
     private static CreateVehicleRequest CreateVehicleRequestFor(string name) => new()
     {
         Name = name,
@@ -258,7 +282,40 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
 
             auditEntryExists.ShouldBeFalse($"A request whose status code is outside AuditedStatusCodes should leave no HTTP audit entry, but correlation ID '{correlationId}' has one");
 
-            await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+            if (attempt < maxAttempts - 1)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Asserts that an audited request left exactly one "HTTP:" entry. HttpAuditMiddleware belongs
+    /// to the pipeline once, so a second entry under the same correlation ID means it is registered
+    /// more than once. The count is taken repeatedly rather than once, because a second registration
+    /// writes its entry moments after the first, as the outer copy unwinds. Only "HTTP:" events are
+    /// counted, because an EF entity event of the same request shares its correlation ID.
+    /// </summary>
+    private async Task ShouldHaveOneHttpAuditLogAsync(string correlationId, CancellationToken ct)
+    {
+        const int maxAttempts = 8;
+
+        // The entry the request is expected to produce gets the same grace period as every other
+        // lookup in this class before the count below has to see it.
+        await this.FindAuditLogAsync(correlationId, "HTTP:", ct);
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            using var scope = this.App.CreateDbContextScope();
+            var httpAuditEntries = await scope.Context.AuditLogs
+                .CountAsync(a => a.CorrelationId == correlationId && a.EventType.StartsWith("HTTP:"), ct);
+
+            httpAuditEntries.ShouldBe(1, $"An audited request should leave exactly one HTTP audit entry, but correlation ID '{correlationId}' has {httpAuditEntries}; more than one means HttpAuditMiddleware is registered more than once");
+
+            if (attempt < maxAttempts - 1)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
+            }
         }
     }
 }

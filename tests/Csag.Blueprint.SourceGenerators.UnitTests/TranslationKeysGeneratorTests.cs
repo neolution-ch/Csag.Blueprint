@@ -120,6 +120,26 @@ public sealed class TranslationKeysGeneratorTests
         }
         """;
 
+    private const string NestedClassesInOneNamespaceSource = """
+        namespace TestApp.Translations;
+
+        public static partial class Outer
+        {
+            public static partial class TranslationDefaults
+            {
+                public const string Greeting = "Hello";
+            }
+        }
+
+        public static partial class Other
+        {
+            public static partial class TranslationDefaults
+            {
+                public const string Farewell = "Goodbye";
+            }
+        }
+        """;
+
     private const string EscapingSource = """
         namespace TestApp.Translations;
 
@@ -341,6 +361,24 @@ public sealed class TranslationKeysGeneratorTests
         message.ShouldContain("First.TranslationDefaults");
         message.ShouldContain("Second.TranslationDefaults");
         diagnostic.Location.ShouldNotBe(Location.None);
+        diagnostic.AdditionalLocations.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public void RunGenerator_WithClassesNestedInDifferentContainingTypes_ReportsMergeWarning()
+    {
+        // Act — two TranslationDefaults classes that share a namespace but sit inside different
+        // containing types, so they are separate symbols rather than partial declarations of one.
+        var (_, _, generatorDiagnostics) = RunGenerator(NestedClassesInOneNamespaceSource);
+
+        // Assert — classes are distinguished by their fully qualified display name, so the merge is
+        // reported even though both classes report the same containing namespace.
+        var diagnostic = generatorDiagnostics.ShouldHaveSingleItem();
+        diagnostic.Id.ShouldBe("CSAGGEN002");
+        diagnostic.Severity.ShouldBe(DiagnosticSeverity.Warning);
+        var message = diagnostic.GetMessage(CultureInfo.InvariantCulture);
+        message.ShouldContain("TestApp.Translations.Outer.TranslationDefaults");
+        message.ShouldContain("TestApp.Translations.Other.TranslationDefaults");
         diagnostic.AdditionalLocations.ShouldHaveSingleItem();
     }
 

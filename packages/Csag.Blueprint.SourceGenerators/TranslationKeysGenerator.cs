@@ -122,8 +122,9 @@ namespace Csag.Blueprint.SourceGenerators
             string? namespaceName = null;
 
             // Partial declarations of the same class all resolve to the same symbol and therefore
-            // share a namespace, so tracking one class info per namespace distinguishes genuinely
-            // separate TranslationDefaults classes from partial declarations of a single one.
+            // share a fully qualified display name, so tracking one class info per display name
+            // distinguishes genuinely separate TranslationDefaults classes — including ones nested
+            // in different containing types of a single namespace — from partial declarations of one.
             var distinctClasses = new List<TranslationKeysInfo>();
 
             foreach (var classInfo in classes)

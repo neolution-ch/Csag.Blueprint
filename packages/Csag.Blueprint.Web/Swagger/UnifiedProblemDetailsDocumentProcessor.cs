@@ -1,42 +1,99 @@
 namespace Csag.Blueprint.Web.Swagger;
 
+using System.Globalization;
 using NJsonSchema;
+using NJsonSchema.References;
+using NJsonSchema.Visitors;
 using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
 /// <summary>
-/// Replaces the auto-generated <c>ProblemDetails</c> and <c>ProblemDetails2</c> schemas with
-/// a single unified Problem Details schema. This ensures generated clients get one consistent
-/// <c>ProblemDetails</c> error type rather than two separate types from different C# libraries.
+/// Collapses every auto-generated Problem Details schema into a single unified one, so generated
+/// clients get one consistent <c>ProblemDetails</c> error type rather than several separate types
+/// coming from different C# libraries.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Two distinct CLR types reach the document under the same schema name:
+/// <c>Microsoft.AspNetCore.Mvc.ProblemDetails</c>, added to every operation by
+/// <see cref="ProblemDetailsOperationProcessor"/>, and FastEndpoints' own <c>ProblemDetails</c>,
+/// used for validation failures. NSwag gives one of them the bare name and suffixes the rest
+/// (<c>ProblemDetails2</c>, <c>ProblemDetails3</c>, ...). Which one wins the bare name depends on
+/// the order in which the schema generator first encounters them, which follows endpoint discovery
+/// order and therefore compile order - so it changes when endpoint folders are renamed or reordered.
+/// </para>
+/// <para>
+/// This processor must therefore not assume a winner. It redirects references to the suffixed
+/// aliases <b>everywhere in the document</b>, not just in response bodies, and only then removes
+/// them. A single missed reference makes the document unserializable, failing the build with
+/// "Could not find the JSON path of a referenced schema".
+/// </para>
+/// <para>
 /// Runs as a document processor (after all operation processors) so it can rewrite the full
 /// document in one pass. The unified schema matches what both ASP.NET Core and FastEndpoints
 /// actually produce at runtime.
+/// </para>
 /// </remarks>
 public class UnifiedProblemDetailsDocumentProcessor : IDocumentProcessor
 {
+    private const string CanonicalName = "ProblemDetails";
+
     /// <inheritdoc/>
     public void Process(DocumentProcessorContext context)
     {
+        ArgumentNullException.ThrowIfNull(context);
+
         var document = context.Document;
 
-        // The ProblemDetails schema must exist (added by ProblemDetailsOperationProcessor).
-        if (!document.Definitions.TryGetValue("ProblemDetails", out var pdSchema))
+        // The canonical schema must exist (added by ProblemDetailsOperationProcessor).
+        if (!document.Definitions.TryGetValue(CanonicalName, out var canonical))
         {
             return;
         }
 
-        // Rebuild the ProblemDetails schema in-place so all existing references remain valid.
-        RebuildAsUnifiedSchema(pdSchema, document);
+        // Rebuild the canonical schema in-place so all existing references to it remain valid.
+        RebuildAsUnifiedSchema(canonical, document);
 
-        // Redirect all ProblemDetails2 references to the (now unified) ProblemDetails schema.
-        if (document.Definitions.TryGetValue("ProblemDetails2", out var pd2Schema))
+        // Every "ProblemDetails<N>" definition is the same concept generated from a different CLR
+        // type. Fold them into the canonical schema.
+        var aliasNames = document.Definitions.Keys.Where(IsSuffixedAlias).ToList();
+
+        if (aliasNames.Count == 0)
         {
-            ReplaceSchemaReferences(document, pd2Schema, pdSchema);
-            document.Definitions.Remove("ProblemDetails2");
+            return;
         }
+
+        var aliases = new HashSet<JsonSchema>(
+            aliasNames.Select(name => document.Definitions[name]),
+            ReferenceEqualityComparer.Instance);
+
+        new AliasReferenceRedirector(canonical, aliases).Visit(document);
+
+        foreach (var name in aliasNames)
+        {
+            document.Definitions.Remove(name);
+        }
+    }
+
+    /// <summary>
+    /// Determines whether a definition name is an NSwag-suffixed duplicate of the canonical schema,
+    /// for example <c>ProblemDetails2</c>. The bare name itself is never an alias.
+    /// </summary>
+    /// <param name="name">The definition name.</param>
+    /// <returns><c>true</c> when the name is a suffixed duplicate; otherwise <c>false</c>.</returns>
+    private static bool IsSuffixedAlias(string name)
+    {
+        if (!name.StartsWith(CanonicalName, StringComparison.Ordinal) || name.Length == CanonicalName.Length)
+        {
+            return false;
+        }
+
+        return int.TryParse(
+            name[CanonicalName.Length..],
+            NumberStyles.None,
+            CultureInfo.InvariantCulture,
+            out _);
     }
 
     private static void RebuildAsUnifiedSchema(JsonSchema schema, OpenApiDocument document)
@@ -105,31 +162,33 @@ public class UnifiedProblemDetailsDocumentProcessor : IDocumentProcessor
         }
     }
 
-    private static void ReplaceSchemaReferences(
-        OpenApiDocument document,
-        JsonSchema oldSchema,
-        JsonSchema newSchema)
+    /// <summary>
+    /// Rewrites every reference to one of the alias schemas so it points at the canonical schema.
+    /// </summary>
+    /// <remarks>
+    /// Walks the whole document graph rather than only response bodies: aliases are also reachable
+    /// from request bodies, parameters, nested properties, array items and composition keywords, and
+    /// any reference left pointing at a removed definition breaks serialization.
+    /// </remarks>
+    private sealed class AliasReferenceRedirector : JsonReferenceVisitorBase
     {
-        foreach (var pathItem in document.Paths.Values)
-        {
-            foreach (var operation in pathItem.Values)
-            {
-                ReplaceInOperation(operation, oldSchema, newSchema);
-            }
-        }
-    }
+        private readonly JsonSchema canonical;
+        private readonly HashSet<JsonSchema> aliases;
 
-    private static void ReplaceInOperation(OpenApiOperation operation, JsonSchema oldSchema, JsonSchema newSchema)
-    {
-        foreach (var response in operation.Responses.Values)
+        public AliasReferenceRedirector(JsonSchema canonical, HashSet<JsonSchema> aliases)
         {
-            foreach (var mediaType in response.Content.Values)
+            this.canonical = canonical;
+            this.aliases = aliases;
+        }
+
+        protected override IJsonReference VisitJsonReference(IJsonReference reference, string path, string? typeNameHint)
+        {
+            if (reference.Reference is JsonSchema target && this.aliases.Contains(target))
             {
-                if (mediaType.Schema?.Reference == oldSchema)
-                {
-                    mediaType.Schema = new JsonSchema { Reference = newSchema };
-                }
+                reference.Reference = this.canonical;
             }
+
+            return reference;
         }
     }
 }

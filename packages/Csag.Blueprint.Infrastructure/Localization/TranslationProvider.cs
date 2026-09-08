@@ -11,6 +11,10 @@ using Neolution.Extensions.Caching.Abstractions;
 /// <summary>
 /// Provides merged translation snapshots with two-tier caching:
 /// L1 (in-memory, short TTL) → L2 (distributed, 24h TTL) → Database.
+/// Language codes are normalized through <see cref="TranslationLanguage"/> before every cache key
+/// composition and database lookup, so results do not depend on caller casing or database
+/// collation, and <see cref="TranslationCacheInvalidator"/> evicts the same entries this provider
+/// writes.
 /// </summary>
 /// <typeparam name="TContext">The DbContext type that contains Translation entities.</typeparam>
 public sealed class TranslationProvider<TContext> : ITranslationProvider
@@ -49,7 +53,7 @@ public sealed class TranslationProvider<TContext> : ITranslationProvider
         this.distributedCache = distributedCache;
         this.dbContextFactory = dbContextFactory;
         this.logger = logger;
-        this.defaultLanguage = defaultLanguage;
+        this.defaultLanguage = TranslationLanguage.Normalize(defaultLanguage);
         this.translationDefaults = translationDefaults;
         this.l1ExpirationMinutes = TimeSpan.FromMinutes(l1ExpirationMinutes);
     }
@@ -57,7 +61,10 @@ public sealed class TranslationProvider<TContext> : ITranslationProvider
     /// <inheritdoc/>
     public TranslationSnapshot GetTranslations(string languageCode)
     {
-        var l1Key = $"{L1CacheKeyPrefix}{languageCode}";
+        // One canonical casing for cache keys and database lookups, so "de-CH" and "de-ch" share
+        // a single snapshot and the invalidator can compose the same keys.
+        var normalizedLanguageCode = TranslationLanguage.Normalize(languageCode);
+        var l1Key = $"{L1CacheKeyPrefix}{normalizedLanguageCode}";
 
         if (this.memoryCache.TryGetValue(l1Key, out TranslationSnapshot? cached) && cached != null)
         {
@@ -73,11 +80,11 @@ public sealed class TranslationProvider<TContext> : ITranslationProvider
         TranslationSnapshot? snapshot = null;
         try
         {
-            snapshot = this.distributedCache.Get<TranslationSnapshot>(CacheId.Translation, languageCode);
+            snapshot = this.distributedCache.Get<TranslationSnapshot>(CacheId.Translation, normalizedLanguageCode);
         }
         catch (Exception ex)
         {
-            this.logger.LogWarning(ex, "Failed to read translations from distributed cache for language '{LanguageCode}'", languageCode);
+            this.logger.LogWarning(ex, "Failed to read translations from distributed cache for language '{LanguageCode}'", normalizedLanguageCode);
         }
 
         if (snapshot != null)
@@ -87,20 +94,20 @@ public sealed class TranslationProvider<TContext> : ITranslationProvider
         }
 
         // DB load
-        snapshot = this.LoadFromDatabase(languageCode);
+        snapshot = this.LoadFromDatabase(normalizedLanguageCode);
 
         // Populate L2
         try
         {
             this.distributedCache.SetWithOptions(
                 CacheId.Translation,
-                languageCode,
+                normalizedLanguageCode,
                 snapshot,
                 new CacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24) });
         }
         catch (Exception ex)
         {
-            this.logger.LogWarning(ex, "Failed to write translations to distributed cache for language '{LanguageCode}'", languageCode);
+            this.logger.LogWarning(ex, "Failed to write translations to distributed cache for language '{LanguageCode}'", normalizedLanguageCode);
         }
 
         // Populate L1
@@ -109,6 +116,11 @@ public sealed class TranslationProvider<TContext> : ITranslationProvider
         return snapshot;
     }
 
+    /// <summary>
+    /// Loads and merges the snapshot for the given language straight from the database.
+    /// </summary>
+    /// <param name="languageCode">The language code in canonical form (see <see cref="TranslationLanguage"/>).</param>
+    /// <returns>The merged snapshot.</returns>
     private TranslationSnapshot LoadFromDatabase(string languageCode)
     {
         using var context = this.dbContextFactory.CreateDbContext();
@@ -123,10 +135,11 @@ public sealed class TranslationProvider<TContext> : ITranslationProvider
         var translations = translationData.ToDictionary(t => t.Key, t => t.Value);
         var lastModified = translationData.Count > 0 ? translationData.Max(t => t.UpdatedAt) : (DateTimeOffset?)null;
 
-        // Load default language translations for fallback (if different)
+        // Load default language translations for fallback (if different). Both codes are already
+        // canonical, so this ordinal comparison agrees exactly with the equality the queries use.
         Dictionary<string, string?>? defaultTranslations = null;
         DateTimeOffset? defaultLastModified = null;
-        if (!string.Equals(languageCode, this.defaultLanguage, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(languageCode, this.defaultLanguage, StringComparison.Ordinal))
         {
             var defaultData = context.Set<BlueprintTranslation>()
                 .AsNoTracking()

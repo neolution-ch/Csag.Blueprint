@@ -22,7 +22,7 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var response = await this.App.ViewerAClient
             .GetAsync(new Uri("/api/vehicles", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -33,7 +33,7 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var response = await this.App.ViewerAClient
             .GetAsync(new Uri("/api/maintenance-records", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -45,12 +45,12 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var current = await this.App.ViewerAClient
             .GetAsync(new Uri("/api/maintenance-records", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await current.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "ListMaintenanceRecordsEndpoint lives in Endpoints/MaintenanceRecords");
+        await current.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "ListMaintenanceRecordsEndpoint lives in Endpoints/MaintenanceRecords", TestContext.Current.CancellationToken);
 
         var concatenated = await this.App.ViewerAClient
             .GetAsync(new Uri("/api/maintenancerecords", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await concatenated.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "the non-kebab-case form must not be routable");
+        await concatenated.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, "the non-kebab-case form must not be routable", TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var response = await this.App.AnonymousClient
             .GetAsync(new Uri("/api/localization/greeting", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -71,12 +71,12 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var vehicles = await this.App.ViewerAClient
             .GetAsync(new Uri("/vehicles", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await vehicles.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound);
+        await vehicles.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, cancellationToken: TestContext.Current.CancellationToken);
 
         var greeting = await this.App.AnonymousClient
             .GetAsync(new Uri("/localization/greeting", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await greeting.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound);
+        await greeting.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -87,12 +87,12 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var login = await this.App.AnonymousClient
             .GetAsync(new Uri("/api/auth/login", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await login.ShouldHaveStatusCodeAsync(HttpStatusCode.MethodNotAllowed);
+        await login.ShouldHaveStatusCodeAsync(HttpStatusCode.MethodNotAllowed, cancellationToken: TestContext.Current.CancellationToken);
 
         var tableViewData = await this.App.ViewerAClient
             .GetAsync(new Uri("/api/vehicles/table-view/data", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await tableViewData.ShouldHaveStatusCodeAsync(HttpStatusCode.MethodNotAllowed);
+        await tableViewData.ShouldHaveStatusCodeAsync(HttpStatusCode.MethodNotAllowed, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var response = await this.App.AnonymousClient
             .GetAsync(new Uri("/api/no-such-resource", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, cancellationToken: TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -112,6 +112,6 @@ public sealed class FastEndpointsConventionsTests(AppFixture app) : IntegrationT
         var response = await this.App.ViewerAClient
             .GetAsync(new Uri($"/api/vehicles/{SeedData.CityBikeVehicleId}", UriKind.Relative), TestContext.Current.CancellationToken);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: TestContext.Current.CancellationToken);
     }
 }

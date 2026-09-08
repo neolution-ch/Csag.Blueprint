@@ -29,40 +29,48 @@ public static class UserClaimsHelper
     }
 
     /// <summary>
-    /// Replaces a claim with a new value, or adds it if it doesn't exist.
+    /// Replaces a claim with a new value, or adds it if it doesn't exist. All existing claims of
+    /// the type are removed first — consistent with the role/permission/tenant helpers — so the
+    /// identity always carries exactly one claim of the type.
     /// </summary>
     /// <param name="identity">The claims identity.</param>
     /// <param name="claimType">The claim type.</param>
     /// <param name="value">The new claim value.</param>
     private static void ReplaceClaim(ClaimsIdentity identity, string claimType, string value)
     {
-        var existing = identity.FindFirst(claimType);
-        if (existing != null)
-        {
-            identity.RemoveClaim(existing);
-        }
-
+        RemoveClaims(identity, claimType);
         identity.AddClaim(new Claim(claimType, value));
     }
 
     /// <summary>
-    /// Replaces an optional claim. If the value is null or empty, the existing claim is removed.
-    /// If the value is present, the claim is replaced or added.
+    /// Replaces an optional claim. All existing claims of the type are removed first; if the value
+    /// is present the claim is re-added, and if it is null or empty the identity ends up without
+    /// any claim of the type.
     /// </summary>
     /// <param name="identity">The claims identity.</param>
     /// <param name="claimType">The claim type.</param>
     /// <param name="value">The claim value, or null/empty to remove.</param>
     private static void ReplaceOptionalClaim(ClaimsIdentity identity, string claimType, string? value)
     {
-        var existing = identity.FindFirst(claimType);
-        if (existing != null)
-        {
-            identity.RemoveClaim(existing);
-        }
+        RemoveClaims(identity, claimType);
 
         if (!string.IsNullOrEmpty(value))
         {
             identity.AddClaim(new Claim(claimType, value));
+        }
+    }
+
+    /// <summary>
+    /// Removes every claim of the given type from the identity, including duplicates left behind
+    /// by earlier ticket builds.
+    /// </summary>
+    /// <param name="identity">The claims identity.</param>
+    /// <param name="claimType">The claim type to remove.</param>
+    private static void RemoveClaims(ClaimsIdentity identity, string claimType)
+    {
+        foreach (var claim in identity.FindAll(claimType).ToList())
+        {
+            identity.RemoveClaim(claim);
         }
     }
 }

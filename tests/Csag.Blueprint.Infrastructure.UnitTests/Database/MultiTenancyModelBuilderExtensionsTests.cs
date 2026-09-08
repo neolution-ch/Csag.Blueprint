@@ -41,7 +41,7 @@ public sealed class MultiTenancyModelBuilderExtensionsTests : IDisposable
     }
 
     [Fact]
-    public async Task QueryFilter_WithNoAmbientTenant_ThrowsOnQuery()
+    public async Task QueryFilter_WithNoAmbientTenant_ReturnsNoRows()
     {
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext(TenantA);
@@ -51,13 +51,11 @@ public sealed class MultiTenancyModelBuilderExtensionsTests : IDisposable
         // Act
         TenantContext.Clear();
 
-        // Assert — fail-closed, but by throwing rather than returning no rows: the filter is
-        // "CurrentTenantId.HasValue && TenantId == CurrentTenantId.Value", yet EF funcletizes
-        // ".Value" into a query parameter that is evaluated eagerly, before the HasValue guard
-        // can short-circuit, so querying a tenant-owned set without an ambient tenant throws.
-        var exception = await Should.ThrowAsync<InvalidOperationException>(
-            () => scope.Context.Vehicles.CountAsync(TestContext.Current.CancellationToken));
-        exception.Message.ShouldContain("Nullable object must have a value");
+        // Assert — fail-closed by empty result: the filter compares TenantId against the ambient
+        // tenant in lifted nullable form, and a comparison against a null tenant matches nothing,
+        // so querying a tenant-owned set without an ambient tenant deterministically returns no
+        // rows (IgnoreQueryFilters is the deliberate escape hatch, covered below).
+        (await scope.Context.Vehicles.CountAsync(TestContext.Current.CancellationToken)).ShouldBe(0);
     }
 
     [Fact]

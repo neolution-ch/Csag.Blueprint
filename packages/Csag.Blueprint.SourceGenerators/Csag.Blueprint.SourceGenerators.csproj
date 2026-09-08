@@ -15,7 +15,9 @@
         <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
         <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
         <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
-        <NoWarn>RS2008</NoWarn>
+        <!-- NU5128: analyzer packages ship the assembly under analyzers/dotnet/cs, so the
+        nuspec's netstandard2.0 dependency group intentionally has no matching lib/ folder. -->
+        <NoWarn>$(NoWarn);RS2008;NU5128</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Remove="Neolution.CodeAnalysis" />

@@ -296,17 +296,16 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         nameColumn.FilterOperator.ShouldBe(TableViewFilterOperator.Contains);
         nameColumn.FilterInputHint.ShouldBe(TableViewFilterInputHint.Text);
 
-        // Enum column. Column() auto-derives AllowedValues from the enum member names, but the
-        // fluent Filterable(operator) call that every filterable column makes afterwards overwrites
-        // them with its optional allowedValues parameter — null when omitted, as in the canonical
-        // definition style. The wire metadata therefore carries no allowed values unless a
-        // definition passes them explicitly; pinned here so a package-side fix surfaces loudly.
+        // Enum column. Column() auto-derives AllowedValues from the enum member names, and the
+        // fluent Filterable(operator) call keeps them unless a definition passes explicit values,
+        // so the wire metadata serves the selectable member names to the frontend.
         var kindColumn = res.Columns.First(c => c.Name == "Kind");
         kindColumn.DataType.ShouldBe("enum");
         kindColumn.FilterOperator.ShouldBe(TableViewFilterOperator.Enum);
         kindColumn.FilterInputHint.ShouldBe(TableViewFilterInputHint.Select);
-        kindColumn.AllowedValues.ShouldBeNull(
-            "Filterable(operator) without explicit values resets the auto-derived enum AllowedValues");
+        kindColumn.AllowedValues.ShouldBe(
+            ["None", "Bicycle", "Scooter", "Kayak"],
+            customMessage: "the auto-derived enum member names survive Filterable(operator) without explicit values");
 
         // Range and boolean columns carry the matching input hints.
         res.Columns.First(c => c.Name == "PricePerHour").FilterInputHint.ShouldBe(TableViewFilterInputHint.NumberRange);
@@ -340,7 +339,7 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
             new TableViewExportRequest { Filters = filters, SortColumns = sortColumns },
             BlueprintJsonOptions.Default,
             ct);
-        await exportResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
+        await exportResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
         var contentType = exportResponse.Content.Headers.ContentType.ShouldNotBeNull();
         contentType.MediaType.ShouldBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 

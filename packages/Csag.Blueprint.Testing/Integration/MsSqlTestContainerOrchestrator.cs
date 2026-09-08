@@ -21,18 +21,21 @@ public sealed class MsSqlTestContainerOrchestrator : IAsyncDisposable
     /// <summary>The default SQL Server image used when no image is specified.</summary>
     private const string DefaultImage = "mcr.microsoft.com/mssql/server:2022-latest";
 
-    private readonly MsSqlContainer container;
+    private readonly string image;
 
+    private MsSqlContainer? container;
     private SqlConnection? masterConnection;
     private string databaseName = string.Empty;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MsSqlTestContainerOrchestrator"/> class.
+    /// Construction has no side effects; the Docker daemon is first contacted by <see cref="StartAsync"/>,
+    /// so instances can be created (and disposed) on machines without Docker.
     /// </summary>
     /// <param name="image">The SQL Server Docker image to use. Defaults to SQL Server 2022.</param>
     public MsSqlTestContainerOrchestrator(string image = DefaultImage)
     {
-        this.container = new MsSqlBuilder(image).Build();
+        this.image = image;
     }
 
     /// <summary>
@@ -40,13 +43,23 @@ public sealed class MsSqlTestContainerOrchestrator : IAsyncDisposable
     /// Use this as the base for building application-specific connection strings.
     /// </summary>
     /// <returns>The container connection string.</returns>
-    public string GetConnectionString() => this.container.GetConnectionString();
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <see cref="StartAsync"/> has not been called yet.
+    /// </exception>
+    public string GetConnectionString() =>
+        this.container?.GetConnectionString()
+        ?? throw new InvalidOperationException($"{nameof(this.GetConnectionString)} cannot be called before {nameof(this.StartAsync)}.");
 
     /// <summary>
-    /// Starts the SQL Server Testcontainer.
+    /// Builds and starts the SQL Server Testcontainer. Building the container is what contacts the
+    /// Docker daemon, so it happens here rather than at construction time.
     /// </summary>
     /// <returns>A task representing the asynchronous start operation.</returns>
-    public Task StartAsync() => this.container.StartAsync();
+    public Task StartAsync()
+    {
+        this.container ??= new MsSqlBuilder(this.image).Build();
+        return this.container.StartAsync();
+    }
 
     /// <summary>
     /// Creates a SQL Server snapshot of the target database for fast subsequent restores.
@@ -68,8 +81,12 @@ public sealed class MsSqlTestContainerOrchestrator : IAsyncDisposable
 
         if (string.IsNullOrEmpty(this.databaseName))
         {
+            // Deliberately omits the connection string itself: it carries the SA password and this
+            // message can end up in test logs and CI output.
             throw new InvalidOperationException(
-                $"Connection string does not specify a database (Initial Catalog): {migrationsConnectionString}");
+                "The migrations connection string does not name a database to snapshot: "
+                + "its 'Initial Catalog' key is missing or empty. Set 'Initial Catalog' to the "
+                + "fully-migrated database.");
         }
 
         var masterConnectionString = new SqlConnectionStringBuilder(migrationsConnectionString)
@@ -191,6 +208,10 @@ public sealed class MsSqlTestContainerOrchestrator : IAsyncDisposable
             this.masterConnection = null;
         }
 
-        await this.container.DisposeAsync();
+        // The container only exists once StartAsync has built it.
+        if (this.container is not null)
+        {
+            await this.container.DisposeAsync();
+        }
     }
 }

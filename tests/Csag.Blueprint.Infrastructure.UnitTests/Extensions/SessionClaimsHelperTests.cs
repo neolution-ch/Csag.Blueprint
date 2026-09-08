@@ -63,7 +63,7 @@ public sealed class SessionClaimsHelperTests
     }
 
     [Fact]
-    public void ApplySessionClaims_WithoutTenant_LeavesExistingTenantClaimInPlace()
+    public void ApplySessionClaims_WithoutTenant_RemovesExistingTenantClaim()
     {
         // Arrange — a ticket that already carries a tenant claim.
         var identity = new ClaimsIdentity();
@@ -72,9 +72,9 @@ public sealed class SessionClaimsHelperTests
         // Act — reapply for a tenant-less session.
         identity.ApplySessionClaims(CreateUser(), tenantId: null, [], []);
 
-        // Assert — the tenant claim is only written when a tenant is active, never removed, so a
-        // stale claim from the previous tenant survives a switch to a tenant-less session.
-        identity.FindFirst("TenantId").ShouldNotBeNull().Value.ShouldBe(TenantId.ToString());
+        // Assert — a tenant-less session carries no tenant claim, so the claim from the previously
+        // active tenant is removed instead of continuing to scope the session to it.
+        identity.FindFirst("TenantId").ShouldBeNull();
     }
 
     [Fact]

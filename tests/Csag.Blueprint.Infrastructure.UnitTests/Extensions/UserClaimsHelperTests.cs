@@ -96,7 +96,7 @@ public sealed class UserClaimsHelperTests
     }
 
     [Fact]
-    public void SetUserProfileClaims_WithDuplicateExistingClaims_RemovesOnlyTheFirstDuplicate()
+    public void SetUserProfileClaims_WithDuplicateExistingClaims_RemovesAllDuplicates()
     {
         // Arrange — an identity that already carries two claims of the same profile type.
         var identity = new ClaimsIdentity();
@@ -107,11 +107,9 @@ public sealed class UserClaimsHelperTests
         // Act
         identity.SetUserProfileClaims(user);
 
-        // Assert — the helper removes only the first match before adding the new value, so the
-        // second stale duplicate survives (unlike the role/permission/tenant helpers, which
-        // remove every match).
-        identity.FindAll(ClaimTypes.Email).Select(c => c.Value)
-            .ShouldBe(["second@example.com", "alice@example.com"], ignoreOrder: true);
+        // Assert — every stale duplicate is removed before the fresh value is added, matching the
+        // role/permission/tenant helpers, so the identity carries exactly one claim per profile type.
+        identity.FindAll(ClaimTypes.Email).ShouldHaveSingleItem().Value.ShouldBe("alice@example.com");
     }
 
     private static TestUserProfileClaimsSource CreateUser() => new()

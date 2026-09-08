@@ -27,7 +27,11 @@ public sealed class TranslationCacheInvalidator : ITranslationCacheInvalidator
     /// <inheritdoc/>
     public async Task InvalidateAsync(string languageCode, CancellationToken cancellationToken)
     {
-        await this.distributedCache.RemoveAsync(CacheId.Translation, languageCode, cancellationToken);
-        this.memoryCache.Remove($"translations:{languageCode}");
+        // Normalize exactly like TranslationProvider composes its cache keys, so eviction hits
+        // the entries the provider wrote regardless of the casing the caller supplies.
+        var normalizedLanguageCode = TranslationLanguage.Normalize(languageCode);
+
+        await this.distributedCache.RemoveAsync(CacheId.Translation, normalizedLanguageCode, cancellationToken);
+        this.memoryCache.Remove($"translations:{normalizedLanguageCode}");
     }
 }

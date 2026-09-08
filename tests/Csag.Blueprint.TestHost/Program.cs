@@ -3,7 +3,6 @@ using Csag.Blueprint.TestHost.Extensions;
 using Csag.Blueprint.Tests.Shared.Database;
 using Csag.Blueprint.Tests.Shared.Entities;
 using Csag.Blueprint.Web.Extensions;
-using Csag.Blueprint.Web.Middleware;
 using Csag.Blueprint.Web.Options.Api.Security;
 using Microsoft.Extensions.Options;
 
@@ -29,7 +28,6 @@ app.ConfigureBlueprintAuditLogging<TestDbContext, TestUser, TestRole>();
 
 app.UseBlueprintSecurityHeaders();
 app.UseBlueprintMiddleware();
-app.UseMiddleware<HttpAuditMiddleware>();
 
 // The runtime Swagger UI/JSON endpoints are gated behind configuration; only the Testing and
 // Development settings enable them.

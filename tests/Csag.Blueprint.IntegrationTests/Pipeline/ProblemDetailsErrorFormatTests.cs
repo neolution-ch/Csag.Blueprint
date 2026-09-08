@@ -199,7 +199,7 @@ public sealed class ProblemDetailsErrorFormatTests(AppFixture app) : Integration
 
         using var response = await this.App.ManagerAClient.PostAsJsonAsync(VehiclesUri, request, BlueprintJsonOptions.Default, ct);
 
-        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest);
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
 
         var content = await response.Content.ReadAsStringAsync(ct);
         using var problemDetails = JsonDocument.Parse(content);

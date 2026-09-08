@@ -142,7 +142,7 @@ namespace Csag.Blueprint.SourceGenerators
                     continue;
                 }
 
-                if (!distinctClasses.Any(c => string.Equals(c.Namespace, classInfo.Namespace, StringComparison.Ordinal)))
+                if (!distinctClasses.Any(c => string.Equals(c.ClassDisplayName, classInfo.ClassDisplayName, StringComparison.Ordinal)))
                 {
                     distinctClasses.Add(classInfo);
                 }

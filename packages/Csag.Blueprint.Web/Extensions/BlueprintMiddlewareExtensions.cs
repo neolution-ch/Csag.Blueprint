@@ -33,11 +33,15 @@ public static class BlueprintMiddlewareExtensions
         // Must run before HTTPS redirection and HSTS so the original scheme is visible.
         // Clear KnownProxies/KnownNetworks so headers from any proxy are accepted —
         // Cloud Run and similar platforms use internal IPs that aren't on the default loopback list.
-        // A client cannot reach this app directly on Cloud Run. Its edge appends the real client
-        // address as the last X-Forwarded-For entry and drops anything a client wrote before it.
-        // ForwardLimit 1 reads only that last entry, so a client's own value is never read, even
-        // with no addresses in KnownProxies/KnownIPNetworks to check it against. Do not raise this
-        // limit without a proxy that validates the header first.
+        // ForwardLimit 1 reads only the rightmost X-Forwarded-For entry, which is written by the hop
+        // immediately in front of this app and so is never a value a client wrote. That makes it safe
+        // to read with nothing in KnownProxies/KnownIPNetworks to check it against, but it does NOT
+        // make it the caller's address: an edge that appends its own entry (a Google external load
+        // balancer sends "<client>,<balancer>") leaves the balancer's address rightmost, and behind a
+        // further reverse proxy it is that proxy's egress address — one constant shared by every
+        // caller. Treat RemoteIpAddress as the nearest hop, not as a client identity, and resolve the
+        // caller from an edge-stamped header instead (RateLimiterExtensions.TryGetClientPartitionKey).
+        // Do not raise this limit without a proxy that validates the header first.
         var forwardedHeadersOptions = new ForwardedHeadersOptions
         {
             ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,

@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Infrastructure.Session;
 
 using System.Globalization;
+using System.Text;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Enums;
@@ -17,6 +18,12 @@ using Neolution.Extensions.Caching.Abstractions;
 public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSessionManager
     where TContext : DbContext
 {
+    // The distributed cache composes its key as "CacheId:ServiceAccountSession_" + Uri.EscapeDataString(key) and
+    // rejects a generated key over 250 UTF-8 bytes, so the 30-byte prefix leaves 220 for the encoded key.
+    // Percent-encoding never shrinks a string, so a key inside this budget also fits the 500-character SessionKey
+    // column: the cache is the binding limit of the two.
+    private const int SessionKeyMaxCacheKeyBytes = 220;
+
     // Mirror the mapped column lengths in BlueprintServiceAccountSessionConfiguration so client-supplied values
     // are clamped rather than allowed to fail the insert with a SQL truncation error.
     private const int UserAgentMaxLength = 500;
@@ -37,7 +44,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     }
 
     /// <inheritdoc/>
-    public async Task TrackSessionAsync(
+    public Task TrackSessionAsync(
         Guid serviceAccountId,
         string sessionKey,
         DateTimeOffset expiresAt,
@@ -45,43 +52,30 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         string? ipAddress,
         CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+        // The session key is the value every later lookup keys off, so it is rejected rather than clamped like
+        // the diagnostic fields below: a shortened key would be stored under a value the token's session-id claim
+        // no longer matches, leaving a row that can never be validated or revoked by key. A blank key is refused
+        // because the cache drops a null/empty/whitespace key and writes the marker to the shared
+        // CacheId.ServiceAccountSession slot, where every other blank-keyed session would read it back and
+        // resolve to the wrong account. Both checks run before any I/O because this method is not transactional:
+        // the marker is written only after SaveChangesAsync has committed, so a key the cache refuses would
+        // otherwise strand a committed row whose marker can never be written, read, or removed — and a row
+        // stranded that way also aborts RevokeServiceAccountSessionsAsync for every other session on the account.
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionKey);
 
-        // Id is intentionally left unset so the NEWSEQUENTIALID() store default applies, keeping the clustered
-        // primary key monotonic on this insert-heavy table (assigning a random Guid here would defeat it).
-        dbContext.Set<BlueprintServiceAccountSession>().Add(new BlueprintServiceAccountSession
+        if (ExceedsCacheKeyBudget(sessionKey))
         {
-            ServiceAccountId = serviceAccountId,
-            SessionKey = sessionKey,
-            CreatedAt = DateTimeOffset.UtcNow,
-            ExpiresAt = expiresAt,
+            throw new ArgumentException($"Session key must be at most {SessionKeyMaxCacheKeyBytes} bytes once URL-encoded", nameof(sessionKey));
+        }
 
-            // Clamp to the mapped column lengths so a client-supplied over-length User-Agent (or IP) cannot turn
-            // token issuance into a SQL truncation error.
-            UserAgent = Truncate(userAgent, UserAgentMaxLength),
-            IpAddress = Truncate(ipAddress, IpAddressMaxLength),
-        });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        // Opportunistically reap this account's already-expired tracking rows on the same write. This keeps the
-        // table bounded per active account WITHOUT a background job (which would be unreliable on scale-to-zero,
-        // multi-instance hosting): whichever instance issues a token performs the cleanup, seeking on the
-        // ServiceAccountId index. Expired rows are inert for authorization (ResolveServiceAccountIdAsync filters
-        // ExpiresAt > now); this only stops them accumulating.
-        await dbContext.Set<BlueprintServiceAccountSession>()
-            .Where(s => s.ServiceAccountId == serviceAccountId && s.ExpiresAt <= DateTimeOffset.UtcNow)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        // Prime the fast-path marker so subsequent requests validate the session existence without a DB read.
-        // The absolute expiry matches the token/session lifetime so the marker self-cleans.
-        await this.SetCacheMarkerAsync(sessionKey, serviceAccountId, expiresAt, cancellationToken);
+        // The guards sit in this non-async wrapper so they surface at the call site rather than on the awaited task.
+        return this.TrackSessionCoreAsync(serviceAccountId, sessionKey, expiresAt, userAgent, ipAddress, cancellationToken);
     }
 
     /// <inheritdoc/>
     public async Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(sessionKey))
+        if (!IsWellFormedSessionKey(sessionKey))
         {
             return null;
         }
@@ -127,7 +121,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     /// <inheritdoc/>
     public async Task<bool> RevokeSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(sessionKey))
+        if (!IsWellFormedSessionKey(sessionKey))
         {
             return false;
         }
@@ -200,6 +194,61 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
     private static string? Truncate(string? value, int maxLength)
         => value is null || value.Length <= maxLength ? value : value[..maxLength];
+
+    // Measured the way the cache measures it rather than by character count: the key is percent-encoded before
+    // the cache checks its length, so every character outside the URI unreserved set costs three bytes (twelve
+    // for a non-BMP character) and a 220-character standard-base64 key is already over budget.
+    private static bool ExceedsCacheKeyBudget(string sessionKey)
+        => Encoding.UTF8.GetByteCount(Uri.EscapeDataString(sessionKey)) > SessionKeyMaxCacheKeyBytes;
+
+    // A key outside the bounds TrackSessionAsync enforces cannot belong to a tracked session, so to the read
+    // paths it simply means "no such session". They filter on it rather than passing it to the cache because the
+    // session-id claim reaching them is client-supplied: the cache throws on an over-long key, which would turn a
+    // rejected request into an unhandled exception in the authentication pipeline, and silently redirects a blank
+    // one to the shared CacheId.ServiceAccountSession slot.
+    private static bool IsWellFormedSessionKey(string sessionKey)
+        => !string.IsNullOrWhiteSpace(sessionKey) && !ExceedsCacheKeyBudget(sessionKey);
+
+    private async Task TrackSessionCoreAsync(
+        Guid serviceAccountId,
+        string sessionKey,
+        DateTimeOffset expiresAt,
+        string? userAgent,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Id is intentionally left unset so the NEWSEQUENTIALID() store default applies, keeping the clustered
+        // primary key monotonic on this insert-heavy table (assigning a random Guid here would defeat it).
+        dbContext.Set<BlueprintServiceAccountSession>().Add(new BlueprintServiceAccountSession
+        {
+            ServiceAccountId = serviceAccountId,
+            SessionKey = sessionKey,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = expiresAt,
+
+            // Clamp to the mapped column lengths so a client-supplied over-length User-Agent (or IP) cannot turn
+            // token issuance into a SQL truncation error.
+            UserAgent = Truncate(userAgent, UserAgentMaxLength),
+            IpAddress = Truncate(ipAddress, IpAddressMaxLength),
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Opportunistically reap this account's already-expired tracking rows on the same write. This keeps the
+        // table bounded per active account WITHOUT a background job (which would be unreliable on scale-to-zero,
+        // multi-instance hosting): whichever instance issues a token performs the cleanup, seeking on the
+        // ServiceAccountId index. Expired rows are inert for authorization (ResolveServiceAccountIdAsync filters
+        // ExpiresAt > now); this only stops them accumulating.
+        await dbContext.Set<BlueprintServiceAccountSession>()
+            .Where(s => s.ServiceAccountId == serviceAccountId && s.ExpiresAt <= DateTimeOffset.UtcNow)
+            .ExecuteDeleteAsync(cancellationToken);
+
+        // Prime the fast-path marker so subsequent requests validate the session existence without a DB read.
+        // The absolute expiry matches the token/session lifetime so the marker self-cleans.
+        await this.SetCacheMarkerAsync(sessionKey, serviceAccountId, expiresAt, cancellationToken);
+    }
 
     private async Task<Guid?> ResolveServiceAccountIdAsync(TContext dbContext, string sessionKey, CancellationToken cancellationToken)
     {

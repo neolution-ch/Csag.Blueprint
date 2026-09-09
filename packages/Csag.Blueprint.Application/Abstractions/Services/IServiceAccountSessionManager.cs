@@ -13,7 +13,13 @@ public interface IServiceAccountSessionManager
     /// distributed-cache marker so subsequent requests can validate the session without a database read.
     /// </summary>
     /// <param name="serviceAccountId">The service account the session was issued for.</param>
-    /// <param name="sessionKey">The opaque session key (also the token's session-id claim value).</param>
+    /// <param name="sessionKey">
+    /// The opaque session key (also the token's session-id claim value). It is stored and looked up verbatim,
+    /// never truncated to fit, and must be unique across all service-account sessions. The built-in
+    /// implementation throws <see cref="ArgumentException"/> for a blank key, or one whose URL-encoded form
+    /// exceeds 220 bytes — 220 characters for a base64url or hex key, fewer once characters outside the URI
+    /// unreserved set are escaped.
+    /// </param>
     /// <param name="expiresAt">When the session expires (mirrors the issued token's expiry).</param>
     /// <param name="userAgent">The user agent string of the requesting client, if available.</param>
     /// <param name="ipAddress">The IP address of the requesting client, if available.</param>
@@ -33,7 +39,10 @@ public interface IServiceAccountSessionManager
     /// permissions, and tenant are read from the database (never trusted from the token) so role/permission
     /// changes and deactivation take effect per request.
     /// </summary>
-    /// <param name="sessionKey">The opaque session key from the token's session-id claim.</param>
+    /// <param name="sessionKey">
+    /// The opaque session key from the token's session-id claim. A blank or over-long key is reported as
+    /// "no session" rather than as an error, since no such session can have been tracked.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The resolved session authorization, or <see langword="null"/> if the request must be rejected.</returns>
     Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string sessionKey, CancellationToken cancellationToken = default);
@@ -42,7 +51,10 @@ public interface IServiceAccountSessionManager
     /// Revokes a single service-account session by its key, removing both the tracking row and the cached
     /// marker so any outstanding token referencing it is rejected on the next request.
     /// </summary>
-    /// <param name="sessionKey">The session key to revoke.</param>
+    /// <param name="sessionKey">
+    /// The session key to revoke. A blank or over-long key reports <see langword="false"/> rather than raising,
+    /// since no such session can have been tracked.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns><see langword="true"/> if a session was found and revoked; otherwise <see langword="false"/>.</returns>
     Task<bool> RevokeSessionAsync(string sessionKey, CancellationToken cancellationToken = default);

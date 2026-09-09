@@ -59,14 +59,14 @@ public static class BlueprintAuditExtensions
         // (important when the app host is recreated, e.g., during integration tests)
         Configuration.ResetCustomActions();
 
-        ConfigureSqlServerDataProvider(connectionString);
+        ConfigureSqlServerDataProvider(connectionString, app.Services.GetRequiredService<TimeProvider>());
         ConfigureEntityFrameworkAudit<TContext, TUser, TRole>(options);
         ConfigureHttpContextEnrichment(app.Services);
 
         return app;
     }
 
-    private static void ConfigureSqlServerDataProvider(string connectionString)
+    private static void ConfigureSqlServerDataProvider(string connectionString, TimeProvider timeProvider)
     {
         Configuration.Setup()
             .UseSqlServer(config => config
@@ -76,7 +76,7 @@ public static class BlueprintAuditExtensions
                 .IdColumnName("Id")
                 .JsonColumnName("JsonData")
                 .CustomColumn("EventType", ev => ev.EventType?.Length > 100 ? ev.EventType[..100] : ev.EventType)
-                .CustomColumn("CreatedAt", _ => DateTimeOffset.UtcNow)
+                .CustomColumn("CreatedAt", _ => timeProvider.GetUtcNow())
                 .CustomColumn("UserId", ev =>
                     ev.CustomFields.TryGetValue("UserId", out var val) ? val?.ToString() : null)
                 .CustomColumn("TenantId", ev =>

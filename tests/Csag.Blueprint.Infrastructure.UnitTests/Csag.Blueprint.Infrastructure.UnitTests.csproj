@@ -8,6 +8,7 @@
     <PackageReference Include="AutoFixture.Xunit3" />
     <PackageReference Include="AutoFixture.AutoMoq" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
   <ItemGroup>

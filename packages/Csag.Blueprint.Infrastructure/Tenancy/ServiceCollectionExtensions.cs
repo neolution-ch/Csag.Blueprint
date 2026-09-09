@@ -5,6 +5,7 @@ using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Database.Interceptors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 /// <summary>
 /// Extension methods for shared tenancy runtime service registration.
@@ -20,10 +21,19 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ITenantService, TenantService>();
 
+        // Clock seam shared by every blueprint service that stamps or compares time. TryAdd, so a
+        // TimeProvider registered before this call (a FakeTimeProvider in tests) wins.
+        services.TryAddSingleton(TimeProvider.System);
+
         // Singleton is safe: TenantSaveInterceptor uses TenantContext.Current which is AsyncLocal-based,
         // providing automatic per-request isolation without requiring scoped registration.
         // AsyncLocal flows through async/await and is execution-context-bound, not instance-bound.
         services.AddSingleton<TenantSaveInterceptor>();
+
+        // Singleton for the same reason: AuditableTimestampInterceptor reads the ambient CurrentActorContext
+        // and a singleton TimeProvider, so it holds no scoped state and is safe to share across pooled
+        // DbContext instances. Consumers resolve it from here when wiring their DbContext factory.
+        services.AddSingleton<AuditableTimestampInterceptor>();
 
         return services;
     }

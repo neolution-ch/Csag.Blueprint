@@ -11,14 +11,25 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 /// <see cref="IAuditable.UpdatedAt"/> / <see cref="IAuditable.UpdatedByActor"/> on update.
 /// <para>
 /// The acting actor label is read from <see cref="CurrentActorContext"/> (an AsyncLocal-backed ambient value),
-/// which is why this interceptor is safe to register as a singleton / shared across pooled DbContext
-/// instances — it captures no scoped dependency. When there is no current actor (data seeding, background
-/// services, migrations, unauthenticated requests) the <c>CreatedByActor</c> / <c>UpdatedByActor</c> columns
-/// are left null.
+/// and the clock is a singleton <see cref="TimeProvider"/>. Neither is a scoped dependency, which is why this
+/// interceptor is safe to register as a singleton / shared across pooled DbContext instances. When there is no
+/// current actor (data seeding, background services, migrations, unauthenticated requests) the
+/// <c>CreatedByActor</c> / <c>UpdatedByActor</c> columns are left null.
 /// </para>
 /// </summary>
 public sealed class AuditableTimestampInterceptor : SaveChangesInterceptor
 {
+    private readonly TimeProvider timeProvider;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AuditableTimestampInterceptor"/> class.
+    /// </summary>
+    /// <param name="timeProvider">The clock used to stamp <c>CreatedAt</c> / <c>UpdatedAt</c>.</param>
+    public AuditableTimestampInterceptor(TimeProvider timeProvider)
+    {
+        this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
+
     /// <inheritdoc/>
     public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
         DbContextEventData eventData,
@@ -27,7 +38,7 @@ public sealed class AuditableTimestampInterceptor : SaveChangesInterceptor
     {
         if (eventData.Context is not null)
         {
-            SetAuditStamps(eventData.Context);
+            this.SetAuditStamps(eventData.Context);
         }
 
         return base.SavingChangesAsync(eventData, result, cancellationToken);
@@ -40,15 +51,15 @@ public sealed class AuditableTimestampInterceptor : SaveChangesInterceptor
     {
         if (eventData.Context is not null)
         {
-            SetAuditStamps(eventData.Context);
+            this.SetAuditStamps(eventData.Context);
         }
 
         return base.SavingChanges(eventData, result);
     }
 
-    private static void SetAuditStamps(DbContext context)
+    private void SetAuditStamps(DbContext context)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = this.timeProvider.GetUtcNow();
 
         // Ambient AsyncLocal value; null when there is no acting actor (seeding, background services,
         // migrations, unauthenticated requests) — in that case the *ByActor columns are left null.

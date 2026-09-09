@@ -122,7 +122,7 @@ public class AppFixture : AppFixture<Program>, IResettableFixture
 
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlServer(this.connectionString)
-            .AddInterceptors(new AuditableTimestampInterceptor(), new TenantSaveInterceptor())
+            .AddInterceptors(new AuditableTimestampInterceptor(TimeProvider.System), new TenantSaveInterceptor())
             .Options;
 
         return new TestDbContextScope<TestDbContext>(new TestDbContext(options));

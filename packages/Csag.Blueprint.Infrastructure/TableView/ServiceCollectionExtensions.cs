@@ -145,6 +145,10 @@ public static class ServiceCollectionExtensions
         where TContext : DbContext
         where TUser : BlueprintUser
     {
+        // Clock seam for the preference created and updated stamps. TryAdd, so a TimeProvider
+        // registered before this call (a FakeTimeProvider in tests) wins.
+        services.TryAddSingleton(TimeProvider.System);
+
         services.AddScoped<ITableViewPreferencesService, BlueprintTableViewPreferencesService<TContext, TUser>>();
 
         return services;

@@ -19,18 +19,22 @@ public sealed class BlueprintTableViewPreferencesService<TContext, TUser> : ITab
 {
     private readonly TContext context;
     private readonly ILogger<BlueprintTableViewPreferencesService<TContext, TUser>> logger;
+    private readonly TimeProvider timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="BlueprintTableViewPreferencesService{TContext, TUser}"/> class.
     /// </summary>
     /// <param name="context">The database context.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="timeProvider">The clock used to stamp preference creation and update times.</param>
     public BlueprintTableViewPreferencesService(
         TContext context,
-        ILogger<BlueprintTableViewPreferencesService<TContext, TUser>> logger)
+        ILogger<BlueprintTableViewPreferencesService<TContext, TUser>> logger,
+        TimeProvider timeProvider)
     {
         this.context = context;
         this.logger = logger;
+        this.timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -127,7 +131,7 @@ public sealed class BlueprintTableViewPreferencesService<TContext, TUser> : ITab
         await this.UnsetDefaultsAsync(userId, tableViewId, cancellationToken);
 
         preference.IsDefault = true;
-        preference.UpdatedAt = DateTimeOffset.UtcNow;
+        preference.UpdatedAt = this.timeProvider.GetUtcNow();
 
         await this.context.SaveChangesAsync(cancellationToken);
 
@@ -181,7 +185,7 @@ public sealed class BlueprintTableViewPreferencesService<TContext, TUser> : ITab
         }
 
         var json = JsonSerializer.Serialize(preferences, BlueprintJsonOptions.Default);
-        var now = DateTimeOffset.UtcNow;
+        var now = this.timeProvider.GetUtcNow();
 
         var newPreference = new BlueprintTableViewPreference<TUser>
         {
@@ -233,7 +237,7 @@ public sealed class BlueprintTableViewPreferencesService<TContext, TUser> : ITab
         existing.Name = preferences.Name;
         existing.IsDefault = preferences.IsDefault;
         existing.PreferencesJson = json;
-        existing.UpdatedAt = DateTimeOffset.UtcNow;
+        existing.UpdatedAt = this.timeProvider.GetUtcNow();
 
         await this.context.SaveChangesAsync(cancellationToken);
 

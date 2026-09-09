@@ -69,13 +69,19 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
     /// Marks the column as filterable with the specified filter operator.
     /// </summary>
     /// <param name="filterOperator">The filter operator.</param>
-    /// <param name="allowedValues">Optional allowed values for enum filters.</param>
+    /// <param name="allowedValues">Optional allowed values for enum filters. When omitted, any
+    /// allowed values already present on the column (such as the names auto-derived for enum
+    /// columns) are kept.</param>
     /// <returns>The column definition for fluent chaining.</returns>
     public TableViewColumnDefinition<TEntity, TDto> Filterable(TableViewFilterOperator filterOperator, IEnumerable<string>? allowedValues = null)
     {
         this.metadata.IsFilterable = true;
         this.metadata.FilterOperator = filterOperator;
-        this.metadata.AllowedValues = allowedValues;
+        if (allowedValues != null)
+        {
+            this.metadata.AllowedValues = allowedValues;
+        }
+
         this.metadata.FilterInputHint = filterOperator switch
         {
             TableViewFilterOperator.Contains or TableViewFilterOperator.Equals => TableViewFilterInputHint.Text,

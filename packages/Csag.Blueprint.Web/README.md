@@ -49,6 +49,7 @@ app.UseBlueprintMiddleware();
 
 `UseBlueprintMiddleware()` applies the shared request pipeline:
 
+- HTTP audit logging
 - correlation ID middleware
 - CORS
 - authentication
@@ -64,7 +65,7 @@ Applications may still append app-specific middleware before endpoint mapping.
 | --- | --- |
 | `CorrelationIdMiddleware` | Adds/propagates correlation IDs per request. |
 | `TenantMiddleware` | Establishes the ambient tenant context for the request. Delegates *how* the tenant is determined to `ITenantResolver`. |
-| `HttpAuditMiddleware` | Emits audit events for HTTP requests. |
+| `HttpAuditMiddleware` | Records an audit event for a denied request (401 or 403 by default; configurable). `UseBlueprintMiddleware()` always registers it; `ConfigureBlueprintAuditLogging` turns it on. See [Audit enrichment](#audit-enrichment). |
 | `CorrelationIdDelegatingHandler` | Propagates correlation IDs to outbound HTTP requests. |
 | `SessionClaimRequestCultureProvider` | Resolves request culture from claims and `Accept-Language`. |
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
@@ -72,15 +73,41 @@ Applications may still append app-specific middleware before endpoint mapping.
 
 ### Audit enrichment
 
-`ConfigureBlueprintAuditLogging` adds the user ID, the email address, the display name and the
-correlation ID to each audit event. This applies to Entity Framework events and to HTTP events. The
-package reads the three user values from the claims on the request, not from the database. A service
-account has no email address. Therefore its email value is null, and its display name is the account
-name from its token.
+`ConfigureBlueprintAuditLogging` adds the user ID, the email address, the display name, and the
+correlation ID to each EF and HTTP audit event alike. It reads the three user values from the
+claims on the request, not from the database. A service account has no email address, so its email
+value is null and its display name is the account name from its token.
 
-The provider writes only `UserId` and `CorrelationId` to columns. The email address and the display
-name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Therefore this change
-needs no migration, but a read of these two values must parse the JSON data of the row.
+The provider writes `UserId`, `TenantId`, and `CorrelationId` to columns. The email address and the
+display name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either
+value requires parsing the JSON data of the row.
+
+`UseBlueprintMiddleware()` always registers `HttpAuditMiddleware`, first, so that it wraps
+everything else in the pipeline: authentication and authorization, and also the exception handler
+and status code pages. The ASP.NET Core authorization middleware does not call the next middleware
+for a denied request, so a middleware registered later would never run for one. A middleware
+registered after the exception handler would never see a status code that an unhandled exception
+produced, so it could never audit one. An app does not need to register `HttpAuditMiddleware`
+itself. Remove any manual `app.UseMiddleware<HttpAuditMiddleware>()` call; a duplicate registration
+records two events per audited request.
+
+`ConfigureBlueprintAuditLogging` configures both audit features, the EF Core events and the HTTP
+request events, from this one call; both are on by default. Its configure callback exposes the same
+`HttpAuditOptions` instance the middleware reads, as `BlueprintAuditOptions.HttpAudit`; set
+`HttpAudit.Enabled = false` there to turn HTTP request auditing off.
+Until `ConfigureBlueprintAuditLogging` runs, or when that flag is `false`, the middleware does
+nothing but call the next middleware. Once on, it writes an event for a request whose final status
+code is 401 or 403 by default. Call `services.Configure<HttpAuditOptions>(o => ...)` to audit a
+different set. It also writes the client IP address,
+taken from `HttpContext.Connection.RemoteIpAddress` after `ForwardedHeadersMiddleware` has resolved
+it from `X-Forwarded-For`. A request outside the audited set writes no event: the EF Core interceptor
+already covers the writes, and GCP and Application Insights already record general request data.
+
+`HttpAuditMiddleware` wraps the app's exception handler rather than running inside it, so it can
+also audit a status code the handler itself produces, for example a 500 added to
+`HttpAuditOptions.AuditedStatusCodes`. It catches and logs its own failure instead of throwing,
+because sitting outside the exception handler means an unhandled exception here would reach the
+ASP.NET Core default error handling instead of the app's configured one.
 
 ### Tenant resolution (the addressing seam)
 

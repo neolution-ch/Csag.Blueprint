@@ -1,92 +1,156 @@
 namespace Csag.Blueprint.Web.Middleware;
 
-using System.Diagnostics;
 using Audit.Core;
-using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Web.Helpers;
+using Csag.Blueprint.Web.Tenancy;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Middleware that creates an audit event for each HTTP request.
-/// Captures method, URL, status code, user identity, correlation ID, and request duration.
-/// Skips health check and swagger endpoints to reduce noise.
+/// This middleware records an audit event for a request whose final status code is in
+/// <see cref="HttpAuditOptions.AuditedStatusCodes"/>, 401 and 403 by default. A request outside
+/// that set produces no event. The EF Core interceptor already audits the writes. GCP and
+/// Application Insights already record general request data, for example the method, the URL, the
+/// status code, and the duration. This audit log does not need that data.
 /// </summary>
+/// <remarks>
+/// <c>app.UseBlueprintMiddleware()</c> always registers this middleware, first, so that it wraps
+/// everything else in the pipeline: authentication and authorization, and also the app's exception
+/// handler and status code pages. The ASP.NET Core authorization middleware does not call the next
+/// middleware for a denied request, so a middleware registered after authorization never runs for a
+/// denied request and never gets the chance to record an event. A middleware registered after the
+/// exception handler never sees a status code that an unhandled exception produced, so it could
+/// never audit one, for example a 500 added to <see cref="HttpAuditOptions.AuditedStatusCodes"/>.
+/// An app does not need to register this middleware itself; remove any manual registration of it,
+/// because a duplicate registration records two events per audited request.
+/// <see cref="HttpAuditOptions.Enabled"/> gates the actual work; it stays
+/// <see langword="false"/>, and this middleware records nothing, until an app calls
+/// <c>ConfigureBlueprintAuditLogging</c>. An app can set
+/// <c>BlueprintAuditOptions.HttpAudit.Enabled = false</c> in that call's configure callback to keep
+/// HTTP request auditing off. Because this middleware sits outside the app's exception handler, an
+/// unhandled exception here would not reach that handler; it would reach the ASP.NET Core default
+/// error handling instead of the app's configured one. This middleware catches and logs its own
+/// failure instead of throwing, so that a resolver or audit-provider failure produces neither
+/// outcome: it stays a logged, best-effort miss of one audit event, and the already-decided status
+/// code reaches the client unchanged.
+/// </remarks>
 public class HttpAuditMiddleware
 {
     private readonly RequestDelegate next;
+    private readonly ILogger<HttpAuditMiddleware> logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="HttpAuditMiddleware"/> class.
     /// </summary>
     /// <param name="next">The next middleware in the pipeline.</param>
-    public HttpAuditMiddleware(RequestDelegate next)
+    /// <param name="logger">The logger instance.</param>
+    public HttpAuditMiddleware(RequestDelegate next, ILogger<HttpAuditMiddleware> logger)
     {
         this.next = next;
+        this.logger = logger;
     }
 
     /// <summary>
-    /// Processes an HTTP request by wrapping it in an audit scope.
+    /// This method processes an HTTP request. After the rest of the pipeline runs, it checks the
+    /// final response status code. It records an audit event only when that code is in
+    /// <see cref="HttpAuditOptions.AuditedStatusCodes"/>.
     /// </summary>
     /// <param name="context">The HTTP context for the current request.</param>
-    /// <param name="tenantService">Service used to retrieve the current tenant identifier.</param>
+    /// <param name="tenantResolver">
+    /// This middleware runs before <see cref="TenantMiddleware"/> (see the class remarks), so the
+    /// ambient <see cref="Csag.Blueprint.Application.Services.TenantContext"/> is not set yet. This
+    /// parameter resolves the tenant directly instead.
+    /// </param>
+    /// <param name="options">The audited status codes.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
-    public async Task InvokeAsync(HttpContext context, ITenantService tenantService)
+    public async Task InvokeAsync(HttpContext context, ITenantResolver tenantResolver, IOptions<HttpAuditOptions> options)
     {
-        var path = context.Request.Path.Value;
-        if (path != null && (path.StartsWith("/health", StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase)))
+        if (!options.Value.Enabled)
         {
             await this.next(context);
             return;
         }
 
-        var eventType = $"HTTP:{context.Request.Method}:{context.Request.Path}";
-        if (eventType.Length > 100)
-        {
-            eventType = eventType[..100];
-        }
-
-        // Create the audit scope before the request so the scope is open during processing
-        await using var scope = await AuditScope.CreateAsync(new AuditScopeOptions
-        {
-            EventType = eventType,
-        });
-
-        var stopwatch = Stopwatch.StartNew();
-
-        try
+        var path = context.Request.Path.Value;
+        if (IsExemptPath(path))
         {
             await this.next(context);
+            return;
         }
-        finally
-        {
-            stopwatch.Stop();
 
-            // Enrich the scope with response data after the request completes
+        // Authorization denies a request by returning from this call without invoking the next
+        // middleware. It does not throw. So a denial reaches the code below like any other request.
+        await this.next(context);
+
+        if (!options.Value.AuditedStatusCodes.Contains(context.Response.StatusCode))
+        {
+            return;
+        }
+
+        // The audited response may already carry the intended 401 or 403 status code. A resolver or
+        // audit-provider failure must not overwrite that with a 500: it must stay a logged,
+        // best-effort miss of one audit event. This code collects every field before it creates
+        // the scope, because the default event creation policy saves the event on disposal. An
+        // earlier scope creation risks a partial event, with only EventType set, before this
+        // catch block runs.
+        try
+        {
+            var eventType = $"HTTP:{context.Request.Method}:{context.Request.Path}";
+            if (eventType.Length > 100)
+            {
+                eventType = eventType[..100];
+            }
+
             var actor = AuditUserIdentity.FromPrincipal(context.User);
-            var userType = context.User?.FindFirst("type")?.Value ?? "Unknown";
+            var tenantId = await tenantResolver.ResolveAsync(context, context.RequestAborted);
             var correlationId = context.Items.TryGetValue(CorrelationIdMiddleware.CorrelationIdKey, out var cid)
                 ? cid?.ToString() : null;
 
-            scope.SetCustomField("HttpMethod", context.Request.Method);
+            await using var scope = await AuditScope.CreateAsync(new AuditScopeOptions
+            {
+                EventType = eventType,
+            });
 
-            // Query string is intentionally excluded to prevent logging tokens or PII passed via URL.
-            scope.SetCustomField("Url", $"{context.Request.Scheme}://{context.Request.Host}{context.Request.Path}");
             scope.SetCustomField("StatusCode", context.Response.StatusCode);
-            scope.SetCustomField("DurationMs", stopwatch.ElapsedMilliseconds);
             scope.SetCustomField("UserId", actor.UserId);
-            scope.SetCustomField("TenantId", tenantService.CurrentTenantId);
-
-            // Set these two fields here also, not only in the global OnScopeCreated enrichment. This
-            // scope is saved after the request ends. Without these lines, an HTTP entry and an Entity
-            // Framework entry for the same request can show a different user.
+            scope.SetCustomField("TenantId", tenantId);
             scope.SetCustomField("UserEmail", actor.Email);
             scope.SetCustomField("UserDisplayName", actor.DisplayName);
-            scope.SetCustomField("UserType", userType);
             scope.SetCustomField(CorrelationIdMiddleware.CorrelationIdKey, correlationId);
             scope.SetCustomField("UserAgent", context.Request.Headers.UserAgent.ToString());
+
+            // ForwardedHeadersMiddleware (in UseBlueprintSecurityHeaders, registered before this
+            // middleware) rewrites RemoteIpAddress from X-Forwarded-For, so this is the client's
+            // address, not the address of a load balancer or a reverse proxy in front of it.
+            scope.SetCustomField("IpAddress", context.Connection.RemoteIpAddress?.ToString());
+        }
+        catch (Exception ex)
+        {
+            this.logger.LogError(ex, "Failed to record an HTTP audit event for {Method} {Path}", context.Request.Method, context.Request.Path);
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a path belongs to the health check tree or the Swagger tree. This method
+    /// matches a full path segment, so it does not exempt an unrelated path that merely starts
+    /// with the same characters, for example <c>/healthcare</c> or <c>/swagger-admin</c>.
+    /// </summary>
+    /// <param name="path">The request path.</param>
+    /// <returns><see langword="true"/> if the path is exempt from auditing.</returns>
+    private static bool IsExemptPath(string? path)
+    {
+        return IsPathUnder(path, "/health") || IsPathUnder(path, "/swagger");
+    }
+
+    private static bool IsPathUnder(string? path, string root)
+    {
+        if (path is null)
+        {
+            return false;
         }
 
-        // Scope is saved on DisposeAsync (await using)
+        return path.Equals(root, StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(root + "/", StringComparison.OrdinalIgnoreCase);
     }
 }

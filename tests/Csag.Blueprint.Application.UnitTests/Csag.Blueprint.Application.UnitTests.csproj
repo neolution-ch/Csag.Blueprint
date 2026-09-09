@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="AutoFixture.Xunit3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="AutoFixture.Xunit3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Application\Csag.Blueprint.Application.csproj" />
+  </ItemGroup>
+
+</Project>

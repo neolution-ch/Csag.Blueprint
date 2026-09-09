@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// Extension methods for configuring blueprint audit logging on WebApplication.
@@ -21,7 +22,11 @@ public static class BlueprintAuditExtensions
 {
     /// <summary>
     /// Configures Audit.NET with the SQL Server data provider, EF Core entity tracking,
-    /// and custom enrichment from HTTP context (user identity and correlation ID).
+    /// and custom enrichment from HTTP context (user identity and correlation ID). It also turns on
+    /// <see cref="HttpAuditMiddleware"/>, which <c>UseBlueprintMiddleware()</c> always registers but
+    /// which stays inert until this method runs. Set
+    /// <see cref="BlueprintAuditOptions{TContext}.HttpAudit"/>.<see cref="HttpAuditOptions.Enabled"/>
+    /// to <see langword="false"/> in the configure callback to keep it off.
     /// Standard blueprint entity exclusions are applied automatically.
     /// Must be called after the application is built so that IServiceProvider is available.
     /// </summary>
@@ -38,7 +43,13 @@ public static class BlueprintAuditExtensions
         where TUser : BlueprintUser
         where TRole : BlueprintRole
     {
-        var options = new BlueprintAuditOptions<TContext>();
+        // HttpAuditMiddleware is always in the pipeline; this is the same HttpAuditOptions instance
+        // it reads on every request. Default it on now, then let the configure callback below turn
+        // HTTP request auditing back off.
+        var httpAuditOptions = app.Services.GetRequiredService<IOptions<HttpAuditOptions>>().Value;
+        httpAuditOptions.Enabled = true;
+
+        var options = new BlueprintAuditOptions<TContext>(httpAuditOptions);
         configure?.Invoke(options);
 
         var connectionString = app.Configuration.GetConnectionString("Default")

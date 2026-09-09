@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
-    <Version>0.1.3</Version>
+    <Version>0.2.0</Version>
         <TargetFramework>netstandard2.0</TargetFramework>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
@@ -15,7 +15,9 @@
         <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
         <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
         <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
-        <NoWarn>RS2008</NoWarn>
+        <!-- NU5128: analyzer packages ship the assembly under analyzers/dotnet/cs, so the
+        nuspec's netstandard2.0 dependency group intentionally has no matching lib/ folder. -->
+        <NoWarn>$(NoWarn);RS2008;NU5128</NoWarn>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Remove="Neolution.CodeAnalysis" />

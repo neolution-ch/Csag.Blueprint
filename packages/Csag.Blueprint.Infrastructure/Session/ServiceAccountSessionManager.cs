@@ -21,7 +21,9 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     // The distributed cache composes its key as "CacheId:ServiceAccountSession_" + Uri.EscapeDataString(key) and
     // rejects a generated key over 250 UTF-8 bytes, so the 30-byte prefix leaves 220 for the encoded key.
     // Percent-encoding never shrinks a string, so a key inside this budget also fits the 500-character SessionKey
-    // column: the cache is the binding limit of the two.
+    // column: the cache is the binding limit of the two. The prefix assumes the cache's default key options —
+    // an application that configures an environment prefix or a schema version lengthens the generated key and
+    // lowers its own effective ceiling below this one.
     private const int SessionKeyMaxCacheKeyBytes = 220;
 
     // Mirror the mapped column lengths in BlueprintServiceAccountSessionConfiguration so client-supplied values

@@ -10,34 +10,34 @@ using Microsoft.Extensions.Logging;
 /// Custom ITicketStore implementation that stores authentication tickets in strongly-typed distributed cache (IDistributedCache{CacheId}).
 /// This enables stateless authentication with immediate session revocation capability.
 /// Stores whatever authentication ticket is provided (roles/permissions should be added before storage).
-/// Session tracking is handled by cookie authentication events (OnSignedIn/OnSigningOut).
+/// The tracked session row follows the ticket through <see cref="IActiveSessionTracker"/>: renewal extends it,
+/// removal deletes it. Row creation stays in the OnSignedIn cookie event, which is where the sign-in details are assembled.
 /// </summary>
 public sealed class DistributedCacheTicketStore : ITicketStore
 {
     private readonly ITicketCacheService ticketCacheService;
-    private readonly ISessionExpirationExtender sessionExpirationExtender;
+    private readonly IActiveSessionTracker activeSessionTracker;
     private readonly ILogger<DistributedCacheTicketStore> logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="DistributedCacheTicketStore"/> class.
     /// </summary>
     /// <param name="ticketCacheService">The ticket cache service for managing authentication tickets.</param>
-    /// <param name="sessionExpirationExtender">The extender that keeps the tracked session row's expiration in step with renewed tickets.</param>
+    /// <param name="activeSessionTracker">The tracker that keeps the tracked session row in step with the ticket it describes.</param>
     /// <param name="logger">The logger.</param>
     public DistributedCacheTicketStore(
         ITicketCacheService ticketCacheService,
-        ISessionExpirationExtender sessionExpirationExtender,
+        IActiveSessionTracker activeSessionTracker,
         ILogger<DistributedCacheTicketStore> logger)
     {
         this.ticketCacheService = ticketCacheService ?? throw new ArgumentNullException(nameof(ticketCacheService));
-        this.sessionExpirationExtender = sessionExpirationExtender ?? throw new ArgumentNullException(nameof(sessionExpirationExtender));
+        this.activeSessionTracker = activeSessionTracker ?? throw new ArgumentNullException(nameof(activeSessionTracker));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// Stores an authentication ticket in the distributed cache and returns a session key.
     /// Expects the ticket to already contain roles and permissions as claims.
-    /// Session tracking is handled by OnSignedIn cookie authentication event.
     /// </summary>
     /// <param name="ticket">The authentication ticket to store.</param>
     /// <returns>A unique session key that identifies this ticket in the cache.</returns>
@@ -45,14 +45,13 @@ public sealed class DistributedCacheTicketStore : ITicketStore
     {
         var sessionKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 
-        // The cookie handler always sets ExpiresUtc from ExpireTimeSpan before calling StoreAsync,
-        // so a null here means the authentication pipeline is misconfigured rather than a state to paper over.
-        // A common cause is a non-persistent sign-in (IsPersistent = false): the cookie handler only sets
-        // ExpiresUtc when IsPersistent = true (i.e. AuthenticationProperties.IsPersistent must be set to true).
+        // HandleSignInAsync assigns ExpiresUtc from IssuedUtc + ExpireTimeSpan whenever the sign-in did not
+        // supply one, and does so before StoreAsync runs. A null here therefore means the ticket did not come
+        // from the cookie handler at all, which is a misconfigured pipeline rather than a state to paper over.
         var expiresUtc = ticket.Properties.ExpiresUtc
             ?? throw new InvalidOperationException(
                 "Authentication ticket has no ExpiresUtc when storing the session. "
-                + "Ensure the sign-in uses IsPersistent = true so the cookie handler sets ExpiresUtc from ExpireTimeSpan before StoreAsync runs.");
+                + "Tickets must reach the store through CookieAuthenticationHandler, which derives ExpiresUtc from ExpireTimeSpan before StoreAsync runs.");
 
         // Store session key in ticket properties for access in cookie authentication events
         ticket.Properties.Items[SessionConstants.SessionKeyPropertyName] = sessionKey;
@@ -76,15 +75,31 @@ public sealed class DistributedCacheTicketStore : ITicketStore
     }
 
     /// <summary>
-    /// Removes an authentication ticket from the distributed cache.
-    /// Used for logout and session revocation.
-    /// Session untracking is handled by OnSigningOut cookie authentication event.
+    /// Removes an authentication ticket from the distributed cache and deletes its tracking row.
+    /// Used for logout, and by the cookie handler when it discards a ticket that has expired.
     /// </summary>
     /// <param name="key">The session key that identifies the ticket to remove.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task RemoveAsync(string key)
     {
         await this.ticketCacheService.RemoveTicketAsync(key);
+
+        // Untracking belongs here rather than in an OnSigningOut handler: the cookie handler passes the
+        // session key straight to this method, whereas CookieSigningOutContext does not carry it and an
+        // event could only recover it via HttpContext.AuthenticateAsync — which deadlocks when sign-out is
+        // raised from inside the handler's own authentication pass. Doing it here also covers the handler's
+        // expired-ticket path, which removes the ticket without ever raising OnSigningOut.
+        try
+        {
+            await this.activeSessionTracker.UntrackAsync(key);
+        }
+        catch (Exception ex)
+        {
+            // The cache entry is already gone, so the session is dead either way. A failed row delete must
+            // not fail the sign-out (or the authentication pass that discarded an expired ticket); the row
+            // is left for CleanupExpiredSessionsAsync to reap.
+            this.logger.LogWarning(ex, "Failed to remove the tracked session row for session {SessionKey}", key);
+        }
     }
 
     /// <summary>
@@ -96,14 +111,12 @@ public sealed class DistributedCacheTicketStore : ITicketStore
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task RenewAsync(string key, AuthenticationTicket ticket)
     {
-        // Sliding renewal computes and assigns a fresh ExpiresUtc before calling RenewAsync,
-        // so a null here means the authentication pipeline is misconfigured rather than a state to paper over.
-        // A common cause is a non-persistent sign-in (IsPersistent = false): the cookie handler only sets
-        // ExpiresUtc when IsPersistent = true (i.e. AuthenticationProperties.IsPersistent must be set to true).
+        // Sliding renewal computes and assigns a fresh ExpiresUtc before calling RenewAsync, so a null here
+        // means the authentication pipeline is misconfigured rather than a state to paper over.
         var expiresUtc = ticket.Properties.ExpiresUtc
             ?? throw new InvalidOperationException(
                 "Authentication ticket has no ExpiresUtc when renewing the session. "
-                + "Ensure the sign-in uses IsPersistent = true so the cookie handler sets ExpiresUtc during sliding renewal before RenewAsync runs.");
+                + "Tickets must reach the store through CookieAuthenticationHandler, which assigns the renewed ExpiresUtc before RenewAsync runs.");
 
         await this.ticketCacheService.SetTicketAsync(key, ticket, expiresUtc);
 
@@ -114,7 +127,7 @@ public sealed class DistributedCacheTicketStore : ITicketStore
         bool sessionStillTracked;
         try
         {
-            sessionStillTracked = await this.sessionExpirationExtender.ExtendAsync(key, expiresUtc);
+            sessionStillTracked = await this.activeSessionTracker.ExtendAsync(key, expiresUtc);
         }
         catch (Exception ex)
         {

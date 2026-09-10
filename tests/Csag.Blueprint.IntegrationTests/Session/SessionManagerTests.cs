@@ -8,6 +8,7 @@ using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.TestHost.Endpoints.Auth.Login;
+using Csag.Blueprint.TestHost.Endpoints.Auth.Logout;
 using Csag.Blueprint.Testing.Extensions;
 using Csag.Blueprint.Tests.Shared.Database;
 using Csag.Blueprint.Tests.Shared.Entities;
@@ -22,7 +23,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// Service-level integration tests for the session lifecycle against the real SQL container:
 /// <see cref="ISessionManager"/> revocation and listing semantics (which rely on set-based
 /// ExecuteDelete), the sliding-renewal path keeping the tracked session row's expiration in step
-/// with the renewed ticket, and the <see cref="ISessionExpirationExtender"/> row update.
+/// with the renewed ticket, and the <see cref="IActiveSessionTracker"/> row update.
 /// Every test operates on freshly created users so revocation never touches the fixture's
 /// pre-authenticated clients: their tracked rows are restored by the per-test snapshot, but their
 /// cached tickets live in the host's memory cache and would be gone for the rest of the run.
@@ -307,7 +308,7 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
     }
 
     [Fact]
-    public async Task SessionExpirationExtender_UpdatesTrackedRowWithoutLoadingItAsync()
+    public async Task ActiveSessionTracker_UpdatesTrackedRowWithoutLoadingItAsync()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -326,11 +327,11 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
                 ct);
         }
 
-        // Act — extend via the singleton extender, which issues a set-based ExecuteUpdate against
+        // Act — extend via the singleton tracker, which issues a set-based ExecuteUpdate against
         // the key (no entity load, safe to call from the singleton ticket store).
-        var extender = this.App.Services.GetRequiredService<ISessionExpirationExtender>();
+        var tracker = this.App.Services.GetRequiredService<IActiveSessionTracker>();
         var newExpiresAt = DateTimeOffset.UtcNow.AddHours(12);
-        var extended = await extender.ExtendAsync(sessionKey, newExpiresAt, ct);
+        var extended = await tracker.ExtendAsync(sessionKey, newExpiresAt, ct);
 
         // Assert — the row reports as updated and carries the new expiration.
         extended.ShouldBeTrue();
@@ -343,16 +344,76 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
     }
 
     [Fact]
-    public async Task SessionExpirationExtender_WithUnknownSessionKey_ReturnsFalseAsync()
+    public async Task ActiveSessionTracker_WithUnknownSessionKey_ReturnsFalseAsync()
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // "No row" is the extender's signal to the ticket store that the session was revoked while
+        // "No row" is the tracker's signal to the ticket store that the session was revoked while
         // a renewal was in flight, so it must be reported truthfully rather than swallowed.
-        var extender = this.App.Services.GetRequiredService<ISessionExpirationExtender>();
+        var tracker = this.App.Services.GetRequiredService<IActiveSessionTracker>();
         var unknownKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 
-        (await extender.ExtendAsync(unknownKey, DateTimeOffset.UtcNow.AddHours(1), ct)).ShouldBeFalse();
+        (await tracker.ExtendAsync(unknownKey, DateTimeOffset.UtcNow.AddHours(1), ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Logout_RemovesTrackedSessionRowAsync()
+    {
+        // Regression guard for the removal of the OnSigningOut handler. Untracking now happens in
+        // DistributedCacheTicketStore.RemoveAsync, which the cookie handler calls with the session key
+        // just before raising OnSigningOut, so logout must still clear the row with no event wired up.
+        var ct = TestContext.Current.CancellationToken;
+
+        var user = await this.CreateTestUserAsync("logout_untrack_test@test.local", SeedData.TenantAId);
+        using var client = await this.SignInAsync(user.Email!);
+
+        using (var scope = this.App.CreateDbContextScope())
+        {
+            (await scope.Context.ActiveSessions.CountAsync(s => s.UserId == user.Id, ct)).ShouldBe(1);
+        }
+
+        // Act
+        var logoutUri = new Uri(IEndpoint.TestURLFor<LogoutEndpoint>(), UriKind.Relative);
+        var logoutRsp = await client.PostAsync(logoutUri, content: null, ct);
+        await logoutRsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "logout should succeed", ct);
+
+        // Assert - the tracking row is gone, and the session no longer authenticates.
+        using (var scope = this.App.CreateDbContextScope())
+        {
+            (await scope.Context.ActiveSessions.CountAsync(s => s.UserId == user.Id, ct))
+                .ShouldBe(0, "logout must remove the tracked session row");
+        }
+
+        var probe = await client.GetAsync(AuthProbeUri, ct);
+        probe.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task ActiveSessionTracker_UntrackAsync_RemovesRowAndReportsOutcomeAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var user = await this.CreateTestUserAsync("untrack_tracker_test@test.local", SeedData.TenantAId);
+        using var client = await this.SignInAsync(user.Email!);
+
+        string sessionKey;
+        using (var scope = this.App.CreateDbContextScope())
+        {
+            sessionKey = (await scope.Context.ActiveSessions.SingleAsync(s => s.UserId == user.Id, ct)).SessionKey;
+        }
+
+        var tracker = this.App.Services.GetRequiredService<IActiveSessionTracker>();
+
+        (await tracker.UntrackAsync(sessionKey, ct)).ShouldBeTrue();
+
+        using (var scope = this.App.CreateDbContextScope())
+        {
+            (await scope.Context.ActiveSessions.CountAsync(s => s.SessionKey == sessionKey, ct)).ShouldBe(0);
+        }
+
+        // Untracking must only ever remove an existing row, never report success for an unknown key -
+        // keys belonging to other cookie schemes simply match nothing.
+        (await tracker.UntrackAsync(sessionKey, ct)).ShouldBeFalse();
     }
 
     /// <summary>

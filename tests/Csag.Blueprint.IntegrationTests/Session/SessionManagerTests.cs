@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
+using Csag.Blueprint.Infrastructure.Enums;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.TestHost.Endpoints.Auth.Login;
 using Csag.Blueprint.Testing.Extensions;
@@ -17,6 +18,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Neolution.Extensions.Caching.Abstractions;
 
 /// <summary>
 /// Service-level integration tests for the session lifecycle against the real SQL container:
@@ -30,6 +32,14 @@ using Microsoft.Extensions.DependencyInjection;
 [Collection(nameof(AppFixtureCollection))]
 public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(app)
 {
+    // Mirrors SessionKeyMaxCacheKeyBytes in SessionManager: the cache composes the ticket key as
+    // "CacheId:AuthTicket_" + Uri.EscapeDataString(sessionKey) and refuses a generated key over 250 UTF-8
+    // bytes, so the 19-byte prefix leaves 231 bytes for the encoded session key. The budget itself is pinned
+    // against the library by DistributedCache_AcceptsAnAuthTicketKeyAtTheBudgetAndRejectsOneByteMoreAsync, for
+    // the cache's default key options: an application configuring an environment prefix or a schema version
+    // lengthens the generated key and lowers its own effective ceiling below this one.
+    private const int MaxSessionKeyBytes = 231;
+
     /// <summary>
     /// Authenticated-only endpoint without a permission policy, used to probe whether a client's
     /// session still authenticates (200) or has been revoked (401).
@@ -233,6 +243,135 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
     }
 
     [Fact]
+    public async Task TrackSessionAsync_WithOverLongUserAgentAndIpAddress_ClampsThemAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — the User-Agent value is a client-supplied request header bounded only by the server's
+        // header limits, and both values are written straight into nvarchar columns. Unclamped, this insert
+        // fails with a SQL truncation error, and the sign-in that raised it keeps a cached ticket with no
+        // tracking row.
+        var sessionKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        using var serviceScope = this.App.Services.CreateScope();
+        var sessionManager = serviceScope.ServiceProvider.GetRequiredService<ISessionManager>();
+
+        // Act
+        await sessionManager.TrackSessionAsync(
+            Guid.NewGuid(),
+            sessionKey,
+            DateTimeOffset.UtcNow.AddHours(1),
+            new string('a', 900),
+            new string('1', 200),
+            currentTenantId: null,
+            ct);
+
+        // Assert — the row exists and carries both values clamped to the mapped column lengths.
+        using var dbScope = this.App.CreateDbContextScope();
+        var session = await dbScope.Context.ActiveSessions
+            .AsNoTracking()
+            .SingleAsync(s => s.SessionKey == sessionKey, ct);
+        session.UserAgent.ShouldNotBeNull().Length.ShouldBe(500);
+        session.IpAddress.ShouldNotBeNull().Length.ShouldBe(50);
+    }
+
+    [Fact]
+    public async Task TrackSessionAsync_WithStandardBase64SessionKeyAtTheCharacterBudget_ThrowsAndWritesNothingAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — a key on the character budget but carrying the base64 characters outside the URI
+        // unreserved set, each of which costs three bytes once encoded. The key fits the 500-character column,
+        // so only a byte-measured guard keeps it out: a committed row under a key the cache cannot compose can
+        // never have its ticket read, rewritten or removed, and it aborts revocation and refresh for the user's
+        // other sessions once the loop reaches it.
+        var sessionKey = CreateStandardBase64Key(MaxSessionKeyBytes);
+        using var serviceScope = this.App.Services.CreateScope();
+        var sessionManager = serviceScope.ServiceProvider.GetRequiredService<ISessionManager>();
+
+        // Act & Assert — nothing on this path consults the cache, so without a byte-measured guard the key
+        // would fit the 500-character column and the row would simply commit. The parameter name pins that the
+        // manager refused it rather than something downstream.
+        var exception = await Should.ThrowAsync<ArgumentException>(async () => await sessionManager.TrackSessionAsync(
+            Guid.NewGuid(), sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", currentTenantId: null, ct));
+        exception.ParamName.ShouldBe("sessionKey");
+
+        using var dbScope = this.App.CreateDbContextScope();
+        (await dbScope.Context.ActiveSessions.AnyAsync(s => s.SessionKey == sessionKey, ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RevokeSessionAsync_WithMalformedSessionKey_ReturnsFalseWithoutRemovingTheSharedCacheSlotAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — a live session, plus a sentinel in the key-less slot the cache falls back to for a blank
+        // key. The sentinel is what makes the fallback observable: the live session's ticket lives under its
+        // own key and would survive a blank-keyed removal regardless.
+        var user = await this.CreateTestUserAsync("revoke_malformed_key_test@test.local", SeedData.TenantAId);
+        using var client = await this.SignInAsync(user.Email!);
+
+        string trackedKey;
+        using (var scope = this.App.CreateDbContextScope())
+        {
+            trackedKey = (await scope.Context.ActiveSessions.SingleAsync(s => s.UserId == user.Id, ct)).SessionKey;
+        }
+
+        var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
+        var options = new CacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1) };
+        var sharedSlotSentinel = Guid.NewGuid().ToString("D", CultureInfo.InvariantCulture);
+        await cache.SetWithOptionsAsync(CacheId.AuthTicket, sharedSlotSentinel, options, ct);
+
+        try
+        {
+            using var serviceScope = this.App.Services.CreateScope();
+            var sessionManager = serviceScope.ServiceProvider.GetRequiredService<ISessionManager>();
+
+            // Act — a blank key and an over-budget key are both reported as "nothing to revoke" rather than
+            // raising out of the administrative call that supplied them.
+            var blankRevoked = await sessionManager.RevokeSessionAsync("   ", ct);
+            var overBudgetRevoked = await sessionManager.RevokeSessionAsync(CreateUnreservedKey(MaxSessionKeyBytes + 1), ct);
+
+            // Assert
+            blankRevoked.ShouldBeFalse();
+            overBudgetRevoked.ShouldBeFalse();
+
+            (await cache.GetAsync<string>(CacheId.AuthTicket, ct))
+                .ShouldBe(sharedSlotSentinel, "a blank key must not evict the shared cache slot");
+
+            var ticketCache = this.App.Services.GetRequiredService<ITicketCacheService>();
+            (await ticketCache.GetTicketAsync(trackedKey, ct)).ShouldNotBeNull("the live session's ticket must survive");
+
+            var rsp = await client.GetAsync(AuthProbeUri, ct);
+            await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, "a malformed revoke key must not affect other sessions", ct);
+        }
+        finally
+        {
+            // Cache entries live in the host's memory and outlive the per-test database restore.
+            await cache.RemoveAsync(CacheId.AuthTicket, ct);
+        }
+    }
+
+    [Fact]
+    public async Task DistributedCache_AcceptsAnAuthTicketKeyAtTheBudgetAndRejectsOneByteMoreAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // The budget is not an arbitrary number: it is the cache's own 250-byte limit on the generated key
+        // minus the 19-byte "CacheId:AuthTicket_" prefix. Pin it against the library so a prefix change made
+        // here (a renamed enum member, a configured environment prefix or schema version) fails in this test
+        // rather than at runtime, and so the constant is checked by something other than a restatement of
+        // itself.
+        var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
+        var options = new CacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(1) };
+
+        await Should.NotThrowAsync(() => cache.SetWithOptionsAsync(
+            CacheId.AuthTicket, CreateUnreservedKey(MaxSessionKeyBytes), "ticket", options, ct));
+
+        await Should.ThrowAsync<ArgumentException>(async () => await cache.SetWithOptionsAsync(
+            CacheId.AuthTicket, CreateUnreservedKey(MaxSessionKeyBytes + 1), "ticket", options, ct));
+    }
+
+    [Fact]
     public async Task GetUserSessionsAsync_ReturnsBothSessionsAsync()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -353,6 +492,36 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
         var unknownKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 
         (await extender.ExtendAsync(unknownKey, DateTimeOffset.UtcNow.AddHours(1), ct)).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// Builds a session key of the requested character count from URI-unreserved characters only, so it
+    /// percent-encodes to itself and one character costs exactly one byte of the cache-key budget. A fresh Guid
+    /// leads the key: cache entries live in the host's memory and outlive the per-test database restore, so a
+    /// key reused across tests could be resolved by a ticket no row backs any more.
+    /// </summary>
+    /// <param name="length">The number of characters in the resulting key.</param>
+    /// <returns>The generated session key.</returns>
+    private static string CreateUnreservedKey(int length)
+    {
+        var unique = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        return unique + new string('a', length - unique.Length);
+    }
+
+    /// <summary>
+    /// Builds a session key of the requested character count that ends in the three characters a standard
+    /// base64 token can carry that the URI unreserved set does not. Each costs three bytes once percent-encoded,
+    /// so the key sits on the character budget but over the byte budget.
+    /// </summary>
+    /// <param name="length">The number of characters in the resulting key.</param>
+    /// <returns>The generated session key.</returns>
+    private static string CreateStandardBase64Key(int length)
+    {
+        var key = CreateUnreservedKey(length).ToCharArray();
+        key[^3] = '+';
+        key[^2] = '/';
+        key[^1] = '=';
+        return new string(key);
     }
 
     /// <summary>

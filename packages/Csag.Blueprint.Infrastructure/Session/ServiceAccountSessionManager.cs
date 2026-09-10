@@ -195,7 +195,17 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     }
 
     private static string? Truncate(string? value, int maxLength)
-        => value is null || value.Length <= maxLength ? value : value[..maxLength];
+    {
+        if (value is null || value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        // Never cut between a surrogate pair. A lone surrogate survives the nvarchar round-trip but is not
+        // valid UTF-16, so it fails or is replaced wherever the value is serialized back out.
+        var length = char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength;
+        return value[..length];
+    }
 
     // Measured the way the cache measures it rather than by character count: the key is percent-encoded before
     // the cache checks its length, so every character outside the URI unreserved set costs three bytes (twelve

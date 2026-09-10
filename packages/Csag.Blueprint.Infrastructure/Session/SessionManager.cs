@@ -2,6 +2,7 @@ namespace Csag.Blueprint.Infrastructure.Session;
 
 using System.Linq.Expressions;
 using System.Security.Claims;
+using System.Text;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
@@ -18,6 +19,19 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     where TUser : BlueprintUser
     where TContext : DbContext
 {
+    // The distributed cache composes the ticket's key as "CacheId:AuthTicket_" + Uri.EscapeDataString(key)
+    // and rejects a generated key over 250 UTF-8 bytes, so the 19-byte prefix leaves 231 for the encoded key.
+    // Percent-encoding never shrinks a string, so a key inside this budget also fits the 500-character
+    // SessionKey column: the cache is the binding limit of the two. The prefix assumes the cache's default key
+    // options — an application that configures an environment prefix or a schema version lengthens the
+    // generated key and lowers its own effective ceiling below this one.
+    private const int SessionKeyMaxCacheKeyBytes = 231;
+
+    // Mirror the mapped column lengths in BlueprintActiveSessionConfiguration so client-supplied values are
+    // clamped rather than allowed to fail the insert with a SQL truncation error.
+    private const int UserAgentMaxLength = 500;
+    private const int IpAddressMaxLength = 50;
+
     private readonly ITicketCacheService ticketCacheService;
     private readonly UserManager<TUser> userManager;
     private readonly IDbContextFactory<TContext> dbContextFactory;
@@ -43,23 +57,29 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     }
 
     /// <inheritdoc/>
-    public async Task TrackSessionAsync(Guid userId, string sessionKey, DateTimeOffset expiresAt, string? userAgent, string? ipAddress, Guid? currentTenantId, CancellationToken cancellationToken = default)
+    public Task TrackSessionAsync(Guid userId, string sessionKey, DateTimeOffset expiresAt, string? userAgent, string? ipAddress, Guid? currentTenantId, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+        // The session key is the value every later lookup keys off, so it is rejected rather than clamped like
+        // the diagnostic fields in TrackSessionCoreAsync: a shortened key would be stored under a value the
+        // cookie's ticket key no longer matches, leaving a row that can never be revoked or refreshed by key.
+        // A blank key is refused because the cache drops a null/empty/whitespace key and reads and writes the
+        // shared CacheId.AuthTicket slot instead, where RefreshUserSessionsAsync would store one user's ticket
+        // for the next blank-keyed session to pick up. An over-budget key is refused because the cache throws
+        // on it: the row would commit while its ticket could never be read, rewritten or removed, and such a
+        // row also aborts revocation and refresh for the user's other sessions once the loop reaches it.
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionKey);
 
-        dbContext.Set<BlueprintActiveSession>().Add(new BlueprintActiveSession
+        if (ExceedsCacheKeyBudget(sessionKey))
         {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            SessionKey = sessionKey,
-            CreatedAt = DateTimeOffset.UtcNow,
-            ExpiresAt = expiresAt,
-            UserAgent = userAgent,
-            IpAddress = ipAddress,
-            CurrentTenantId = currentTenantId,
-        });
+            throw new ArgumentException($"Session key must be at most {SessionKeyMaxCacheKeyBytes} bytes once URL-encoded", nameof(sessionKey));
+        }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
+        // The guards sit in this non-async wrapper so they surface at the call site rather than on the awaited
+        // task. Tracking runs from the cookie sign-in event, by which point DistributedCacheTicketStore has
+        // already cached the ticket and the response carries the cookie, so a rejected key leaves a live ticket
+        // with no tracking row until the first sliding renewal finds no row and closes the session — the
+        // rejection therefore has to reach the caller that is issuing the sign-in, not a task nobody awaits.
+        return this.TrackSessionCoreAsync(userId, sessionKey, expiresAt, userAgent, ipAddress, currentTenantId, cancellationToken);
     }
 
     /// <inheritdoc/>
@@ -79,12 +99,12 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     /// <inheritdoc/>
     public Task<int> RevokeOtherUserSessionsAsync(Guid userId, string keepSessionKey, CancellationToken cancellationToken = default)
     {
-        // A null/empty keep-key would degrade the filter to "revoke everything" and silently sign the caller
-        // out too. Require it explicitly so that intent is a deliberate call to RevokeUserSessionsAsync, not an
-        // accident. Sharing RevokeSessionsCoreAsync means the preserved session is excluded by the same filter
+        // A blank keep-key would degrade the filter to "revoke everything" and silently sign the caller out
+        // too: no row carries a whitespace key, so the != comparison matches every one of them. Require it
+        // explicitly so that intent is a deliberate call to RevokeUserSessionsAsync, not an accident. Sharing RevokeSessionsCoreAsync means the preserved session is excluded by the same filter
         // that snapshots the rows to delete, so it is never touched and no concurrently-tracked session can
         // strand a ticket.
-        ArgumentException.ThrowIfNullOrEmpty(keepSessionKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(keepSessionKey);
 
         return this.RevokeSessionsCoreAsync(s => s.UserId == userId && s.SessionKey != keepSessionKey, cancellationToken);
     }
@@ -100,6 +120,16 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     /// <inheritdoc/>
     public async Task<bool> RevokeSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
+        // A key outside the bounds TrackSessionAsync enforces cannot belong to a tracked session, so it means
+        // "nothing to revoke" rather than an error: this is the entry point an administrative "sign out this
+        // device" action calls with a key that arrived on a request. Filtering it out here also keeps it away
+        // from the cache, which drops a blank key and would remove the shared CacheId.AuthTicket slot, and
+        // throws ArgumentException on an over-budget one.
+        if (!IsWellFormedSessionKey(sessionKey))
+        {
+            return false;
+        }
+
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         // Manual revocation must remove both the cached authentication ticket and the tracking row.
@@ -116,6 +146,13 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     /// <inheritdoc/>
     public async Task<bool> UntrackSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
+        // Same rule as RevokeSessionAsync, so both report a key no tracked session can carry the same way. No
+        // cache call is made below, so here the guard only spares a query that cannot match a row.
+        if (!IsWellFormedSessionKey(sessionKey))
+        {
+            return false;
+        }
+
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         // Normal logout uses ITicketStore.RemoveAsync to clean up the cache entry.
@@ -176,6 +213,62 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
         return await dbContext.Set<BlueprintActiveSession>()
             .Where(s => s.ExpiresAt <= DateTimeOffset.UtcNow)
             .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    private static string? Truncate(string? value, int maxLength)
+    {
+        if (value is null || value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        // Never cut between a surrogate pair. A lone surrogate survives the nvarchar round-trip but is not
+        // valid UTF-16, so it fails or is replaced wherever the value is serialized back out.
+        var length = char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength;
+        return value[..length];
+    }
+
+    // Measured the way the cache measures it rather than by character count: the key is percent-encoded before
+    // the cache checks its length, so every character outside the URI unreserved set costs three bytes (twelve
+    // for a non-BMP character) and a 231-character standard-base64 key is already over budget.
+    private static bool ExceedsCacheKeyBudget(string sessionKey)
+        => Encoding.UTF8.GetByteCount(Uri.EscapeDataString(sessionKey)) > SessionKeyMaxCacheKeyBytes;
+
+    // A key outside the bounds TrackSessionAsync enforces cannot belong to a tracked session, so to the
+    // by-key lookups it simply means "no such session". They filter on it rather than passing it to the ticket
+    // cache, which throws on an over-long key and silently redirects a blank one to the shared
+    // CacheId.AuthTicket slot.
+    private static bool IsWellFormedSessionKey(string sessionKey)
+        => !string.IsNullOrWhiteSpace(sessionKey) && !ExceedsCacheKeyBudget(sessionKey);
+
+    private async Task TrackSessionCoreAsync(
+        Guid userId,
+        string sessionKey,
+        DateTimeOffset expiresAt,
+        string? userAgent,
+        string? ipAddress,
+        Guid? currentTenantId,
+        CancellationToken cancellationToken)
+    {
+        await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        dbContext.Set<BlueprintActiveSession>().Add(new BlueprintActiveSession
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            SessionKey = sessionKey,
+            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = expiresAt,
+
+            // Clamp to the mapped column lengths so a client-supplied over-length User-Agent header (or IP)
+            // cannot turn session tracking into a SQL truncation error, failing a sign-in over a field that is
+            // only ever displayed.
+            UserAgent = Truncate(userAgent, UserAgentMaxLength),
+            IpAddress = Truncate(ipAddress, IpAddressMaxLength),
+            CurrentTenantId = currentTenantId,
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task<int> RevokeSessionsCoreAsync(

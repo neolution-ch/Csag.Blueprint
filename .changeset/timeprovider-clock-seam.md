@@ -26,10 +26,15 @@ no wiring and a `FakeTimeProvider` registered before any of them wins. The `TryA
 consumers that use `Csag.Blueprint.Infrastructure` without the Web package — a seeding console app,
 for example — which never call `AddBlueprintServices`.
 
-**Breaking for consumers who construct the interceptor themselves.** `AuditableTimestampInterceptor`
-no longer has a parameterless constructor, and `AddBlueprintTenancyRuntime` now registers it as a
-singleton alongside `TenantSaveInterceptor`. Resolve it from the container when wiring the pooled
-context factory:
+**Breaking for consumers who construct these types themselves.** Every type listed above gained a
+required `TimeProvider` constructor parameter, so `SessionManager<TUser, TContext>`,
+`TenantManager<TUser, TTenant, TContext>` and `BlueprintTableViewPreferencesService<TContext, TUser>`
+no longer compile against their previous constructors either. Applications that resolve them from the
+container need no change, because the registrations above supply the clock.
+
+`AuditableTimestampInterceptor` is the one that usually needs hand-wiring: it no longer has a
+parameterless constructor, and `AddBlueprintTenancyRuntime` now registers it as a singleton alongside
+`TenantSaveInterceptor`. Resolve it from the container when wiring the pooled context factory:
 
 ```csharp
 services.AddPooledDbContextFactory<ApplicationDbContext>((sp, options) =>

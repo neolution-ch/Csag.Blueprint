@@ -98,9 +98,10 @@ request events, from this one call; both are on by default. Its configure callba
 Until `ConfigureBlueprintAuditLogging` runs, or when that flag is `false`, the middleware does
 nothing but call the next middleware. Once on, it writes an event for a request whose final status
 code is 401 or 403 by default. Call `services.Configure<HttpAuditOptions>(o => ...)` to audit a
-different set. It also writes the client IP address,
-taken from `HttpContext.Connection.RemoteIpAddress` after `ForwardedHeadersMiddleware` has resolved
-it from `X-Forwarded-For`. A request outside the audited set writes no event: the EF Core interceptor
+different set. It also writes the address in
+`HttpContext.Connection.RemoteIpAddress`, as resolved by `ForwardedHeadersMiddleware`. That is the
+nearest hop, which is the caller only when nothing between the caller and this app appends its own
+`X-Forwarded-For` entry — see the forwarded-headers note under Rate limiting below. A request outside the audited set writes no event: the EF Core interceptor
 already covers the writes, and GCP and Application Insights already record general request data.
 
 `HttpAuditMiddleware` wraps the app's exception handler rather than running inside it, so it can
@@ -151,6 +152,29 @@ The package owns:
 - Swagger/OpenAPI registration helpers
 
 Applications still own their endpoint classes, DTOs, validators, and policies.
+
+### Rate limiting
+
+`RateLimiterExtensions` supplies the two pieces a host needs to wire up ASP.NET Core rate limiting;
+the policies and their limits stay with the host.
+
+`UseBlueprintRejectionResponse()` shapes the rejection: `429 Too Many Requests` instead of the
+framework's `503 Service Unavailable` default (which an upstream load balancer reads as a backend
+fault), an RFC 9457 ProblemDetails body carrying the correlation ID, and `Retry-After` when the
+limiter reports it.
+
+`TryGetClientPartitionKey(header, out key)` resolves the caller: the named edge-stamped header when
+configured and parseable, else `Connection.RemoteIpAddress`, else nothing. It reports failure rather
+than inventing a key, and a caller it cannot identify must be routed to
+`RateLimitPartition.GetNoLimiter` — substituting a placeholder key puts every unidentifiable caller
+in one bucket, so the first of them to exceed the limit rejects them all.
+
+Prefer an edge-stamped header. `RemoteIpAddress` is the nearest hop, not the caller: `ForwardLimit 1`
+reads the rightmost `X-Forwarded-For` entry, and an edge that appends its own — a Google external
+load balancer sends `<client>,<balancer>` — leaves that edge's address rightmost. Behind a further
+reverse proxy it is that proxy's egress address: one constant shared by every caller. Reading the
+header from the left instead is worse, because the entries a client wrote are kept there unverified.
+The header must be one the edge writes itself and overwrites inbound, so a client cannot forge it.
 
 ## Ownership Boundary
 

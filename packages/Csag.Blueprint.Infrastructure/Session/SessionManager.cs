@@ -99,12 +99,20 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     /// <inheritdoc/>
     public Task<int> RevokeOtherUserSessionsAsync(Guid userId, string keepSessionKey, CancellationToken cancellationToken = default)
     {
-        // A blank keep-key would degrade the filter to "revoke everything" and silently sign the caller out
-        // too: no row carries a whitespace key, so the != comparison matches every one of them. Require it
-        // explicitly so that intent is a deliberate call to RevokeUserSessionsAsync, not an accident. Sharing RevokeSessionsCoreAsync means the preserved session is excluded by the same filter
-        // that snapshots the rows to delete, so it is never touched and no concurrently-tracked session can
-        // strand a ticket.
+        // A keep-key no tracked session can carry degrades the filter to "revoke everything" and silently signs
+        // the caller out too, because the != comparison then matches every row. That is true of a blank key and
+        // equally of one over the cache-key budget, since TrackSessionAsync refuses to store either. Both are
+        // rejected here so the outcome is a deliberate call to RevokeUserSessionsAsync rather than an accident.
+        // Sharing RevokeSessionsCoreAsync means the preserved session is excluded by the same filter that
+        // snapshots the rows to delete, so it is never touched and no concurrently-tracked session can strand a
+        // ticket.
         ArgumentException.ThrowIfNullOrWhiteSpace(keepSessionKey);
+
+        if (ExceedsCacheKeyBudget(keepSessionKey))
+        {
+            throw new ArgumentException(
+                $"Session key must be at most {SessionKeyMaxCacheKeyBytes} bytes once URL-encoded", nameof(keepSessionKey));
+        }
 
         return this.RevokeSessionsCoreAsync(s => s.UserId == userId && s.SessionKey != keepSessionKey, cancellationToken);
     }

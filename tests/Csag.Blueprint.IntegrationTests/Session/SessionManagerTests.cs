@@ -177,6 +177,7 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
     [Theory]
     [InlineData(null)]
     [InlineData("")]
+    [InlineData("   ")]
     public async Task RevokeOtherUserSessionsAsync_WithMissingKeepKey_ThrowsAsync(string? keepSessionKey)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -184,12 +185,47 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
         using var serviceScope = this.App.Services.CreateScope();
         var sessionManager = serviceScope.ServiceProvider.GetRequiredService<ISessionManager>();
 
-        // A null OR empty keep-key would degrade the filter to "revoke everything" and silently
-        // sign the caller out too; the API rejects both (ArgumentException.ThrowIfNullOrEmpty) so
-        // revoking all sessions is always a deliberate, separate call. ArgumentNullException
-        // derives from ArgumentException, so a single assertion covers both inline cases.
+        // A blank keep-key would degrade the filter to "revoke everything" and silently sign the caller out
+        // too; the API rejects null, empty and whitespace alike so revoking all sessions is always a
+        // deliberate, separate call. ArgumentNullException derives from ArgumentException, so a single
+        // assertion covers every inline case.
         await Should.ThrowAsync<ArgumentException>(async () =>
             await sessionManager.RevokeOtherUserSessionsAsync(Guid.NewGuid(), keepSessionKey!, ct));
+    }
+
+    [Fact]
+    public async Task RevokeOtherUserSessionsAsync_WithOverBudgetKeepKey_ThrowsWithoutRevokingAnythingAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — two live sessions for one user. An over-budget keep-key is exactly as dangerous as a blank
+        // one: TrackSessionAsync refuses to store such a key, so no row can carry it and the != filter matches
+        // every session the user has, including the one the caller asked to preserve.
+        var userId = Guid.NewGuid();
+        var firstKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var secondKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        using var serviceScope = this.App.Services.CreateScope();
+        var sessionManager = serviceScope.ServiceProvider.GetRequiredService<ISessionManager>();
+
+        foreach (var sessionKey in new[] { firstKey, secondKey })
+        {
+            await sessionManager.TrackSessionAsync(
+                userId,
+                sessionKey,
+                DateTimeOffset.UtcNow.AddHours(1),
+                "test-agent",
+                "127.0.0.1",
+                currentTenantId: null,
+                ct);
+        }
+
+        // Act / Assert
+        await Should.ThrowAsync<ArgumentException>(async () =>
+            await sessionManager.RevokeOtherUserSessionsAsync(userId, CreateUnreservedKey(MaxSessionKeyBytes + 1), ct));
+
+        using var dbScope = this.App.CreateDbContextScope();
+        (await dbScope.Context.ActiveSessions.CountAsync(s => s.UserId == userId, ct))
+            .ShouldBe(2, "a keep-key that cannot match any row must revoke nothing rather than everything");
     }
 
     [Fact]

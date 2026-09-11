@@ -54,10 +54,14 @@ public static class RateLimiterExtensions
             && headerValues.Count > 0)
         {
             // Read the last entry, and the last comma-separated token within it: an edge that appends
-            // rather than overwrites leaves its own trustworthy value at the end.
+            // rather than overwrites leaves its own trustworthy value at the end. The token is sliced off
+            // at the final comma rather than split out, because only that one is ever read while the number
+            // of entries ahead of it is influenced by the caller — Split would allocate an array
+            // proportional to that count on every request. LastIndexOf returns -1 for a comma-free value,
+            // which slices the whole string.
             var lastValue = headerValues[^1];
             if (!string.IsNullOrWhiteSpace(lastValue)
-                && IPAddress.TryParse(lastValue.Split(',')[^1].Trim(), out var headerAddress))
+                && IPAddress.TryParse(lastValue.AsSpan(lastValue.LastIndexOf(',') + 1).Trim(), out var headerAddress))
             {
                 partitionKey = NormalizeAddress(headerAddress);
                 return true;

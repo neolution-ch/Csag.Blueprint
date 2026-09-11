@@ -24,7 +24,10 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     // Percent-encoding never shrinks a string, so a key inside this budget also fits the 500-character
     // SessionKey column: the cache is the binding limit of the two. The prefix assumes the cache's default key
     // options — an application that configures an environment prefix or a schema version lengthens the
-    // generated key and lowers its own effective ceiling below this one.
+    // generated key and lowers its own effective ceiling below this one. That residual gap cannot strand a row
+    // here, because the ticket is written under this same key by DistributedCacheTicketStore.StoreAsync before
+    // the cookie sign-in event that calls TrackSessionAsync: a key the configured cache refuses has already
+    // failed the sign-in, so tracking is never reached with one.
     private const int SessionKeyMaxCacheKeyBytes = 231;
 
     // Mirror the mapped column lengths in BlueprintActiveSessionConfiguration so client-supplied values are

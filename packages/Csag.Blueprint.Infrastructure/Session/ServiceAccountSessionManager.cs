@@ -23,7 +23,9 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     // Percent-encoding never shrinks a string, so a key inside this budget also fits the 500-character SessionKey
     // column: the cache is the binding limit of the two. The prefix assumes the cache's default key options —
     // an application that configures an environment prefix or a schema version lengthens the generated key and
-    // lowers its own effective ceiling below this one.
+    // lowers its own effective ceiling below this one. Issuance writes its marker after committing the row, so
+    // that residual gap is compensated rather than prevented: TrackSessionCoreAsync deletes the row it just
+    // committed when the marker write is refused.
     private const int SessionKeyMaxCacheKeyBytes = 220;
 
     // Mirror the mapped column lengths in BlueprintServiceAccountSessionConfiguration so client-supplied values
@@ -237,6 +239,32 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     private static bool IsWellFormedSessionKey(string sessionKey)
         => !string.IsNullOrWhiteSpace(sessionKey) && !ExceedsCacheKeyBudget(sessionKey);
 
+    /// <summary>
+    /// Deletes a tracking row whose marker could not be written, so a failed issuance leaves nothing behind.
+    /// </summary>
+    /// <remarks>
+    /// Runs uncancellable: the cache failure this compensates for may itself have been a cancellation, and the
+    /// row still has to come out. A failure here is swallowed so the caller sees the original cache exception,
+    /// which is the one that explains why issuance failed — the row is then left for the opportunistic reap on
+    /// this account's next issuance, or for <c>CleanupExpiredSessionsAsync</c>.
+    /// </remarks>
+    /// <param name="dbContext">The context the row was committed through.</param>
+    /// <param name="sessionKey">The session key identifying the row to remove.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private static async Task RemoveTrackingRowAsync(TContext dbContext, string sessionKey)
+    {
+        try
+        {
+            await dbContext.Set<BlueprintServiceAccountSession>()
+                .Where(s => s.SessionKey == sessionKey)
+                .ExecuteDeleteAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // Deliberately ignored; see the remarks above.
+        }
+    }
+
     private async Task TrackSessionCoreAsync(
         Guid serviceAccountId,
         string sessionKey,
@@ -275,7 +303,22 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
         // Prime the fast-path marker so subsequent requests validate the session existence without a DB read.
         // The absolute expiry matches the token/session lifetime so the marker self-cleans.
-        await this.SetCacheMarkerAsync(sessionKey, serviceAccountId, expiresAt, cancellationToken);
+        try
+        {
+            await this.SetCacheMarkerAsync(sessionKey, serviceAccountId, expiresAt, cancellationToken);
+        }
+        catch (Exception)
+        {
+            // The budget TrackSessionAsync enforces is measured against the cache's DEFAULT key options, so an
+            // application that configures an environment prefix or a schema version has a lower effective
+            // ceiling and this write can still be refused for a key that passed the guard. The row is committed
+            // by then, and a row the cache cannot address is worse than no session at all: it can never be
+            // validated through the fast path, and it aborts RevokeServiceAccountSessionsAsync for every other
+            // session on the account, because that method feeds each snapshotted key back to the cache. Take the
+            // row out again so issuance fails having written nothing.
+            await RemoveTrackingRowAsync(dbContext, sessionKey);
+            throw;
+        }
 
         // Issuance is not atomic: the row committed above and the marker just written are two separate steps, and
         // a revocation can run to completion between them. Its marker removal finds nothing, its row delete

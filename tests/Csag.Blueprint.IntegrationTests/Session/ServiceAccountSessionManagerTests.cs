@@ -4,9 +4,12 @@ using System.Globalization;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Enums;
+using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.TestHost;
+using Csag.Blueprint.Tests.Shared.Database;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using Neolution.Extensions.Caching.Abstractions;
 
 /// <summary>
@@ -248,6 +251,44 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             // Cache entries live in the host's memory and outlive the per-test database restore.
             await cache.RemoveAsync(CacheId.ServiceAccountSession, ct);
         }
+    }
+
+    [Fact]
+    public async Task TrackSessionAsync_WhenTheCacheRefusesTheMarker_RemovesTheRowItCommittedAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — the budget TrackSessionAsync enforces is measured against the cache's default key options,
+        // so an application that configures an environment prefix or a schema version has a lower effective
+        // ceiling and can still have this write refused for a key that passed the guard. The row is committed
+        // before the marker write, and a row the cache cannot address is worse than no session at all: it never
+        // validates, and it aborts RevokeServiceAccountSessionsAsync for every other session on the account,
+        // which feeds each snapshotted key back to the cache. A cache that refuses the write stands in for that
+        // configuration, since a key this host's cache would refuse cannot get past the guard.
+        var serviceAccountId = Guid.NewGuid();
+        var sessionKey = CreateUnreservedKey(MaxSessionKeyBytes);
+        var refusingCache = new Mock<IDistributedCache<CacheId>>();
+        refusingCache
+            .Setup(c => c.SetWithOptionsAsync(
+                CacheId.ServiceAccountSession,
+                sessionKey,
+                It.IsAny<string>(),
+                It.IsAny<CacheEntryOptions>(),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.FromException(new ArgumentException("The generated cache key exceeds the maximum length")));
+
+        var dbContextFactory = this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>();
+        var manager = new ServiceAccountSessionManager<TestDbContext>(dbContextFactory, refusingCache.Object);
+
+        // Act — issuance surfaces the cache failure to the caller...
+        await Should.ThrowAsync<ArgumentException>(async () =>
+            await manager.TrackSessionAsync(
+                serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct));
+
+        // Assert — ...having written nothing.
+        using var dbScope = this.App.CreateDbContextScope();
+        (await dbScope.Context.ServiceAccountSessions.AnyAsync(s => s.SessionKey == sessionKey, ct))
+            .ShouldBeFalse("a session whose marker could not be written must not leave a tracking row behind");
     }
 
     [Fact]

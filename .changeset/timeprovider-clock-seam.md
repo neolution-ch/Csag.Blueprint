@@ -17,7 +17,8 @@ clock is now a constructor dependency:
 - `TenantManager<TUser, TTenant, TContext>` takes a `TimeProvider`.
 - `BlueprintTableViewPreferencesService<TContext, TUser>` takes a `TimeProvider`.
 - The `CreatedAt` column on `BlueprintAuditLogs` is stamped from the `TimeProvider` resolved out of
-  the application's services.
+  the application's services, falling back to `TimeProvider.System` when `ConfigureBlueprintAuditLogging`
+  is called without any of the registrations below, so audit logging stays wirable on its own.
 
 `AddBlueprintServices`, `AddBlueprintTenancyRuntime`, `AddBlueprintSessionInfrastructure` and
 `AddBlueprintTableViewPreferences` each `TryAddSingleton(TimeProvider.System)`, so the default needs

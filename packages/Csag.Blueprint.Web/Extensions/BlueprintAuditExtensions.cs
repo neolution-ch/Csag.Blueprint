@@ -59,7 +59,12 @@ public static class BlueprintAuditExtensions
         // (important when the app host is recreated, e.g., during integration tests)
         Configuration.ResetCustomActions();
 
-        ConfigureSqlServerDataProvider(connectionString, app.Services.GetRequiredService<TimeProvider>());
+        // Audit logging is self-contained enough to be wired without any of the blueprint registrations that
+        // TryAdd a TimeProvider, so fall back to the system clock rather than failing startup. A registered
+        // provider still wins, which is what lets a test drive audit timestamps from a FakeTimeProvider.
+        var timeProvider = app.Services.GetService<TimeProvider>() ?? TimeProvider.System;
+
+        ConfigureSqlServerDataProvider(connectionString, timeProvider);
         ConfigureEntityFrameworkAudit<TContext, TUser, TRole>(options);
         ConfigureHttpContextEnrichment(app.Services);
 

@@ -6,6 +6,7 @@ using Csag.Blueprint.Infrastructure.Abstractions.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 /// <summary>
@@ -24,6 +25,10 @@ public static class ServiceCollectionExtensions
         where TUser : BlueprintUser
         where TContext : DbContext
     {
+        // Clock seam for session creation stamps and expiry comparisons. TryAdd, so a TimeProvider
+        // registered before this call (a FakeTimeProvider in tests) wins.
+        services.TryAddSingleton(TimeProvider.System);
+
         services.AddSingleton<ITicketCacheService, TicketCacheService>();
         services.AddSingleton<ISessionExpirationExtender, SessionExpirationExtender<TContext>>();
         services.AddSingleton<ITicketStore, DistributedCacheTicketStore>();

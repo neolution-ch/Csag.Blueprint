@@ -4,6 +4,7 @@
     <PackageReference Include="AutoFixture.Xunit3" />
     <PackageReference Include="FastEndpoints.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 
   <ItemGroup>

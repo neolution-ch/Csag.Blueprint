@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
+using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.TestHost.Endpoints.Auth.Login;
 using Csag.Blueprint.Testing.Extensions;
@@ -17,6 +18,7 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 /// <summary>
 /// Service-level integration tests for the session lifecycle against the real SQL container:
@@ -35,6 +37,14 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
     /// session still authenticates (200) or has been revoked (401).
     /// </summary>
     private static readonly Uri AuthProbeUri = new("/api/maintenance-records", UriKind.Relative);
+
+    /// <summary>
+    /// The instant the fake clock in the clock-seam tests below is parked at. It sits well before the
+    /// fixture's own sessions, so the set-based cleanup can never reach their rows, and far enough from the
+    /// wall clock that a regression to <c>DateTimeOffset.UtcNow</c> at any of the seam's read sites is
+    /// unmistakable rather than a near miss.
+    /// </summary>
+    private static readonly DateTimeOffset ClockEpoch = new(2020, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public async Task RevokeUserSessionsAsync_RemovesAllUserSessionsAsync()
@@ -353,6 +363,119 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
         var unknownKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
 
         (await extender.ExtendAsync(unknownKey, DateTimeOffset.UtcNow.AddHours(1), ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task TrackSessionAsync_StampsCreatedAtFromTheInjectedClockAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange
+        var clock = new FakeTimeProvider(ClockEpoch);
+        var userId = Guid.NewGuid();
+        var sessionKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        using var serviceScope = this.App.Services.CreateScope();
+        var sessionManager = CreateSessionManagerWithClock(serviceScope, clock);
+
+        // Act
+        await sessionManager.TrackSessionAsync(
+            userId, sessionKey, ClockEpoch.AddHours(1), "test-agent", "127.0.0.1", currentTenantId: null, ct);
+
+        // Assert
+        using var dbScope = this.App.CreateDbContextScope();
+        var session = await dbScope.Context.ActiveSessions
+            .AsNoTracking()
+            .SingleAsync(s => s.SessionKey == sessionKey, ct);
+        session.CreatedAt.ShouldBe(ClockEpoch);
+    }
+
+    [Fact]
+    public async Task GetUserSessionsAsync_FiltersExpiryAgainstTheInjectedClockAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange - a session that expires half an hour after the clock instant.
+        var clock = new FakeTimeProvider(ClockEpoch);
+        var userId = Guid.NewGuid();
+        var sessionKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        using var serviceScope = this.App.Services.CreateScope();
+        var sessionManager = CreateSessionManagerWithClock(serviceScope, clock);
+        await sessionManager.TrackSessionAsync(
+            userId, sessionKey, ClockEpoch.AddMinutes(30), "test-agent", "127.0.0.1", currentTenantId: null, ct);
+
+        // Act / Assert - listed while the clock sits before the expiry...
+        var live = await sessionManager.GetUserSessionsAsync(userId, ct);
+        live.ShouldHaveSingleItem().SessionKey.ShouldBe(sessionKey);
+
+        // ...and gone once the clock passes it, without the row itself being touched.
+        clock.Advance(TimeSpan.FromMinutes(31));
+        (await sessionManager.GetUserSessionsAsync(userId, ct)).ShouldBeEmpty();
+
+        using var dbScope = this.App.CreateDbContextScope();
+        (await dbScope.Context.ActiveSessions.AnyAsync(s => s.SessionKey == sessionKey, ct)).ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task CleanupExpiredSessionsAsync_DeletesUpToAndIncludingTheInjectedClockInstantAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange - three sessions straddling the clock instant by a second either side. Every expiry sits in
+        // the past, so the set-based delete cannot reach the fixture's own rows and the count below is exactly
+        // this test's doing.
+        var clock = new FakeTimeProvider(ClockEpoch);
+        var userId = Guid.NewGuid();
+        var expiredKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var boundaryKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var liveKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+
+        using var serviceScope = this.App.Services.CreateScope();
+        var sessionManager = CreateSessionManagerWithClock(serviceScope, clock);
+        foreach (var (sessionKey, expiresAt) in new[]
+        {
+            (expiredKey, ClockEpoch.AddSeconds(-1)),
+            (boundaryKey, ClockEpoch),
+            (liveKey, ClockEpoch.AddSeconds(1)),
+        })
+        {
+            await sessionManager.TrackSessionAsync(
+                userId, sessionKey, expiresAt, "test-agent", "127.0.0.1", currentTenantId: null, ct);
+        }
+
+        // Act
+        var deleted = await sessionManager.CleanupExpiredSessionsAsync(ct);
+
+        // Assert - the filter is ExpiresAt <= now, so the row expiring exactly on the instant goes too. Under
+        // the wall clock all three would have been swept, the live one included.
+        deleted.ShouldBe(2);
+
+        using var dbScope = this.App.CreateDbContextScope();
+        var remaining = await dbScope.Context.ActiveSessions
+            .AsNoTracking()
+            .Where(s => s.UserId == userId)
+            .Select(s => s.SessionKey)
+            .ToListAsync(ct);
+        remaining.ShouldBe([liveKey]);
+    }
+
+    /// <summary>
+    /// Builds a <see cref="SessionManager{TUser, TContext}"/> on the host's real collaborators but with the
+    /// given clock, so the time seam can be driven without repointing the shared host's own
+    /// <see cref="TimeProvider"/> registration for every other test in the collection.
+    /// </summary>
+    /// <param name="serviceScope">A scope to resolve the manager's collaborators from.</param>
+    /// <param name="clock">The clock the manager should read.</param>
+    /// <returns>The manager under test.</returns>
+    private static SessionManager<TestUser, TestDbContext> CreateSessionManagerWithClock(
+        IServiceScope serviceScope, TimeProvider clock)
+    {
+        var services = serviceScope.ServiceProvider;
+        return new SessionManager<TestUser, TestDbContext>(
+            services.GetRequiredService<ITicketCacheService>(),
+            services.GetRequiredService<UserManager<TestUser>>(),
+            services.GetRequiredService<IDbContextFactory<TestDbContext>>(),
+            services.GetRequiredService<ITenantAuthorizationResolver>(),
+            clock);
     }
 
     /// <summary>

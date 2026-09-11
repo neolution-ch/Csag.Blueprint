@@ -1,6 +1,8 @@
 namespace Csag.Blueprint.Infrastructure.Session;
 
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -15,6 +17,9 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 public sealed class DistributedCacheTicketStore : ITicketStore
 {
+    /// <summary>Bytes of the session-key digest kept in log tags — wide enough to correlate entries, far too narrow to brute-force back to a key.</summary>
+    private const int SessionTagBytes = 6;
+
     private readonly ITicketCacheService ticketCacheService;
     private readonly IActiveSessionTracker activeSessionTracker;
     private readonly ILogger<DistributedCacheTicketStore> logger;
@@ -82,24 +87,32 @@ public sealed class DistributedCacheTicketStore : ITicketStore
     /// <returns>A task representing the asynchronous operation.</returns>
     public async Task RemoveAsync(string key)
     {
-        await this.ticketCacheService.RemoveTicketAsync(key);
-
         // Untracking belongs here rather than in an OnSigningOut handler: the cookie handler passes the
         // session key straight to this method, whereas CookieSigningOutContext does not carry it and an
         // event could only recover it via HttpContext.AuthenticateAsync — which deadlocks when sign-out is
         // raised from inside the handler's own authentication pass. Doing it here also covers the handler's
         // expired-ticket path, which removes the ticket without ever raising OnSigningOut.
+        //
+        // Delete the tracking row BEFORE removing the cached ticket, for the reason spelled out in
+        // SessionManager.RevokeSessionsCoreAsync: a concurrent sliding renewal re-writes its ticket
+        // unconditionally and only then extends its row, so with the row already gone that extension
+        // reports "no row" and the renewal removes its own ticket (see RenewAsync below). The opposite
+        // order leaves a window — ticket removed, row still present — in which a renewal both resurrects
+        // the ticket and extends the row successfully, and the untracking below then strips the tracking
+        // row off a session whose ticket is still live: invisible to listing, unreachable by revocation.
         try
         {
             await this.activeSessionTracker.UntrackAsync(key);
         }
         catch (Exception ex)
         {
-            // The cache entry is already gone, so the session is dead either way. A failed row delete must
-            // not fail the sign-out (or the authentication pass that discarded an expired ticket); the row
-            // is left for CleanupExpiredSessionsAsync to reap.
-            this.logger.LogWarning(ex, "Failed to remove the tracked session row for session {SessionKey}", key);
+            // A failed row delete must not fail the sign-out (or the authentication pass that discarded an
+            // expired ticket), and must not skip the ticket removal below — the cached ticket is what keeps
+            // authorizing requests. The row is left for CleanupExpiredSessionsAsync to reap.
+            this.logger.LogWarning(ex, "Failed to remove the tracked session row for session {SessionTag}", SessionTag(key));
         }
+
+        await this.ticketCacheService.RemoveTicketAsync(key);
     }
 
     /// <summary>
@@ -134,7 +147,7 @@ public sealed class DistributedCacheTicketStore : ITicketStore
             // A failed row update must not fail the renewal itself: the cache ticket is already
             // renewed, and the row merely lags (the pre-extension behavior) until the next
             // successful renewal. Only a definitive "no row" answer (below) is treated as revoked.
-            this.logger.LogWarning(ex, "Failed to extend tracked session expiration for session {SessionKey}", key);
+            this.logger.LogWarning(ex, "Failed to extend tracked session expiration for session {SessionTag}", SessionTag(key));
             return;
         }
 
@@ -146,7 +159,20 @@ public sealed class DistributedCacheTicketStore : ITicketStore
         if (!sessionStillTracked)
         {
             await this.ticketCacheService.RemoveTicketAsync(key);
-            this.logger.LogWarning("Session {SessionKey} was renewed concurrently with its revocation; the renewed ticket has been removed.", key);
+            this.logger.LogWarning("Session {SessionTag} was renewed concurrently with its revocation; the renewed ticket has been removed.", SessionTag(key));
         }
+    }
+
+    /// <summary>
+    /// Derives a short, non-reversible tag for a session key so that log entries about the same session can
+    /// be correlated. The session key is the bearer credential carried by the authentication cookie, so
+    /// writing it to a log would let anyone with log access replay the session it belongs to.
+    /// </summary>
+    /// <param name="key">The session key to describe.</param>
+    /// <returns>A hex tag derived from the key, safe to record in logs.</returns>
+    private static string SessionTag(string key)
+    {
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(key));
+        return Convert.ToHexString(digest.AsSpan(0, SessionTagBytes));
     }
 }

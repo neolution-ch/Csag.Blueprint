@@ -101,10 +101,35 @@ public sealed class DistributedCacheTicketStoreTests
     }
 
     [Fact]
-    public async Task RemoveAsync_UntrackFails_DoesNotThrow()
+    public async Task RemoveAsync_RemovesTrackingRowBeforeTicket()
     {
-        // The cache entry is already gone, so the session is dead either way. A failed row delete must
-        // not fail the sign-out, nor the authentication pass that discarded an expired ticket.
+        // A concurrent sliding renewal re-writes its ticket unconditionally and only then extends its row.
+        // Removing the ticket first leaves a window in which such a renewal resurrects the ticket AND
+        // extends the still-present row, so the untracking would strip the tracking row off a live session.
+        // Deleting the row first makes that extension report "no row", and the renewal removes its own ticket.
+        var calls = new List<string>();
+        var ticketCache = new Mock<ITicketCacheService>();
+        ticketCache
+            .Setup(c => c.RemoveTicketAsync(SessionKey, It.IsAny<CancellationToken>()))
+            .Callback(() => calls.Add("ticket"))
+            .Returns(Task.CompletedTask);
+        var tracker = new Mock<IActiveSessionTracker>();
+        tracker
+            .Setup(t => t.UntrackAsync(SessionKey, It.IsAny<CancellationToken>()))
+            .Callback(() => calls.Add("row"))
+            .ReturnsAsync(true);
+        var store = CreateStore(ticketCache, tracker);
+
+        await store.RemoveAsync(SessionKey);
+
+        calls.ShouldBe(["row", "ticket"]);
+    }
+
+    [Fact]
+    public async Task RemoveAsync_UntrackFails_StillRemovesTicketAndDoesNotThrow()
+    {
+        // A failed row delete must not fail the sign-out, nor the authentication pass that discarded an
+        // expired ticket — and must not skip the ticket removal, which is what actually ends the session.
         var ticketCache = new Mock<ITicketCacheService>();
         var tracker = new Mock<IActiveSessionTracker>();
         tracker

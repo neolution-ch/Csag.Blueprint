@@ -115,6 +115,9 @@ public static class BlueprintAuditExtensions
             // Infrastructure: session tracking, high-frequency writes, no business audit value
             .Ignore<BlueprintActiveSession>()
 
+            // Infrastructure: service-account session tracking (reference-token backing rows), same rationale
+            .Ignore<BlueprintServiceAccountSession>()
+
             // Infrastructure: data protection key management, rotated automatically
             .Ignore<DataProtectionKey>()
 

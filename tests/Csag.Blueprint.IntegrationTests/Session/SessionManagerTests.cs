@@ -243,6 +243,47 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
     }
 
     [Fact]
+    public async Task TrackSessionAsync_LeavesThePrimaryKeyToTheSequentialStoreDefaultAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — BlueprintActiveSessionConfiguration gives Id a NEWSEQUENTIALID() store default so the
+        // clustered key stays monotonic on this insert-heavy table. Assigning the key client-side would silently
+        // defeat that, and two rows are what makes the omission observable: EF only falls back to the store
+        // default while the property holds the CLR default, so a client value of Guid.Empty would collide on the
+        // second insert instead of being generated per row.
+        var firstKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        var secondKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        using var serviceScope = this.App.Services.CreateScope();
+        var sessionManager = serviceScope.ServiceProvider.GetRequiredService<ISessionManager>();
+
+        // Act
+        foreach (var sessionKey in new[] { firstKey, secondKey })
+        {
+            await sessionManager.TrackSessionAsync(
+                Guid.NewGuid(),
+                sessionKey,
+                DateTimeOffset.UtcNow.AddHours(1),
+                "test-agent",
+                "127.0.0.1",
+                currentTenantId: null,
+                ct);
+        }
+
+        // Assert — both rows carry a server-generated key.
+        using var dbScope = this.App.CreateDbContextScope();
+        var ids = await dbScope.Context.ActiveSessions
+            .AsNoTracking()
+            .Where(s => s.SessionKey == firstKey || s.SessionKey == secondKey)
+            .Select(s => s.Id)
+            .ToListAsync(ct);
+
+        ids.Count.ShouldBe(2);
+        ids.ShouldAllBe(id => id != Guid.Empty);
+        ids.Distinct().Count().ShouldBe(2);
+    }
+
+    [Fact]
     public async Task TrackSessionAsync_WithOverLongUserAgentAndIpAddress_ClampsThemAsync()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -86,11 +86,12 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
         // 1) Resolve the session to its owning service account. Fast path: the cache marker. If the marker is
         //    missing (cache eviction/flush, or the entry was removed by revocation), fall back to the tracking
-        //    row. We deliberately do NOT re-prime the cache from the fallback: revocation removes the marker
-        //    before deleting the row, so a fallback that landed in that window would write a marker outliving
-        //    the row it was read from, resurrecting a revoked session — and no later revoke could clear it,
-        //    because revocation enumerates rows. Falling through to the DB on every request after a cache
-        //    flush is a bounded performance cost, not a correctness problem.
+        //    row. We deliberately do NOT re-prime the cache from the fallback: revocation sweeps the marker both
+        //    before and after deleting the row, but a re-prime landing after that final sweep would write a marker
+        //    outliving the row it was read from, resurrecting a revoked session — and no later revoke could clear
+        //    it, because revocation enumerates rows. Only issuance writes markers, which is what lets
+        //    TrackSessionCoreAsync be responsible for confirming its own row still exists. Falling through to the
+        //    DB on every request after a cache flush is a bounded performance cost, not a correctness problem.
         var serviceAccountId = await this.ResolveServiceAccountIdAsync(dbContext, sessionKey, cancellationToken);
         if (serviceAccountId is null)
         {
@@ -142,6 +143,12 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
             .Where(s => s.SessionKey == sessionKey)
             .ExecuteDeleteAsync(cancellationToken);
 
+        // Sweep the marker again now the row is gone. Issuance commits its row and only then writes its marker, so
+        // a token issued concurrently can slot a marker in between the removal above and this delete — a marker
+        // that would outlive its row and keep authorizing the revoked session. The removal is idempotent, so this
+        // costs one no-op cache delete in the ordinary case.
+        await this.cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+
         return deleted > 0;
     }
 
@@ -179,6 +186,15 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         var revoked = await dbContext.Set<BlueprintServiceAccountSession>()
             .Where(s => sessionIds.Contains(s.Id))
             .ExecuteDeleteAsync(cancellationToken);
+
+        // Sweep the markers again now the rows are gone, for the reason given in RevokeSessionAsync: a session
+        // already present in the snapshot can have its marker written between the sweep above and this delete,
+        // because issuance commits its row before writing its marker. The snapshot keeps the deleted rows and the
+        // swept markers in step; it does not order this method against an issuance already in flight.
+        foreach (var session in sessions)
+        {
+            await this.cache.RemoveAsync(CacheId.ServiceAccountSession, session.SessionKey, cancellationToken);
+        }
 
         return revoked;
     }
@@ -260,6 +276,22 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         // Prime the fast-path marker so subsequent requests validate the session existence without a DB read.
         // The absolute expiry matches the token/session lifetime so the marker self-cleans.
         await this.SetCacheMarkerAsync(sessionKey, serviceAccountId, expiresAt, cancellationToken);
+
+        // Issuance is not atomic: the row committed above and the marker just written are two separate steps, and
+        // a revocation can run to completion between them. Its marker removal finds nothing, its row delete
+        // succeeds, and the marker written here is left describing a row that no longer exists — validating a
+        // revoked token on the fast path, and unreachable by any later revoke because revocation enumerates rows.
+        // Confirm the row is still there and fail closed by dropping the marker if it is not. Revocation sweeps
+        // the marker again after deleting the row, which closes the mirror interleaving where this check reads the
+        // row before that delete lands.
+        var stillTracked = await dbContext.Set<BlueprintServiceAccountSession>()
+            .AsNoTracking()
+            .AnyAsync(s => s.SessionKey == sessionKey, cancellationToken);
+
+        if (!stillTracked)
+        {
+            await this.cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+        }
     }
 
     private async Task<Guid?> ResolveServiceAccountIdAsync(TContext dbContext, string sessionKey, CancellationToken cancellationToken)

@@ -47,7 +47,9 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         }
 
         // Assert — the tracking row carries the key verbatim, and the fast-path marker resolves it to the
-        // account, so the next request validates without a database read.
+        // account, so the next request skips the tracking-row lookup. ValidateSessionAsync still reads the
+        // service-account row itself on every request, which is what makes deactivation and role changes
+        // take effect immediately rather than being frozen into the token.
         using (var dbScope = this.App.CreateDbContextScope())
         {
             var row = await dbScope.Context.ServiceAccountSessions
@@ -245,6 +247,43 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         {
             // Cache entries live in the host's memory and outlive the per-test database restore.
             await cache.RemoveAsync(CacheId.ServiceAccountSession, ct);
+        }
+    }
+
+    [Fact]
+    public async Task TrackSessionAsync_WhenTheRowDoesNotSurviveIssuance_LeavesNoCacheMarkerAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — an already-expired session. Issuance opportunistically reaps this account's expired rows, and
+        // the row just inserted is one of them, so issuance reaches its marker write with no row behind it. That
+        // is the same end state a revocation racing issuance produces: the row is gone by the time the marker is
+        // written, which is the interleaving the post-write check exists to catch.
+        var serviceAccountId = Guid.NewGuid();
+        var sessionKey = CreateUnreservedKey(MaxSessionKeyBytes);
+        var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
+
+        using var serviceScope = this.App.Services.CreateScope();
+        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+
+        try
+        {
+            // Act
+            await manager.TrackSessionAsync(
+                serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddMinutes(-1), "test-agent", "127.0.0.1", ct);
+
+            // Assert — a marker outliving its row validates on the fast path and is unreachable by revocation,
+            // which enumerates rows. Issuance has to take its own marker back down.
+            (await cache.GetAsync<string>(CacheId.ServiceAccountSession, sessionKey, ct))
+                .ShouldBeNull("a marker must never outlive the tracking row it describes");
+
+            using var dbScope = this.App.CreateDbContextScope();
+            (await dbScope.Context.ServiceAccountSessions.AnyAsync(s => s.SessionKey == sessionKey, ct)).ShouldBeFalse();
+        }
+        finally
+        {
+            // Cache entries live in the host's memory and outlive the per-test database restore.
+            await cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, ct);
         }
     }
 

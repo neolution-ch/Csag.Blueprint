@@ -252,9 +252,11 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
 
+        // Id is intentionally left unset so the NEWSEQUENTIALID() store default configured in
+        // BlueprintActiveSessionConfiguration applies, keeping the clustered primary key monotonic on this
+        // insert-heavy table (assigning a random Guid here would defeat it).
         dbContext.Set<BlueprintActiveSession>().Add(new BlueprintActiveSession
         {
-            Id = Guid.NewGuid(),
             UserId = userId,
             SessionKey = sessionKey,
             CreatedAt = DateTimeOffset.UtcNow,

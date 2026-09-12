@@ -7,6 +7,31 @@ const prBody = process.env.PR_BODY || "";
 const workspacePackagesChanged =
   process.env.WORKSPACE_PACKAGES_CHANGED === "true";
 
+/**
+ * Reduce a value to a safe slug for use inside a filename.
+ *
+ * The prefix ends up in a path.join() call, so it must not contain path
+ * separators or other characters that could escape .changeset/ or produce an
+ * invalid filename. Anything outside [a-z0-9-] becomes a dash; leading and
+ * trailing dashes are then trimmed.
+ */
+function toSafeSlug(value, fallback) {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug || fallback;
+}
+
+// Namespaces the generated file so each automation's changesets stay
+// recognisable in .changeset/. Only the file contents are load-bearing for
+// changesets; the name just has to be unique.
+const changesetPrefix = toSafeSlug(
+  process.env.CHANGESET_PREFIX || "dependabot",
+  "dependabot",
+);
+
 // The script lives in scripts/, so the repository root is one level up.
 const repoRoot = path.resolve(import.meta.dirname, "..");
 
@@ -141,7 +166,7 @@ const updates = parseDependencyUpdates(prBody);
 const content = buildChangeset(fixedPackages, updates);
 
 const id = crypto.randomBytes(8).toString("hex");
-const filename = `dependabot-${id}.md`;
+const filename = `${changesetPrefix}-${id}.md`;
 const changesetDir = path.join(repoRoot, ".changeset");
 const filepath = path.join(changesetDir, filename);
 

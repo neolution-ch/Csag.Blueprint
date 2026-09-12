@@ -122,7 +122,7 @@ jobs:
             echo "No lock file changed - no changeset, and no PR to open."
           fi
 
-          PKG_CHANGES=$(git status --porcelain -- 'packages/*/*.csproj' 'packages/*/packages.lock.json' Directory.Packages.props)
+          PKG_CHANGES=$(git status --porcelain -- 'packages/*/*.csproj' Directory.Packages.props)
           if [ -n "$PKG_CHANGES" ]; then
             echo "packages=true" >> "$GITHUB_OUTPUT"
             echo "Package-affecting files changed:"
@@ -192,11 +192,10 @@ jobs:
 
             ### Changeset
             This workflow generates a changeset so CI's Changeset Check
-            passes. The fixed package group is bumped only when a file that
-            affects a shipped NuGet package changed
-            (`packages/*/packages.lock.json`); a refresh that only touched
-            `pnpm-lock.yaml` — dev-only release tooling — gets an empty
-            changeset and releases nothing.
+            passes. The fixed package group is bumped only when a
+            `.csproj` file or `Directory.Packages.props` changed. This job
+            only runs `dotnet restore`, which never writes either file, so
+            every refresh gets an empty changeset and releases nothing.
 
             ### Safety
             - Only resolves **within** the existing version ranges — no range

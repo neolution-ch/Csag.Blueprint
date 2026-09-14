@@ -9,6 +9,7 @@ using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.Tests.Shared.Database;
 using Csag.Blueprint.Tests.Shared.Helpers;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 using Neolution.Extensions.Caching.Abstractions;
 
@@ -36,7 +37,11 @@ public sealed class ServiceAccountSessionManagerTests
     // set and therefore cost three bytes each once encoded.
     private const string StandardBase64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-    private static readonly DateTimeOffset SessionExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
+    // The manager reads every timestamp through its injected TimeProvider, so the tests pin one rather than
+    // letting the wall clock leak into the values they pass in.
+    private static readonly FakeTimeProvider Clock = new(new DateTimeOffset(2026, 5, 2, 11, 30, 0, TimeSpan.Zero));
+
+    private static readonly DateTimeOffset SessionExpiresAt = Clock.GetUtcNow().AddHours(1);
 
     [Fact]
     public void TrackSessionAsync_WithNullSessionKey_ThrowsArgumentNullException()
@@ -44,7 +49,7 @@ public sealed class ServiceAccountSessionManagerTests
         // Arrange
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
 
         // Act
         var exception = Should.Throw<ArgumentNullException>(() =>
@@ -67,7 +72,7 @@ public sealed class ServiceAccountSessionManagerTests
         // Arrange
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
 
         // Act
         var exception = Should.Throw<ArgumentException>(() =>
@@ -88,7 +93,7 @@ public sealed class ServiceAccountSessionManagerTests
         // Arrange — one URI-unreserved character past the budget, the smallest possible overshoot.
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var sessionKey = CreateKey(Base64UrlAlphabet, MaxSessionKeyBytes + 1);
         EncodedByteCount(sessionKey).ShouldBe(MaxSessionKeyBytes + 1);
 
@@ -111,7 +116,7 @@ public sealed class ServiceAccountSessionManagerTests
         // accepts. Rejecting it would refuse legitimate keys of the size the token issuer actually mints.
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var sessionKey = CreateKey(Base64UrlAlphabet, MaxSessionKeyBytes);
         EncodedByteCount(sessionKey).ShouldBe(MaxSessionKeyBytes);
 
@@ -133,7 +138,7 @@ public sealed class ServiceAccountSessionManagerTests
         // refused merely for carrying characters outside the URI unreserved set.
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var sessionKey = CreateStandardBase64Key(70);
         EncodedByteCount(sessionKey).ShouldBeLessThanOrEqualTo(MaxSessionKeyBytes);
 
@@ -153,7 +158,7 @@ public sealed class ServiceAccountSessionManagerTests
         // character count diverges from the cache's own measurement, and the larger of the two.
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var sessionKey = new string('\u00e4', 100);
         sessionKey.Length.ShouldBeLessThan(MaxSessionKeyBytes);
         EncodedByteCount(sessionKey).ShouldBeGreaterThan(MaxSessionKeyBytes);
@@ -182,7 +187,7 @@ public sealed class ServiceAccountSessionManagerTests
         // account.
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var sessionKey = CreateStandardBase64Key(MaxSessionKeyBytes);
         sessionKey.Length.ShouldBe(MaxSessionKeyBytes);
         EncodedByteCount(sessionKey).ShouldBeGreaterThan(MaxSessionKeyBytes);
@@ -205,7 +210,7 @@ public sealed class ServiceAccountSessionManagerTests
         // Arrange
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var sessionKey = CreateKey(Base64UrlAlphabet, MaxSessionKeyBytes + 1);
 
         // Act — capture whatever the call returns, so the assertion below can tell a throw at the call site
@@ -232,7 +237,7 @@ public sealed class ServiceAccountSessionManagerTests
         // Arrange — the session-id claim reaching this method is client-supplied.
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
 
         // Act
         var result = await manager.ValidateSessionAsync(sessionKey!, TestContext.Current.CancellationToken);
@@ -249,7 +254,7 @@ public sealed class ServiceAccountSessionManagerTests
         // Arrange
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var overByOneByte = CreateKey(Base64UrlAlphabet, MaxSessionKeyBytes + 1);
         var atTheCharacterBudget = CreateStandardBase64Key(MaxSessionKeyBytes);
         EncodedByteCount(atTheCharacterBudget).ShouldBeGreaterThan(MaxSessionKeyBytes);
@@ -290,7 +295,7 @@ public sealed class ServiceAccountSessionManagerTests
         cache
             .Setup(c => c.GetAsync<string>(CacheId.ServiceAccountSession, sessionKey, It.IsAny<CancellationToken>()))
             .ReturnsAsync(serviceAccountId.ToString("D", CultureInfo.InvariantCulture));
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
 
         // Act
         var result = await manager.ValidateSessionAsync(sessionKey, TestContext.Current.CancellationToken);
@@ -315,7 +320,7 @@ public sealed class ServiceAccountSessionManagerTests
         // Arrange
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
 
         // Act
         var revoked = await manager.RevokeSessionAsync(sessionKey!, TestContext.Current.CancellationToken);
@@ -334,7 +339,7 @@ public sealed class ServiceAccountSessionManagerTests
         // the shape most easily mistaken for a usable key.
         var factory = new GuardProbeDbContextFactory();
         var cache = new Mock<IDistributedCache<CacheId>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(factory, cache.Object, Clock);
         var overByOneByte = CreateKey(Base64UrlAlphabet, MaxSessionKeyBytes + 1);
         var atTheCharacterBudget = CreateStandardBase64Key(MaxSessionKeyBytes);
 

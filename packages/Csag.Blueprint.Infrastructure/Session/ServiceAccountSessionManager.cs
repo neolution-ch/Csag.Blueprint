@@ -35,16 +35,22 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
     private readonly IDbContextFactory<TContext> dbContextFactory;
     private readonly IDistributedCache<CacheId> cache;
+    private readonly TimeProvider timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ServiceAccountSessionManager{TContext}"/> class.
     /// </summary>
     /// <param name="dbContextFactory">The database context factory used to persist and query session records.</param>
     /// <param name="cache">The strongly-typed distributed cache used for the fast-path session marker.</param>
-    public ServiceAccountSessionManager(IDbContextFactory<TContext> dbContextFactory, IDistributedCache<CacheId> cache)
+    /// <param name="timeProvider">The clock used to stamp session creation times and to evaluate session expiry.</param>
+    public ServiceAccountSessionManager(
+        IDbContextFactory<TContext> dbContextFactory,
+        IDistributedCache<CacheId> cache,
+        TimeProvider timeProvider)
     {
         this.dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
         this.cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     /// <inheritdoc/>
@@ -205,10 +211,11 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     public async Task<int> CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default)
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var now = this.timeProvider.GetUtcNow();
 
         // Only the tracking table is cleaned here; the distributed-cache markers carry their own absolute expiry.
         return await dbContext.Set<BlueprintServiceAccountSession>()
-            .Where(s => s.ExpiresAt <= DateTimeOffset.UtcNow)
+            .Where(s => s.ExpiresAt <= now)
             .ExecuteDeleteAsync(cancellationToken);
     }
 
@@ -274,6 +281,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         CancellationToken cancellationToken)
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var now = this.timeProvider.GetUtcNow();
 
         // Id is intentionally left unset so the NEWSEQUENTIALID() store default applies, keeping the clustered
         // primary key monotonic on this insert-heavy table (assigning a random Guid here would defeat it).
@@ -281,7 +289,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         {
             ServiceAccountId = serviceAccountId,
             SessionKey = sessionKey,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = now,
             ExpiresAt = expiresAt,
 
             // Clamp to the mapped column lengths so a client-supplied over-length User-Agent (or IP) cannot turn
@@ -298,7 +306,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         // ServiceAccountId index. Expired rows are inert for authorization (ResolveServiceAccountIdAsync filters
         // ExpiresAt > now); this only stops them accumulating.
         await dbContext.Set<BlueprintServiceAccountSession>()
-            .Where(s => s.ServiceAccountId == serviceAccountId && s.ExpiresAt <= DateTimeOffset.UtcNow)
+            .Where(s => s.ServiceAccountId == serviceAccountId && s.ExpiresAt <= now)
             .ExecuteDeleteAsync(cancellationToken);
 
         // Prime the fast-path marker so subsequent requests validate the session existence without a DB read.
@@ -347,7 +355,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
         // Fallback for a lost cache marker: honor the tracking row only while it is present and unexpired.
         // A revoked session has no row, so this correctly returns null. No re-prime (see ValidateSessionAsync).
-        var now = DateTimeOffset.UtcNow;
+        var now = this.timeProvider.GetUtcNow();
         var rowAccountId = await dbContext.Set<BlueprintServiceAccountSession>()
             .AsNoTracking()
             .Where(s => s.SessionKey == sessionKey && s.ExpiresAt > now)

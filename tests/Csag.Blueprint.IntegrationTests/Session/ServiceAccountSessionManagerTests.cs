@@ -278,7 +278,8 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             .Returns(Task.FromException(new ArgumentException("The generated cache key exceeds the maximum length")));
 
         var dbContextFactory = this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(dbContextFactory, refusingCache.Object);
+        var manager = new ServiceAccountSessionManager<TestDbContext>(
+            dbContextFactory, refusingCache.Object, this.App.Services.GetRequiredService<TimeProvider>());
 
         // Act — issuance surfaces the cache failure to the caller...
         await Should.ThrowAsync<ArgumentException>(async () =>

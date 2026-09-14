@@ -114,20 +114,6 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     }
 
     /// <inheritdoc/>
-    public async Task<bool> UntrackSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
-    {
-        await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
-
-        // Normal logout uses ITicketStore.RemoveAsync to clean up the cache entry.
-        // This method therefore removes only the database tracking record so we do not perform duplicate cache work.
-        var deletedCount = await dbContext.Set<BlueprintActiveSession>()
-            .Where(s => s.SessionKey == sessionKey)
-            .ExecuteDeleteAsync(cancellationToken);
-
-        return deletedCount > 0;
-    }
-
-    /// <inheritdoc/>
     public async Task<List<ActiveSessionInfo>> GetUserSessionsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);

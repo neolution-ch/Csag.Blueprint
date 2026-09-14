@@ -10,8 +10,10 @@ using Microsoft.AspNetCore.RateLimiting;
 
 /// <summary>
 /// Unit tests for <see cref="RateLimiterExtensions"/>: the client partition-key resolution order
-/// (edge-stamped header, then <c>RemoteIpAddress</c>, then no key at all) and the rejection response
-/// shape (429 rather than the framework's 503 default, ProblemDetails body, <c>Retry-After</c>).
+/// (edge-stamped header, then <c>RemoteIpAddress</c>, then no key at all), the normalization of that
+/// key (IPv4-mapped addresses to IPv4, native IPv6 to its <c>/64</c> prefix), and the rejection
+/// response shape (429 rather than the framework's 503 default, ProblemDetails body,
+/// <c>Retry-After</c>).
 /// </summary>
 public sealed class RateLimiterExtensionsTests
 {
@@ -81,6 +83,61 @@ public sealed class RateLimiterExtensionsTests
         context.TryGetClientPartitionKey(trustedClientIpHeader: null, out var partitionKey).ShouldBeTrue();
 
         partitionKey.ShouldBe("203.0.113.1");
+    }
+
+    [Fact]
+    public void TryGetClientPartitionKey_NativeIPv6_TruncatesToTheSixtyFourBitPrefix()
+    {
+        var context = CreateContext(remoteIp: "2001:db8:85a3:8d3:1319:8a2e:370:7348");
+
+        context.TryGetClientPartitionKey(trustedClientIpHeader: null, out var partitionKey).ShouldBeTrue();
+
+        partitionKey.ShouldBe("2001:db8:85a3:8d3::/64");
+    }
+
+    [Fact]
+    public void TryGetClientPartitionKey_TwoAddressesInOneIPv6Prefix_ShareOnePartition()
+    {
+        var first = CreateContext(remoteIp: "2001:db8:85a3:8d3::1");
+        var second = CreateContext(remoteIp: "2001:db8:85a3:8d3:ffff:ffff:ffff:ffff");
+
+        first.TryGetClientPartitionKey(trustedClientIpHeader: null, out var firstKey).ShouldBeTrue();
+        second.TryGetClientPartitionKey(trustedClientIpHeader: null, out var secondKey).ShouldBeTrue();
+
+        secondKey.ShouldBe(firstKey, "a caller holding a /64 must not be able to mint a fresh bucket per address");
+    }
+
+    [Fact]
+    public void TryGetClientPartitionKey_AdjacentIPv6Prefixes_StayInSeparatePartitions()
+    {
+        var first = CreateContext(remoteIp: "2001:db8:85a3:8d3::1");
+        var second = CreateContext(remoteIp: "2001:db8:85a3:8d4::1");
+
+        first.TryGetClientPartitionKey(trustedClientIpHeader: null, out var firstKey).ShouldBeTrue();
+        second.TryGetClientPartitionKey(trustedClientIpHeader: null, out var secondKey).ShouldBeTrue();
+
+        secondKey.ShouldNotBe(firstKey, "truncation must stop at 64 bits, not collapse neighbouring allocations");
+    }
+
+    [Fact]
+    public void TryGetClientPartitionKey_TrustedHeaderCarriesIPv6_TruncatesTheHeaderValueToo()
+    {
+        var context = CreateContext(remoteIp: "203.0.113.1");
+        context.Request.Headers[HeaderName] = "198.51.100.5, 2001:db8:85a3:8d3:1319:8a2e:370:7348";
+
+        context.TryGetClientPartitionKey(HeaderName, out var partitionKey).ShouldBeTrue();
+
+        partitionKey.ShouldBe("2001:db8:85a3:8d3::/64");
+    }
+
+    [Fact]
+    public void TryGetClientPartitionKey_IPv6Loopback_YieldsAPrefixKeyDistinctFromAnyIPv4Key()
+    {
+        var context = CreateContext(remoteIp: "::1");
+
+        context.TryGetClientPartitionKey(trustedClientIpHeader: null, out var partitionKey).ShouldBeTrue();
+
+        partitionKey.ShouldBe("::/64", "the suffix keeps a truncated prefix from reading as the unspecified address");
     }
 
     [Fact]

@@ -169,6 +169,16 @@ than inventing a key, and a caller it cannot identify must be routed to
 `RateLimitPartition.GetNoLimiter` — substituting a placeholder key puts every unidentifiable caller
 in one bucket, so the first of them to exceed the limit rejects them all.
 
+The key is opaque, not an address. An IPv4-mapped IPv6 address collapses to its IPv4 form so one
+caller cannot occupy two partitions, and a native IPv6 address is truncated to its `/64` prefix and
+returned as `2001:db8:85a3:8d3::/64`. IPv6 is allocated by prefix, not by address: the smallest block
+normally routed to a customer is a /64, and its 2^64 addresses are all theirs to send from at no
+cost, so keying on the full /128 enforces nothing against a caller who varies the source address
+within their own prefix, while an IPv4 caller behind NAT shares one bucket with their whole office.
+Truncation does not stop an attacker who rents several prefixes; it prices the evasion at one prefix
+per bucket instead of at nothing. `HttpAuditMiddleware` records `Connection.RemoteIpAddress` itself,
+so audit events keep the exact address.
+
 Prefer an edge-stamped header. `RemoteIpAddress` is the nearest hop, not the caller: `ForwardLimit 1`
 reads the rightmost `X-Forwarded-For` entry, and an edge that appends its own — a Google external
 load balancer sends `<client>,<balancer>` — leaves that edge's address rightmost. Behind a further

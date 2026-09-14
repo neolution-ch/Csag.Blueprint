@@ -2,6 +2,7 @@ namespace Csag.Blueprint.Web.Extensions;
 
 using System.Globalization;
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using Csag.Blueprint.Web.Middleware;
@@ -14,6 +15,10 @@ using Microsoft.AspNetCore.RateLimiting;
 /// </summary>
 public static class RateLimiterExtensions
 {
+    // Appended to a truncated IPv6 key so the value reads as the prefix it is rather than as a host
+    // address, in a log line or a rejection diagnostic.
+    private const string IPv6PrefixSuffix = "/64";
+
     /// <summary>
     /// Resolves the key identifying the calling client, used to partition a rate limiter.
     /// </summary>
@@ -36,6 +41,11 @@ public static class RateLimiterExtensions
     /// <see cref="RateLimitPartition.GetNoLimiter{TKey}(TKey)"/> and MUST NOT substitute a placeholder
     /// key: a shared placeholder bucket turns a failure to identify the caller into a rate-limit
     /// rejection for every caller at once.
+    /// </para>
+    /// <para>
+    /// The key is opaque, not an address: an IPv4 caller is keyed by their address, an IPv6 caller by
+    /// their <c>/64</c> prefix rendered as <c>2001:db8:85a3:8d3::/64</c>. See
+    /// <see cref="NormalizeAddress"/>.
     /// </para>
     /// </remarks>
     /// <param name="context">The request to identify the client of.</param>
@@ -125,11 +135,51 @@ public static class RateLimiterExtensions
     }
 
     /// <summary>
-    /// Collapses an IPv4-mapped IPv6 address to its IPv4 form so the same caller always lands in one
-    /// partition regardless of the form the address arrived in.
+    /// Reduces an address to the key one caller is partitioned by: an IPv4-mapped IPv6 address
+    /// collapses to its IPv4 form, a native IPv6 address to its <c>/64</c> prefix.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A mapped address collapses to IPv4 so the same caller always lands in one partition regardless
+    /// of the form the address arrived in.
+    /// </para>
+    /// <para>
+    /// A native IPv6 caller is allocated a prefix, not an address: the smallest block normally routed
+    /// to a customer is a /64, and all 2^64 addresses in it are theirs to send from at no cost. Keyed
+    /// on the full /128 a limiter therefore enforces nothing against a caller who varies the source
+    /// address within their own prefix, while an IPv4 caller behind NAT shares one bucket with their
+    /// whole office. Truncating to the /64 restores that symmetry. It does not make the evasion
+    /// impossible — a caller holding several prefixes still gets one bucket each — but it prices it at
+    /// one routed prefix per bucket instead of at nothing.
+    /// </para>
+    /// <para>
+    /// The result is an opaque partition key, not an address: the <c>/64</c> suffix keeps a truncated
+    /// prefix from reading as a host address in a log line, and truncation drops the scope id, so two
+    /// link-local callers reached over different interfaces share a key.
+    /// </para>
+    /// </remarks>
     /// <param name="address">The address to normalize.</param>
-    /// <returns>The normalized address in string form.</returns>
-    private static string NormalizeAddress(IPAddress address) =>
-        (address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address).ToString();
+    /// <returns>The partition key for the address.</returns>
+    private static string NormalizeAddress(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6)
+        {
+            return address.MapToIPv4().ToString();
+        }
+
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return address.ToString();
+        }
+
+        // Only an IPv6 address reaches here, and TryWriteBytes fails only on a destination shorter than
+        // the address, so a 16-byte destination makes the write unconditional. Clearing the trailing
+        // eight bytes leaves the leading 64 bits, which IPAddress.ToString renders in canonical
+        // compressed form.
+        Span<byte> bytes = stackalloc byte[16];
+        _ = address.TryWriteBytes(bytes, out _);
+        bytes[8..].Clear();
+
+        return string.Concat(new IPAddress(bytes).ToString(), IPv6PrefixSuffix);
+    }
 }

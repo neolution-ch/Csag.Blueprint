@@ -7,7 +7,10 @@ Add rate-limiting primitives for hosts wiring up `AddRateLimiter`:
 - `RateLimiterExtensions.TryGetClientPartitionKey` resolves the key identifying a caller, preferring an
   edge-stamped header and falling back to `Connection.RemoteIpAddress`. It reports failure rather than
   inventing a key, so a host can route an unidentifiable caller to `RateLimitPartition.GetNoLimiter`
-  instead of collapsing every such caller into one shared bucket.
+  instead of collapsing every such caller into one shared bucket. The key is normalized: an IPv4-mapped
+  IPv6 address collapses to IPv4, and a native IPv6 address is truncated to its `/64` prefix
+  (`2001:db8:85a3:8d3::/64`), because a caller varying the source address inside one routed /64 would
+  otherwise get a bucket of their own on each of 2^64 addresses.
 - `RateLimiterExtensions.UseBlueprintRejectionResponse` shapes the rejection: `429 Too Many Requests`
   (the framework default is `503 Service Unavailable`, which an upstream load balancer reads as a
   backend fault), an RFC 9457 ProblemDetails body carrying the correlation ID, and a `Retry-After`

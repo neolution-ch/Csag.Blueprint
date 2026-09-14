@@ -19,14 +19,17 @@ public class TenantManager<TUser, TTenant, TContext> : ITenantManager<TUser, TTe
     where TContext : DbContext
 {
     private readonly TContext dbContext;
+    private readonly TimeProvider timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TenantManager{TUser, TTenant, TContext}"/> class.
     /// </summary>
     /// <param name="dbContext">The application database context.</param>
-    public TenantManager(TContext dbContext)
+    /// <param name="timeProvider">The clock used to stamp tenant membership join times.</param>
+    public TenantManager(TContext dbContext, TimeProvider timeProvider)
     {
         this.dbContext = dbContext;
+        this.timeProvider = timeProvider;
     }
 
     /// <inheritdoc/>
@@ -180,7 +183,7 @@ public class TenantManager<TUser, TTenant, TContext> : ITenantManager<TUser, TTe
         {
             UserId = userId,
             TenantId = tenantId,
-            JoinedAt = DateTimeOffset.UtcNow,
+            JoinedAt = this.timeProvider.GetUtcNow(),
         });
 
         await this.dbContext.SaveChangesAsync(cancellationToken);
@@ -233,7 +236,7 @@ public class TenantManager<TUser, TTenant, TContext> : ITenantManager<TUser, TTe
             {
                 TenantId = tenantId,
                 UserId = userId,
-                JoinedAt = DateTimeOffset.UtcNow,
+                JoinedAt = this.timeProvider.GetUtcNow(),
             });
         }
     }

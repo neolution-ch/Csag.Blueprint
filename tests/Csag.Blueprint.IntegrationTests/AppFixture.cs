@@ -120,9 +120,13 @@ public class AppFixture : AppFixture<Program>, IResettableFixture
             Csag.Blueprint.Application.Services.TenantContext.Clear();
         }
 
+        // Take the clock from the host rather than TimeProvider.System, so a test that pins the host clock
+        // sees the same instant whether it writes through this scope or through a DI-resolved context.
         var options = new DbContextOptionsBuilder<TestDbContext>()
             .UseSqlServer(this.connectionString)
-            .AddInterceptors(new AuditableTimestampInterceptor(), new TenantSaveInterceptor())
+            .AddInterceptors(
+                new AuditableTimestampInterceptor(this.Services.GetRequiredService<TimeProvider>()),
+                new TenantSaveInterceptor())
             .Options;
 
         return new TestDbContextScope<TestDbContext>(new TestDbContext(options));

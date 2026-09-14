@@ -36,14 +36,15 @@ public static class TestHostPersistenceExtensions
         // the current user identity and correlation ID.
         services.AddHttpContextAccessor();
 
-        // Single pooled DbContextFactory carrying all save interceptors. The tenant interceptor is
-        // the singleton registered by AddBlueprintTenancyRuntime; the audit and timestamp
-        // interceptors are stateless (or keyed by context instance) and safe to share across the pool.
+        // Single pooled DbContextFactory carrying all save interceptors. The tenant and timestamp
+        // interceptors are the singletons registered by AddBlueprintTenancyRuntime; the audit
+        // interceptor is keyed by context instance, so all three are safe to share across the pool.
         services.AddPooledDbContextFactory<TestDbContext>((sp, options) =>
         {
             var tenantInterceptor = sp.GetRequiredService<TenantSaveInterceptor>();
+            var timestampInterceptor = sp.GetRequiredService<AuditableTimestampInterceptor>();
             options.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure())
-                .AddInterceptors(new AuditSaveChangesInterceptor(), new AuditableTimestampInterceptor(), tenantInterceptor);
+                .AddInterceptors(new AuditSaveChangesInterceptor(), timestampInterceptor, tenantInterceptor);
         });
 
         // Scoped context for request handlers, created from the factory so it inherits the

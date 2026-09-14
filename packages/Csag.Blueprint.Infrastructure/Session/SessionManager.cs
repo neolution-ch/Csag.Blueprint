@@ -22,6 +22,7 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     private readonly UserManager<TUser> userManager;
     private readonly IDbContextFactory<TContext> dbContextFactory;
     private readonly ITenantAuthorizationResolver tenantAuthorizationResolver;
+    private readonly TimeProvider timeProvider;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SessionManager{TUser, TContext}"/> class.
@@ -30,16 +31,19 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     /// <param name="userManager">The user manager used to reload profile and global (platform) role data when refreshing sessions.</param>
     /// <param name="dbContextFactory">The database context factory used to persist and query active session records.</param>
     /// <param name="tenantAuthorizationResolver">The shared resolver that composes the effective roles and permissions per session tenant.</param>
+    /// <param name="timeProvider">The clock used to stamp session creation times and to evaluate session expiry.</param>
     public SessionManager(
         ITicketCacheService ticketCacheService,
         UserManager<TUser> userManager,
         IDbContextFactory<TContext> dbContextFactory,
-        ITenantAuthorizationResolver tenantAuthorizationResolver)
+        ITenantAuthorizationResolver tenantAuthorizationResolver,
+        TimeProvider timeProvider)
     {
         this.ticketCacheService = ticketCacheService ?? throw new ArgumentNullException(nameof(ticketCacheService));
         this.userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
         this.dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
         this.tenantAuthorizationResolver = tenantAuthorizationResolver ?? throw new ArgumentNullException(nameof(tenantAuthorizationResolver));
+        this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
     /// <inheritdoc/>
@@ -52,7 +56,7 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
             Id = Guid.NewGuid(),
             UserId = userId,
             SessionKey = sessionKey,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = this.timeProvider.GetUtcNow(),
             ExpiresAt = expiresAt,
             UserAgent = userAgent,
             IpAddress = ipAddress,
@@ -131,9 +135,10 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     public async Task<List<ActiveSessionInfo>> GetUserSessionsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var now = this.timeProvider.GetUtcNow();
 
         return await dbContext.Set<BlueprintActiveSession>()
-            .Where(s => s.UserId == userId && s.ExpiresAt > DateTimeOffset.UtcNow)
+            .Where(s => s.UserId == userId && s.ExpiresAt > now)
             .OrderByDescending(s => s.CreatedAt)
             .Select(s => new ActiveSessionInfo
             {
@@ -171,10 +176,11 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     public async Task<int> CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default)
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var now = this.timeProvider.GetUtcNow();
 
         // This cleanup affects only the tracking table. The distributed cache governs actual ticket expiration separately.
         return await dbContext.Set<BlueprintActiveSession>()
-            .Where(s => s.ExpiresAt <= DateTimeOffset.UtcNow)
+            .Where(s => s.ExpiresAt <= now)
             .ExecuteDeleteAsync(cancellationToken);
     }
 

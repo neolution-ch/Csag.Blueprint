@@ -9,6 +9,7 @@ using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.TestHost.Endpoints.Auth.Login;
 using Csag.Blueprint.TestHost.Endpoints.Vehicles.Create;
+using Csag.Blueprint.TestHost.Time;
 using Csag.Blueprint.Testing.Extensions;
 using Csag.Blueprint.Tests.Shared.Database;
 using Csag.Blueprint.Tests.Shared.Entities;
@@ -64,6 +65,49 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
 
         auditLogs.ShouldNotBeEmpty("SaveChanges should generate an EF audit log entry via the interceptor");
         auditLogs.First().EventType.ShouldStartWith("TestDbContext");
+    }
+
+    [Fact]
+    public async Task SaveChanges_StampsAuditCreatedAtFromTheInjectedClockAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange - ConfigureBlueprintAuditLogging resolves TimeProvider once at startup and the SQL data
+        // provider holds that instance for the process, so the CreatedAt column can only be driven through the
+        // host's registered clock rather than by constructing anything with a fake one. Pinning it to a fixed
+        // instant years away from now makes a regression to DateTimeOffset.UtcNow unmistakable.
+        var clock = this.App.Services.GetRequiredService<PinnableTimeProvider>();
+        var pinnedAt = new DateTimeOffset(2021, 2, 3, 4, 5, 6, TimeSpan.Zero);
+        var marker = $"Audit clock probe {Guid.NewGuid():N}";
+
+        using var scope = this.App.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        TenantContext.SetTenant(SeedData.TenantAId);
+
+        context.Vehicles.Add(new TestVehicle
+        {
+            Id = Guid.NewGuid(),
+            Name = marker,
+            Kind = TestVehicleKind.Kayak,
+            Capacity = 2,
+            PricePerHour = 15.00m,
+            IsActive = true,
+            AcquiredAt = new DateTime(2025, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+
+        // Act - the audit row is written by the interceptor inside this save, so the pin has to span it.
+        using (clock.Pin(pinnedAt))
+        {
+            await context.SaveChangesAsync(ct);
+        }
+
+        // Assert
+        var auditLogs = await context.AuditLogs
+            .Where(a => a.JsonData.Contains(marker))
+            .ToListAsync(ct);
+
+        auditLogs.ShouldNotBeEmpty();
+        auditLogs.ShouldAllBe(a => a.CreatedAt == pinnedAt);
     }
 
     [Fact]

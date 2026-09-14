@@ -14,6 +14,7 @@ using Csag.Blueprint.Tests.Shared.Helpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Time.Testing;
 using Moq;
 
 /// <summary>
@@ -43,7 +44,11 @@ public sealed class SessionManagerTests
     // Mirror the column lengths BlueprintActiveSessionConfiguration maps, which are what the manager clamps to.
     private const int UserAgentMaxLength = 500;
 
-    private static readonly DateTimeOffset SessionExpiresAt = DateTimeOffset.UtcNow.AddHours(1);
+    // The manager reads every timestamp through its injected TimeProvider, so the tests pin one rather than
+    // letting the wall clock leak into the values they pass in.
+    private static readonly FakeTimeProvider Clock = new(new DateTimeOffset(2026, 5, 2, 11, 30, 0, TimeSpan.Zero));
+
+    private static readonly DateTimeOffset SessionExpiresAt = Clock.GetUtcNow().AddHours(1);
 
     [Fact]
     public void TrackSessionAsync_WithNullSessionKey_ThrowsArgumentNullException()
@@ -388,7 +393,8 @@ public sealed class SessionManagerTests
             ticketCache.Object,
             userManager.Object,
             dbContextFactory,
-            Mock.Of<ITenantAuthorizationResolver>());
+            Mock.Of<ITenantAuthorizationResolver>(),
+            Clock);
     }
 
     /// <summary>

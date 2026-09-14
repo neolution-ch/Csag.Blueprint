@@ -1,7 +1,6 @@
 namespace Csag.Blueprint.Infrastructure.Session;
 
 using System.Globalization;
-using System.Text;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Enums;
@@ -73,7 +72,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         // stranded that way also aborts RevokeServiceAccountSessionsAsync for every other session on the account.
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionKey);
 
-        if (ExceedsCacheKeyBudget(sessionKey))
+        if (SessionValueGuards.ExceedsCacheKeyBudget(sessionKey, SessionKeyMaxCacheKeyBytes))
         {
             throw new ArgumentException($"Session key must be at most {SessionKeyMaxCacheKeyBytes} bytes once URL-encoded", nameof(sessionKey));
         }
@@ -85,7 +84,12 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     /// <inheritdoc/>
     public async Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
-        if (!IsWellFormedSessionKey(sessionKey))
+        // A key outside the bounds TrackSessionAsync enforces cannot belong to a tracked session, so here it
+        // simply means "no such session". The session-id claim reaching this method is client-supplied, so it is
+        // filtered rather than passed to the cache: the cache throws on an over-long key, which would turn a
+        // rejected request into an unhandled exception in the authentication pipeline, and silently redirects a
+        // blank one to the shared CacheId.ServiceAccountSession slot.
+        if (!SessionValueGuards.IsWellFormedSessionKey(sessionKey, SessionKeyMaxCacheKeyBytes))
         {
             return null;
         }
@@ -132,7 +136,10 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     /// <inheritdoc/>
     public async Task<bool> RevokeSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
     {
-        if (!IsWellFormedSessionKey(sessionKey))
+        // Same rule as ValidateSessionAsync: a key no tracked session can carry means "nothing to revoke".
+        // Filtering it here also keeps a blank key away from the removals below, which would otherwise clear the
+        // shared CacheId.ServiceAccountSession slot.
+        if (!SessionValueGuards.IsWellFormedSessionKey(sessionKey, SessionKeyMaxCacheKeyBytes))
         {
             return false;
         }
@@ -219,33 +226,6 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    private static string? Truncate(string? value, int maxLength)
-    {
-        if (value is null || value.Length <= maxLength)
-        {
-            return value;
-        }
-
-        // Never cut between a surrogate pair. A lone surrogate survives the nvarchar round-trip but is not
-        // valid UTF-16, so it fails or is replaced wherever the value is serialized back out.
-        var length = char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength;
-        return value[..length];
-    }
-
-    // Measured the way the cache measures it rather than by character count: the key is percent-encoded before
-    // the cache checks its length, so every character outside the URI unreserved set costs three bytes (twelve
-    // for a non-BMP character) and a 220-character standard-base64 key is already over budget.
-    private static bool ExceedsCacheKeyBudget(string sessionKey)
-        => Encoding.UTF8.GetByteCount(Uri.EscapeDataString(sessionKey)) > SessionKeyMaxCacheKeyBytes;
-
-    // A key outside the bounds TrackSessionAsync enforces cannot belong to a tracked session, so to the read
-    // paths it simply means "no such session". They filter on it rather than passing it to the cache because the
-    // session-id claim reaching them is client-supplied: the cache throws on an over-long key, which would turn a
-    // rejected request into an unhandled exception in the authentication pipeline, and silently redirects a blank
-    // one to the shared CacheId.ServiceAccountSession slot.
-    private static bool IsWellFormedSessionKey(string sessionKey)
-        => !string.IsNullOrWhiteSpace(sessionKey) && !ExceedsCacheKeyBudget(sessionKey);
-
     /// <summary>
     /// Deletes a tracking row whose marker could not be written, so a failed issuance leaves nothing behind.
     /// </summary>
@@ -294,8 +274,8 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
             // Clamp to the mapped column lengths so a client-supplied over-length User-Agent (or IP) cannot turn
             // token issuance into a SQL truncation error.
-            UserAgent = Truncate(userAgent, UserAgentMaxLength),
-            IpAddress = Truncate(ipAddress, IpAddressMaxLength),
+            UserAgent = SessionValueGuards.Truncate(userAgent, UserAgentMaxLength),
+            IpAddress = SessionValueGuards.Truncate(ipAddress, IpAddressMaxLength),
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);

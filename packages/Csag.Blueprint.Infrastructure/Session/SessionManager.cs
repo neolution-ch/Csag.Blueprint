@@ -2,7 +2,6 @@ namespace Csag.Blueprint.Infrastructure.Session;
 
 using System.Linq.Expressions;
 using System.Security.Claims;
-using System.Text;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
@@ -76,7 +75,7 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
         // row also aborts revocation and refresh for the user's other sessions once the loop reaches it.
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionKey);
 
-        if (ExceedsCacheKeyBudget(sessionKey))
+        if (SessionValueGuards.ExceedsCacheKeyBudget(sessionKey, SessionKeyMaxCacheKeyBytes))
         {
             throw new ArgumentException($"Session key must be at most {SessionKeyMaxCacheKeyBytes} bytes once URL-encoded", nameof(sessionKey));
         }
@@ -115,7 +114,7 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
         // ticket.
         ArgumentException.ThrowIfNullOrWhiteSpace(keepSessionKey);
 
-        if (ExceedsCacheKeyBudget(keepSessionKey))
+        if (SessionValueGuards.ExceedsCacheKeyBudget(keepSessionKey, SessionKeyMaxCacheKeyBytes))
         {
             throw new ArgumentException(
                 $"Session key must be at most {SessionKeyMaxCacheKeyBytes} bytes once URL-encoded", nameof(keepSessionKey));
@@ -140,7 +139,7 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
         // device" action calls with a key that arrived on a request. Filtering it out here also keeps it away
         // from the cache, which drops a blank key and would remove the shared CacheId.AuthTicket slot, and
         // throws ArgumentException on an over-budget one.
-        if (!IsWellFormedSessionKey(sessionKey))
+        if (!SessionValueGuards.IsWellFormedSessionKey(sessionKey, SessionKeyMaxCacheKeyBytes))
         {
             return false;
         }
@@ -163,7 +162,7 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
     {
         // Same rule as RevokeSessionAsync, so both report a key no tracked session can carry the same way. No
         // cache call is made below, so here the guard only spares a query that cannot match a row.
-        if (!IsWellFormedSessionKey(sessionKey))
+        if (!SessionValueGuards.IsWellFormedSessionKey(sessionKey, SessionKeyMaxCacheKeyBytes))
         {
             return false;
         }
@@ -232,32 +231,6 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    private static string? Truncate(string? value, int maxLength)
-    {
-        if (value is null || value.Length <= maxLength)
-        {
-            return value;
-        }
-
-        // Never cut between a surrogate pair. A lone surrogate survives the nvarchar round-trip but is not
-        // valid UTF-16, so it fails or is replaced wherever the value is serialized back out.
-        var length = char.IsHighSurrogate(value[maxLength - 1]) ? maxLength - 1 : maxLength;
-        return value[..length];
-    }
-
-    // Measured the way the cache measures it rather than by character count: the key is percent-encoded before
-    // the cache checks its length, so every character outside the URI unreserved set costs three bytes (twelve
-    // for a non-BMP character) and a 231-character standard-base64 key is already over budget.
-    private static bool ExceedsCacheKeyBudget(string sessionKey)
-        => Encoding.UTF8.GetByteCount(Uri.EscapeDataString(sessionKey)) > SessionKeyMaxCacheKeyBytes;
-
-    // A key outside the bounds TrackSessionAsync enforces cannot belong to a tracked session, so to the
-    // by-key lookups it simply means "no such session". They filter on it rather than passing it to the ticket
-    // cache, which throws on an over-long key and silently redirects a blank one to the shared
-    // CacheId.AuthTicket slot.
-    private static bool IsWellFormedSessionKey(string sessionKey)
-        => !string.IsNullOrWhiteSpace(sessionKey) && !ExceedsCacheKeyBudget(sessionKey);
-
     private async Task TrackSessionCoreAsync(
         Guid userId,
         string sessionKey,
@@ -282,8 +255,8 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
             // Clamp to the mapped column lengths so a client-supplied over-length User-Agent header (or IP)
             // cannot turn session tracking into a SQL truncation error, failing a sign-in over a field that is
             // only ever displayed.
-            UserAgent = Truncate(userAgent, UserAgentMaxLength),
-            IpAddress = Truncate(ipAddress, IpAddressMaxLength),
+            UserAgent = SessionValueGuards.Truncate(userAgent, UserAgentMaxLength),
+            IpAddress = SessionValueGuards.Truncate(ipAddress, IpAddressMaxLength),
             CurrentTenantId = currentTenantId,
         });
 

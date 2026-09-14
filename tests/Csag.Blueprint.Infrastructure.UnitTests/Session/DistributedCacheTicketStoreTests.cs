@@ -81,8 +81,9 @@ public sealed class DistributedCacheTicketStoreTests
     [Fact]
     public async Task RemoveAsync_RemovesTicketAndTrackingRow()
     {
-        // Untracking lives here rather than in an OnSigningOut handler, so it also covers the cookie
-        // handler's expired-ticket path — which removes the ticket without ever raising that event.
+        // Untracking lives here rather than in an OnSigningOut handler: the cookie handler hands the session
+        // key to RemoveAsync, while CookieSigningOutContext does not carry it. Every sign-out must take the
+        // tracking row with it, or a session that ended would keep showing up as active.
         var ticketCache = new Mock<ITicketCacheService>();
         var tracker = new Mock<IActiveSessionTracker>();
         tracker
@@ -128,8 +129,8 @@ public sealed class DistributedCacheTicketStoreTests
     [Fact]
     public async Task RemoveAsync_UntrackFails_StillRemovesTicketAndDoesNotThrow()
     {
-        // A failed row delete must not fail the sign-out, nor the authentication pass that discarded an
-        // expired ticket — and must not skip the ticket removal, which is what actually ends the session.
+        // A failed row delete must not fail the sign-out, and must not skip the ticket removal — the cached
+        // ticket is what keeps authorizing requests; the stale row is reaped by CleanupExpiredSessionsAsync.
         var ticketCache = new Mock<ITicketCacheService>();
         var tracker = new Mock<IActiveSessionTracker>();
         tracker

@@ -81,7 +81,8 @@ public sealed class DistributedCacheTicketStore : ITicketStore
 
     /// <summary>
     /// Removes an authentication ticket from the distributed cache and deletes its tracking row.
-    /// Used for logout, and by the cookie handler when it discards a ticket that has expired.
+    /// Called by the cookie handler on sign-out, including the sign-out <c>SecurityStampValidator</c>
+    /// raises when it rejects a principal.
     /// </summary>
     /// <param name="key">The session key that identifies the ticket to remove.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -90,8 +91,16 @@ public sealed class DistributedCacheTicketStore : ITicketStore
         // Untracking belongs here rather than in an OnSigningOut handler: the cookie handler passes the
         // session key straight to this method, whereas CookieSigningOutContext does not carry it and an
         // event could only recover it via HttpContext.AuthenticateAsync — which deadlocks when sign-out is
-        // raised from inside the handler's own authentication pass. Doing it here also covers the handler's
-        // expired-ticket path, which removes the ticket without ever raising OnSigningOut.
+        // raised from inside the handler's own authentication pass, as SecurityStampValidator does.
+        //
+        // A session that simply expires does not arrive here. TicketCacheService caches the ticket with
+        // AbsoluteExpiration set to the ticket's own ExpiresUtc, so entry and ticket die together:
+        // RetrieveAsync returns null and ReadCookieTicket fails the pass with "Identity missing in session
+        // store" before it reaches the branch that discards an expired ticket. That branch needs a ticket
+        // still in the cache whose ExpiresUtc is already past, which only a reader whose clock runs ahead
+        // of the writer's sees. Rows of expired sessions are instead reaped by
+        // CleanupExpiredSessionsAsync, and GetUserSessionsAsync filters them out by ExpiresAt, so what
+        // lingers is storage rather than authorization.
         //
         // Delete the tracking row BEFORE removing the cached ticket, for the reason spelled out in
         // SessionManager.RevokeSessionsCoreAsync: a concurrent sliding renewal re-writes its ticket
@@ -106,9 +115,9 @@ public sealed class DistributedCacheTicketStore : ITicketStore
         }
         catch (Exception ex)
         {
-            // A failed row delete must not fail the sign-out (or the authentication pass that discarded an
-            // expired ticket), and must not skip the ticket removal below — the cached ticket is what keeps
-            // authorizing requests. The row is left for CleanupExpiredSessionsAsync to reap.
+            // A failed row delete must not fail the sign-out, and must not skip the ticket removal below —
+            // the cached ticket is what keeps authorizing requests. The row is left for
+            // CleanupExpiredSessionsAsync to reap.
             this.logger.LogWarning(ex, "Failed to remove the tracked session row for session {SessionTag}", SessionTag(key));
         }
 

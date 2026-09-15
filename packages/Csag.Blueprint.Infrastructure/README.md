@@ -65,6 +65,7 @@ before `AddBlueprintTenancyRuntime()` controls the timestamps it writes.
 | `TicketCacheService` | Serialization/cache wrapper for authentication tickets. |
 | `PostConfigureCookieAuthenticationOptions` | Injects the ticket store into cookie authentication options. |
 | `SessionManager` | Shared session revocation/refresh management. |
+| `ServiceAccountSessionManager` | Tracks, validates, and revokes service-account sessions (cache marker plus tracking row) for reference-style JWTs. |
 | `PermissionClaimsTransformation` | Expands role claims into permission claims after authentication. |
 | `UserManagerAuthorizationExtensions` | Loads roles and permissions for users. |
 

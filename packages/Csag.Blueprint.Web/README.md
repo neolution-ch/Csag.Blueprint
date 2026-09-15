@@ -98,9 +98,10 @@ request events, from this one call; both are on by default. Its configure callba
 Until `ConfigureBlueprintAuditLogging` runs, or when that flag is `false`, the middleware does
 nothing but call the next middleware. Once on, it writes an event for a request whose final status
 code is 401 or 403 by default. Call `services.Configure<HttpAuditOptions>(o => ...)` to audit a
-different set. It also writes the client IP address,
-taken from `HttpContext.Connection.RemoteIpAddress` after `ForwardedHeadersMiddleware` has resolved
-it from `X-Forwarded-For`. A request outside the audited set writes no event: the EF Core interceptor
+different set. It also writes the address in
+`HttpContext.Connection.RemoteIpAddress`, as resolved by `ForwardedHeadersMiddleware`. That is the
+nearest hop, which is the caller only when nothing between the caller and this app appends its own
+`X-Forwarded-For` entry — see the forwarded-headers note under Rate limiting below. A request outside the audited set writes no event: the EF Core interceptor
 already covers the writes, and GCP and Application Insights already record general request data.
 
 `HttpAuditMiddleware` wraps the app's exception handler rather than running inside it, so it can
@@ -151,6 +152,50 @@ The package owns:
 - Swagger/OpenAPI registration helpers
 
 Applications still own their endpoint classes, DTOs, validators, and policies.
+
+### Rate limiting
+
+`RateLimiterExtensions` supplies the two pieces a host needs to wire up ASP.NET Core rate limiting;
+the policies and their limits stay with the host.
+
+`UseBlueprintRejectionResponse()` shapes the rejection: `429 Too Many Requests` instead of the
+framework's `503 Service Unavailable` default (which an upstream load balancer reads as a backend
+fault), an RFC 9457 ProblemDetails body carrying the correlation ID, and `Retry-After` when the
+limiter reports it.
+
+`TryGetClientPartitionKey(header, out key)` resolves the caller: the named edge-stamped header when
+configured and parseable, else `Connection.RemoteIpAddress`, else nothing. It reports failure rather
+than inventing a key, and a caller it cannot identify must be routed to
+`RateLimitPartition.GetNoLimiter` — substituting a placeholder key puts every unidentifiable caller
+in one bucket, so the first of them to exceed the limit rejects them all.
+
+The key is opaque, not an address. An IPv4-mapped IPv6 address collapses to its IPv4 form so one
+caller cannot occupy two partitions, and a native IPv6 address is truncated to its `/64` prefix and
+returned as `2001:db8:85a3:8d3::/64`. IPv6 is allocated by prefix, not by address: the smallest block
+normally routed to a customer is a /64, and its 2^64 addresses are all theirs to send from at no
+cost, so keying on the full /128 enforces nothing against a caller who varies the source address
+within their own prefix, while an IPv4 caller behind NAT shares one bucket with their whole office.
+Truncation does not stop an attacker who rents several prefixes; it prices the evasion at one prefix
+per bucket instead of at nothing. `HttpAuditMiddleware` records `Connection.RemoteIpAddress` itself,
+so audit events keep the exact address.
+
+Prefer an edge-stamped header. `RemoteIpAddress` is the nearest hop, not the caller: `ForwardLimit 1`
+reads the rightmost `X-Forwarded-For` entry, and an edge that appends its own — a Google external
+load balancer sends `<client>,<balancer>` — leaves that edge's address rightmost. Behind a further
+reverse proxy it is that proxy's egress address: one constant shared by every caller. Reading the
+header from the left instead is worse, because the entries a client wrote are kept there unverified.
+The header must be one the edge writes itself and overwrites inbound, so a client cannot forge it.
+
+All of that assumes the app is reachable only through that edge, which `UseBlueprintSecurityHeaders`
+requires rather than enforces. It registers `ForwardedHeadersMiddleware` with `KnownProxies` and
+`KnownIPNetworks` empty — Cloud Run and similar platforms front the app from internal addresses that
+are not on the default loopback list — and emptying both turns the middleware's known-proxy check
+off, so it applies whatever the immediate peer sent. A caller able to open a connection to the app
+directly is that peer: it writes `X-Forwarded-For` itself, which makes the rightmost entry its own
+value, and a forged `X-Forwarded-Proto: https` satisfies the HTTPS redirection and HSTS middleware.
+Block direct ingress at the platform. The options are built inline rather than read from
+`IOptions<ForwardedHeadersOptions>`, so a host cannot narrow them by configuration, and registering a
+second `ForwardedHeadersMiddleware` is not a substitute: each run consumes the entries it reads.
 
 ## Ownership Boundary
 

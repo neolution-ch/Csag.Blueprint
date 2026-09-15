@@ -218,9 +218,14 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         // propagates and the rows are left intact, so a retry re-derives the same set and clears the remaining
         // markers (removing an already-gone marker is a no-op). The reverse order could delete a row while its
         // marker survives, leaving a live marker no subsequent revoke can find until it expires.
+        //
+        // A key the cache will not compose is the exception to that retry logic rather than a case for it: no
+        // retry can make it addressable, so propagating would leave every row on the account undeleted and
+        // still resolvable through the database fallback. Since this is the path secret rotation, deactivation
+        // and deletion all take, the refusal is treated as a missing marker and the durable rows still go.
         foreach (var session in sessions)
         {
-            await this.cache.RemoveAsync(CacheId.ServiceAccountSession, session.SessionKey, cancellationToken);
+            await this.RemoveMarkerIgnoringKeyRefusalAsync(session.SessionKey, cancellationToken);
         }
 
         var sessionIds = sessions.Select(s => s.Id).ToList();
@@ -234,7 +239,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         // swept markers in step; it does not order this method against an issuance already in flight.
         foreach (var session in sessions)
         {
-            await this.cache.RemoveAsync(CacheId.ServiceAccountSession, session.SessionKey, cancellationToken);
+            await this.RemoveMarkerIgnoringKeyRefusalAsync(session.SessionKey, cancellationToken);
         }
 
         return revoked;
@@ -449,14 +454,24 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
         // Fallback for a lost cache marker: honor the tracking row only while it is present and unexpired.
         // A revoked session has no row, so this correctly returns null. No re-prime (see ValidateSessionAsync).
+        //
+        // The predicate becomes SQL string equality, which folds case under a case-insensitive column collation
+        // and ignores trailing spaces under every SQL Server collation, so it can match a row whose key is not
+        // the one the token carries. The session key is the whole of the token's binding to a session, so the
+        // candidates are re-compared ordinally here — the way the cache compares them, and the way the marker
+        // path above already does implicitly. Filtering in memory rather than with EF.Functions.Collate keeps
+        // this provider-neutral; the unique index means the candidate set is a row or two.
         var now = this.timeProvider.GetUtcNow();
-        var rowAccountId = await dbContext.Set<BlueprintServiceAccountSession>()
+        var candidates = await dbContext.Set<BlueprintServiceAccountSession>()
             .AsNoTracking()
             .Where(s => s.SessionKey == sessionKey && s.ExpiresAt > now)
-            .Select(s => (Guid?)s.ServiceAccountId)
-            .FirstOrDefaultAsync(cancellationToken);
+            .Select(s => new { s.SessionKey, s.ServiceAccountId })
+            .ToListAsync(cancellationToken);
 
-        return rowAccountId;
+        return candidates
+            .Where(s => string.Equals(s.SessionKey, sessionKey, StringComparison.Ordinal))
+            .Select(s => (Guid?)s.ServiceAccountId)
+            .FirstOrDefault();
     }
 
     private async Task SetCacheMarkerAsync(string sessionKey, Guid serviceAccountId, DateTimeOffset expiresAt, CancellationToken cancellationToken)

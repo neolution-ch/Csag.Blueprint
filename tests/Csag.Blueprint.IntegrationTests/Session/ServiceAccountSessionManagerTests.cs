@@ -440,6 +440,48 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
     }
 
     [Fact]
+    public async Task ValidateSessionAsync_WhenTheFallbackRowDiffersOnlyByCollation_RejectsTheKeyAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // The session key is the whole of a token's binding to a session. The fallback predicate becomes SQL
+        // string equality, which under a case-insensitive column collation matches a row whose key is not the
+        // one the token carries, so a key the cache would never resolve must not resolve through the database
+        // either. Seeded directly, because TrackSessionAsync would write a marker and the fast path would then
+        // answer before the fallback is reached.
+        var clock = new FakeTimeProvider(ClockEpoch);
+        var serviceAccountId = Guid.NewGuid();
+        var storedKey = CreateUnreservedKey(MaxSessionKeyBytes);
+        await this.CreateServiceAccountAsync(serviceAccountId, [], []);
+
+        using (var seedScope = this.App.CreateDbContextScope())
+        {
+            seedScope.Context.ServiceAccountSessions.Add(new BlueprintServiceAccountSession
+            {
+                ServiceAccountId = serviceAccountId,
+                SessionKey = storedKey,
+                CreatedAt = ClockEpoch,
+                ExpiresAt = ClockEpoch.AddMinutes(30),
+            });
+            await seedScope.Context.SaveChangesAsync(ct);
+        }
+
+        var manager = new ServiceAccountSessionManager<TestDbContext>(
+            this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>(),
+            this.App.Services.GetRequiredService<IDistributedCache<CacheId>>(),
+            clock);
+
+        // The exact key resolves, which is what makes the rejections below attributable to the comparison
+        // rather than to a missing row, a deactivated account or the expiry filter.
+        (await manager.ValidateSessionAsync(storedKey, ct)).ShouldNotBeNull();
+
+        // CreateUnreservedKey pads a lowercase-hex GUID with 'a', so upper-casing changes the string without
+        // leaving the budget. Both spellings are ones SQL equality accepts and the cache never would.
+        (await manager.ValidateSessionAsync(storedKey.ToUpperInvariant(), ct))
+            .ShouldBeNull("a case variant is a different key to the cache and must be one here too");
+    }
+
+    [Fact]
     public async Task RevokeSessionAsync_WithTrackedSessionKey_RemovesRowAndMarkerAsync()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -484,8 +484,10 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         // matches the row but not the marker must still take the marker out — otherwise the row is deleted, the
         // marker stays live on the validation fast path, and no later revoke can find it, because revocation
         // enumerates rows.
+        // A space percent-encodes to "%20", so the stored key leaves three bytes of the budget for it and the
+        // revoking spelling lands exactly at the ceiling — inside the guard, and genuinely handed to the cache.
         var serviceAccountId = Guid.NewGuid();
-        var storedKey = CreateUnreservedKey(MaxSessionKeyBytes - 1);
+        var storedKey = CreateUnreservedKey(MaxSessionKeyBytes - 3);
         var revokeKey = storedKey + " ";
 
         await this.CreateServiceAccountAsync(serviceAccountId, ["TenantViewer"], []);

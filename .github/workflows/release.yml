@@ -43,6 +43,13 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
+      # The version script runs `dotnet restore --force-evaluate` so the NuGet
+      # lock files stay in sync with the versions it writes into the csproj files.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          global-json-file: global.json
+
       - name: Determine publish config
         id: publish-config
         run: |

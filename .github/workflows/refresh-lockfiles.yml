@@ -96,6 +96,56 @@ jobs:
           pnpm install --no-frozen-lockfile
 
       # -----------------------------------------------------------------------
+      # Changeset — CI's "Changeset Check" job requires every PR that touches a
+      # workspace package to carry a changeset, and packages.lock.json lives
+      # inside the package directories. Without this step a refresh PR can never
+      # go green.
+      #
+      # Detection reads the WORKING TREE on purpose. The two refresh steps above
+      # leave their changes uncommitted; create-pull-request only commits them in
+      # the next step. The sibling dependabot-changeset.yml diffs against
+      # `origin/<base>` instead, which is not available here: `schedule` and
+      # `workflow_dispatch` have no base ref, and the checkout is shallow.
+      #
+      # `packages/*/*.csproj` and `Directory.Packages.props` cannot change in this
+      # job — restore reads them, it never writes them. They are matched anyway so
+      # the pathspec stays identical to the one in dependabot-changeset.yml and
+      # stays correct if this job ever grows another step.
+      # -----------------------------------------------------------------------
+      - name: Detect lockfile changes
+        id: detect-changes
+        run: |
+          if [ -n "$(git status --porcelain -- 'packages/*/packages.lock.json' pnpm-lock.yaml)" ]; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "any=false" >> "$GITHUB_OUTPUT"
+            echo "No lock file changed - no changeset, and no PR to open."
+          fi
+
+          PKG_CHANGES=$(git status --porcelain -- 'packages/*/*.csproj' Directory.Packages.props)
+          if [ -n "$PKG_CHANGES" ]; then
+            echo "packages=true" >> "$GITHUB_OUTPUT"
+            echo "Package-affecting files changed:"
+            echo "$PKG_CHANGES"
+          else
+            echo "packages=false" >> "$GITHUB_OUTPUT"
+            echo "Root-level tooling lock file only - emitting an empty changeset."
+          fi
+
+      # Gated so a no-op refresh leaves the tree clean: the generator always
+      # writes a file, and create-pull-request opens a PR for any diff at all. An
+      # ungated run would open a PR whose only content is its own changeset, and
+      # would keep `delete-branch: true` from ever closing a stale refresh PR.
+      - name: Generate changeset
+        if: steps.detect-changes.outputs.any == 'true'
+        run: node scripts/generate-changeset.mjs
+        env:
+          CHANGESET_PREFIX: refresh-lockfiles
+          # Becomes the changeset body. Keep in sync with `title:` below.
+          PR_TITLE: "chore: refresh lockfiles (transitive dependency update)"
+          WORKSPACE_PACKAGES_CHANGED: ${{ steps.detect-changes.outputs.packages }}
+
+      # -----------------------------------------------------------------------
       # Open (or update) a single PR with whatever changed.
       #
       # IMPORTANT: the PR must be created with a token that is allowed to trigger
@@ -139,6 +189,13 @@ jobs:
               within their existing version ranges (no range bumps). NuGet takes
               the *lowest* applicable version, so an empty NuGet diff is the
               expected result, not a failure.
+
+            ### Changeset
+            This workflow generates a changeset so CI's Changeset Check
+            passes. The fixed package group is bumped only when a
+            `.csproj` file or `Directory.Packages.props` changed. This job
+            only runs `dotnet restore`, which never writes either file, so
+            every refresh gets an empty changeset and releases nothing.
 
             ### Safety
             - Only resolves **within** the existing version ranges — no range

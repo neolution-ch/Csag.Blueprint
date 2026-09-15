@@ -42,12 +42,14 @@ jobs:
         id: detect-changes
         if: steps.check-changeset.outputs.exists == 'false'
         run: |
-          # A shipped NuGet package is affected when its declared dependencies
-          # (a csproj or the central Directory.Packages.props) or its resolved
-          # dependency graph (packages.lock.json) change. Any Dependabot update
-          # that touches none of these — root npm dev-deps, GitHub Actions, other
-          # tooling — ships no code and gets an empty changeset instead.
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'packages/*/*.csproj' 'packages/*/packages.lock.json' 'Directory.Packages.props')
+          # A shipped NuGet package is affected only when its declared
+          # dependencies change: a csproj or the central
+          # Directory.Packages.props. packages.lock.json is a restore-time
+          # artifact and is never packed, so a Dependabot update that touches
+          # only the lock file (a transitive-only bump) ships no code and gets
+          # an empty changeset, same as root npm dev-deps, GitHub Actions, and
+          # other tooling-only updates.
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- 'packages/*/*.csproj' 'Directory.Packages.props')
           if [ -n "$CHANGED" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Package-affecting files changed:"
@@ -65,7 +67,7 @@ jobs:
 
       - name: Generate changeset
         if: steps.check-changeset.outputs.exists == 'false'
-        run: node scripts/generate-dependabot-changeset.mjs
+        run: node scripts/generate-changeset.mjs
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}

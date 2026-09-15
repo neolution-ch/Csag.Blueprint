@@ -1,5 +1,55 @@
 # @neolution-ch/csag-blueprint-application
 
+## 0.3.0
+
+### Minor Changes
+
+- [#41](https://github.com/neolution-ch/Csag.Blueprint/pull/41) [`42128c7`](https://github.com/neolution-ch/Csag.Blueprint/commit/42128c7afd2f093d58c224c6311b6413dd7b3f11) Thanks [@neotrow](https://github.com/neotrow)! - Move session untracking into the ticket store so consumers never need an `OnSigningOut` handler
+  
+  `DistributedCacheTicketStore.RemoveAsync` now deletes the `BlueprintActiveSessions` row alongside the cache entry. Untracking previously had to be wired by each consuming application as a cookie `OnSigningOut` handler — a responsibility that cannot be discharged safely, because `CookieSigningOutContext` does not carry the session key and the only way to recover it is `HttpContext.AuthenticateAsync`. When sign-out is raised from inside the cookie handler's own authentication pass (as `SecurityStampValidator` does), that call returns the still-running authenticate task and the request awaits itself forever.
+  
+  Expiry is not the path this is built around. `TicketCacheService` caches every ticket with `AbsoluteExpiration` set to the ticket's own `ExpiresUtc`, so the cache entry dies with the ticket and `CookieAuthenticationHandler` normally fails the request on the null `RetrieveAsync` result rather than reaching the branch that discards an expired ticket. Where clock skew or a retrieve straddling the expiry instant does reach that branch, it calls `RemoveAsync`, which now untracks like any other removal. Rows of expired sessions removed no other way are reaped by `ISessionManager.CleanupExpiredSessionsAsync`, which consuming applications schedule; `GetUserSessionsAsync` already filters them out of session listings by `ExpiresAt`.
+  
+  **Breaking:** `ISessionExpirationExtender` is now `IActiveSessionTracker` and gains `UntrackAsync`; `SessionExpirationExtender<TContext>` is now `ActiveSessionTracker<TContext>`, and `DistributedCacheTicketStore`'s constructor takes the renamed abstraction. Applications that only consume `AddBlueprintSessionInfrastructure` need no change beyond deleting their own `OnSigningOut` handler; one that constructs the ticket store by hand updates that argument's type.
+  
+  **Breaking:** `ISessionManager.UntrackSessionAsync` is removed. It deleted the tracking row while leaving the cached ticket live, producing a session that `GetUserSessionsAsync` cannot list and that no revocation path can reach — `RevokeUserSessionsAsync`, `RevokeOtherUserSessionsAsync` and `RevokeTenantSessionsAsync` all snapshot the rows first. The ticket store now untracks on its own; a caller that wants to end a session by key uses `RevokeSessionAsync`, which removes both the ticket and the row.
+  
+  **Behaviour change:** Both by-key removal paths — `DistributedCacheTicketStore.RemoveAsync` and `ISessionManager.RevokeSessionAsync` — delete the tracking row before removing the cached ticket, matching `RevokeSessionsCoreAsync`. A sliding renewal re-writes its ticket unconditionally and only then extends its row, so with the row already gone that extension reports "no row" and the renewal removes its own ticket. The opposite order left a window in which a renewal racing a revocation resurrected the ticket and extended the still-present row, and the untracking then stripped the tracking row off a live session: invisible to `GetUserSessionsAsync`, unreachable by every revocation path, since they all snapshot rows first. `RevokeSessionAsync` removes the ticket even when no row matched, so a session already in that state can still be ended by key.
+  
+  **Behaviour change:** `DistributedCacheTicketStore` no longer writes session keys to its logs. The key is a bearer credential carried by the authentication cookie, so anyone with log access could replay a session from it. Its three warning messages now carry a `SessionTag` instead: the first six bytes of the key's SHA-256, hex-encoded, which correlates occurrences of one session without being reversible. Log queries, dashboards or alerts matching on the logged session key need updating.
+  
+  **Behaviour change:** `PostConfigureCookieAuthenticationOptions` now installs the ticket store only on `IdentityConstants.ApplicationScheme`. It previously ignored the options name and applied to every cookie scheme, including the external and two-factor cookies, which have no tracking rows — without this scoping, the new untracking would run a `DELETE` on every one of their removals.
+
+- [#37](https://github.com/neolution-ch/Csag.Blueprint/pull/37) [`05103b1`](https://github.com/neolution-ch/Csag.Blueprint/commit/05103b1f33f6c17ef5e8745d11fef3c2acdf23a9) Thanks [@neotrow](https://github.com/neotrow)! - Add reference-style, revocable service-account sessions
+  
+  `IServiceAccountSessionManager` (registered by `AddBlueprintSessionInfrastructure`) tracks a server-side `BlueprintServiceAccountSession` per issued service-account JWT and resolves the account's current tenant, roles, and permissions on every request, so revocation, secret rotation, and deactivation take effect immediately. Adds the `IdentityClaimTypes.ServiceAccountSessionId` (`sid`) claim type, the `CacheId.ServiceAccountSession` cache namespace, and an audit exclusion for the new tracking table.
+  
+  This changes the EF model: `BlueprintDbContext` now maps the `BlueprintServiceAccountSessions` table. Consuming applications need their own EF Core migration for the new table.
+  
+  `ValidateSessionAsync` takes a `string?`. A token carrying no `sid` claim yields `null` from `FindFirstValue`, and the method is documented to report a missing key as "no session" rather than raise, so the signature no longer forces callers to suppress nullable analysis or add a guard the method already performs.
+  
+  `RevokeSessionAsync` removes the marker under the key the tracking row stores, not only the key it was called with. The cache compares the key it is handed, while the row predicate becomes SQL string equality, which folds case under a case-insensitive column collation and ignores trailing spaces under every SQL Server collation. A spelling that matched the row but not the marker previously deleted the row and left the marker authorizing the revoked session on the fast path, unreachable by any later revoke because revocation enumerates rows.
+  
+  A cache that refuses to compose a key no longer surfaces as an exception from the read paths. The byte budget the manager enforces is measured against the cache's default key options, so an application configuring an environment prefix or a schema version has a lower effective ceiling, and the abstraction exposes no way to read either setting back. Such a key can address no stored entry — the same composition refused the write — so `ValidateSessionAsync` reports "no session" and `RevokeSessionAsync` continues to its row delete, instead of turning a malformed `sid` into an error in the authentication pipeline.
+  
+  Issuance treats everything after the tracking row is committed as an uncancellable obligation. The opportunistic reap of expired rows no longer decides whether a session is issued; a failed marker write removes the marker before the row, because a write that throws may still have been accepted by the backend; and the confirmation that the row survived issuance runs to completion rather than abandoning a live marker on a cancelled request.
+
+### Patch Changes
+
+- [#37](https://github.com/neolution-ch/Csag.Blueprint/pull/37) [`05103b1`](https://github.com/neolution-ch/Csag.Blueprint/commit/05103b1f33f6c17ef5e8745d11fef3c2acdf23a9) Thanks [@neotrow](https://github.com/neotrow)! - Validate the session key and clamp the diagnostic fields in `ISessionManager`
+  
+  `TrackSessionAsync` rejects a blank session key, or one whose URL-encoded form exceeds the 231 bytes the
+  distributed cache leaves for a key under `CacheId.AuthTicket`, and does so synchronously at the call site
+  before any I/O. It also clamps `userAgent` and `ipAddress` to their mapped column lengths, so an over-length
+  client `User-Agent` header can no longer fail the insert and leave a cached ticket with no tracking row.
+  
+  `RevokeSessionAsync` reports such a key as "no session" rather than passing it to the
+  ticket cache, which throws on an over-long key and silently redirects a blank one to the shared
+  `CacheId.AuthTicket` entry. `RevokeOtherUserSessionsAsync` now rejects a `keepSessionKey` that no tracked session could carry — a
+  whitespace-only one, which previously passed its non-empty check, and one over the cache-key budget, which
+  `TrackSessionAsync` refuses to store. Either degraded the filter to "revoke every session", signing out the
+  very session the caller asked to keep.
+
 ## 0.2.0
 
 ### Minor Changes

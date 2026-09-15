@@ -186,6 +186,17 @@ reverse proxy it is that proxy's egress address: one constant shared by every ca
 header from the left instead is worse, because the entries a client wrote are kept there unverified.
 The header must be one the edge writes itself and overwrites inbound, so a client cannot forge it.
 
+All of that assumes the app is reachable only through that edge, which `UseBlueprintSecurityHeaders`
+requires rather than enforces. It registers `ForwardedHeadersMiddleware` with `KnownProxies` and
+`KnownIPNetworks` empty — Cloud Run and similar platforms front the app from internal addresses that
+are not on the default loopback list — and emptying both turns the middleware's known-proxy check
+off, so it applies whatever the immediate peer sent. A caller able to open a connection to the app
+directly is that peer: it writes `X-Forwarded-For` itself, which makes the rightmost entry its own
+value, and a forged `X-Forwarded-Proto: https` satisfies the HTTPS redirection and HSTS middleware.
+Block direct ingress at the platform. The options are built inline rather than read from
+`IOptions<ForwardedHeadersOptions>`, so a host cannot narrow them by configuration, and registering a
+second `ForwardedHeadersMiddleware` is not a substitute: each run consumes the entries it reads.
+
 ## Ownership Boundary
 
 This package owns **reusable web composition**, not the application host itself.

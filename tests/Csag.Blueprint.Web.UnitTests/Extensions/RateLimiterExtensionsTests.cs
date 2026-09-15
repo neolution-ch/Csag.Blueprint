@@ -202,6 +202,58 @@ public sealed class RateLimiterExtensionsTests
         context.Response.Headers.ContainsKey("Retry-After").ShouldBeFalse();
     }
 
+    [Fact]
+    public async Task UseBlueprintRejectionResponse_OnRejected_WithDelayBeyondInt32Seconds_SerializesTheWholeDelayAsync()
+    {
+        // TokenBucketRateLimiter reports delays far past Int32 seconds from ordinary options — a token limit
+        // of one billion replenishing a thousand tokens an hour reaches 3,600,000,000 seconds. Narrowing that
+        // to int saturates at Int32.MaxValue and understates the delay by nearly half.
+        var options = new RateLimiterOptions().UseBlueprintRejectionResponse();
+        var context = CreateContext(remoteIp: "203.0.113.1");
+        context.Response.Body = new MemoryStream();
+
+        await options.OnRejected!(
+            new OnRejectedContext { HttpContext = context, Lease = new TestLease(TimeSpan.FromSeconds(3_600_000_000d)) },
+            TestContext.Current.CancellationToken);
+
+        context.Response.Headers.RetryAfter.ToString().ShouldBe("3600000000");
+    }
+
+    [Fact]
+    public async Task UseBlueprintRejectionResponse_OnRejected_WithNegativeDelay_OmitsTheHeaderAsync()
+    {
+        // RFC 9110 delay-seconds is unsigned, so a negative delay has no encoding. Emitting "0" would tell a
+        // client to retry immediately against the limiter that just rejected it; dropping the header leaves
+        // the client on the backoff a bare 429 earns. TokenBucketRateLimiter reports exactly these ticks once
+        // its unchecked tick multiply overflows.
+        var options = new RateLimiterOptions().UseBlueprintRejectionResponse();
+        var context = CreateContext(remoteIp: "203.0.113.1");
+        context.Response.Body = new MemoryStream();
+
+        await options.OnRejected!(
+            new OnRejectedContext { HttpContext = context, Lease = new TestLease(TimeSpan.FromTicks(-893_488_147_419_103_232L)) },
+            TestContext.Current.CancellationToken);
+
+        context.Response.StatusCode.ShouldBe(StatusCodes.Status429TooManyRequests);
+        context.Response.Headers.ContainsKey("Retry-After").ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task UseBlueprintRejectionResponse_OnRejected_WithZeroDelay_StillWritesTheHeaderAsync()
+    {
+        // The fixed and sliding window limiters clamp their own estimate to zero, which is a real delay and
+        // must keep serializing — unlike the negative case above.
+        var options = new RateLimiterOptions().UseBlueprintRejectionResponse();
+        var context = CreateContext(remoteIp: "203.0.113.1");
+        context.Response.Body = new MemoryStream();
+
+        await options.OnRejected!(
+            new OnRejectedContext { HttpContext = context, Lease = new TestLease(TimeSpan.Zero) },
+            TestContext.Current.CancellationToken);
+
+        context.Response.Headers.RetryAfter.ToString().ShouldBe("0");
+    }
+
     private static DefaultHttpContext CreateContext(string? remoteIp)
     {
         var context = new DefaultHttpContext();

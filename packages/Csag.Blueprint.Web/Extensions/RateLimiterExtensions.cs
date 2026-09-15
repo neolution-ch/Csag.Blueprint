@@ -109,9 +109,20 @@ public static class RateLimiterExtensions
         {
             var context = rejected.HttpContext;
 
-            if (rejected.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+            // RFC 9110 delay-seconds is an unsigned integer, so a negative delay has no encoding at all.
+            // Omit the header rather than clamp it to zero: a lease reporting a negative delay is already
+            // out of contract, and "0" tells a well-behaved client to retry immediately against the very
+            // limiter that just rejected it, discarding the backoff a bare 429 would have earned. The zero
+            // the window limiters genuinely emit still serializes as "0".
+            //
+            // TokenBucketRateLimiter reaches both edges with stock options: it derives this metadata from an
+            // unchecked ReplenishmentPeriod.Ticks multiply, which goes negative once the periods needed
+            // overflow Int64 (TokenLimit 1e9, TokensPerPeriod 1, period 1h), and stays positive but far past
+            // Int32 seconds below that. Seconds are therefore widened to long, where an out-of-range
+            // double-to-int conversion has no defined result.
+            if (rejected.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter) && retryAfter >= TimeSpan.Zero)
             {
-                context.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds))
+                context.Response.Headers.RetryAfter = ((long)Math.Ceiling(retryAfter.TotalSeconds))
                     .ToString(CultureInfo.InvariantCulture);
             }
 

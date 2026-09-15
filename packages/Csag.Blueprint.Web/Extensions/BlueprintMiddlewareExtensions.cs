@@ -21,6 +21,15 @@ public static class BlueprintMiddlewareExtensions
     /// custom security headers, and server identity header removal.
     /// Safe to call in all modes (including generation mode).
     /// </summary>
+    /// <remarks>
+    /// This registers <c>ForwardedHeadersMiddleware</c> with <c>KnownProxies</c> and
+    /// <c>KnownIPNetworks</c> empty, which turns off its known-proxy check: it applies whatever the
+    /// immediate peer sent. Deploying the app so it is reachable only through an edge that rewrites or
+    /// appends <c>X-Forwarded-For</c> and <c>X-Forwarded-Proto</c> is therefore a requirement of calling
+    /// this method. A caller that can connect to the app directly writes both headers itself, which makes
+    /// the entry promoted to <c>RemoteIpAddress</c> that caller's own value and lets a forged
+    /// <c>X-Forwarded-Proto: https</c> satisfy the HTTPS redirection and HSTS middleware below.
+    /// </remarks>
     /// <param name="app">The web application.</param>
     /// <returns>The web application for chaining.</returns>
     public static WebApplication UseBlueprintSecurityHeaders(this WebApplication app)
@@ -33,10 +42,12 @@ public static class BlueprintMiddlewareExtensions
         // Must run before HTTPS redirection and HSTS so the original scheme is visible.
         // Clear KnownProxies/KnownNetworks so headers from any proxy are accepted —
         // Cloud Run and similar platforms use internal IPs that aren't on the default loopback list.
-        // ForwardLimit 1 reads only the rightmost X-Forwarded-For entry, which is written by the hop
-        // immediately in front of this app and so is never a value a client wrote. That makes it safe
-        // to read with nothing in KnownProxies/KnownIPNetworks to check it against, but it does NOT
-        // make it the caller's address: an edge that appends its own entry (a Google external load
+        // Clearing them also turns off the middleware's known-proxy check, so what it applies is whatever
+        // the immediate peer sent. The ingress requirement that makes this safe — only an edge can reach
+        // the app — is stated in the remarks above, and it is what the rest of this reasoning assumes.
+        // Given that ingress, ForwardLimit 1 reads only the rightmost X-Forwarded-For entry, which is
+        // written by the hop immediately in front of this app and so is never a value a client wrote. It
+        // is still NOT the caller's address: an edge that appends its own entry (a Google external load
         // balancer sends "<client>,<balancer>") leaves the balancer's address rightmost, and behind a
         // further reverse proxy it is that proxy's egress address — one constant shared by every
         // caller. Treat RemoteIpAddress as the nearest hop, not as a client identity, and resolve the

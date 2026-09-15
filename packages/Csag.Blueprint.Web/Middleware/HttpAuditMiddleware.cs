@@ -120,9 +120,10 @@ public class HttpAuditMiddleware
             scope.SetCustomField(CorrelationIdMiddleware.CorrelationIdKey, correlationId);
             scope.SetCustomField("UserAgent", context.Request.Headers.UserAgent.ToString());
 
-            // ForwardedHeadersMiddleware (in UseBlueprintSecurityHeaders, registered before this
-            // middleware) rewrites RemoteIpAddress from X-Forwarded-For, so this is the client's
-            // address, not the address of a load balancer or a reverse proxy in front of it.
+            // The nearest hop, not necessarily the caller: where the app calls UseBlueprintSecurityHeaders,
+            // ForwardedHeadersMiddleware rewrites RemoteIpAddress from the rightmost X-Forwarded-For entry,
+            // which an edge or a proxy in front of this app may have written about itself. See the
+            // forwarded-headers note in UseBlueprintSecurityHeaders.
             scope.SetCustomField("IpAddress", context.Connection.RemoteIpAddress?.ToString());
         }
         catch (Exception ex)

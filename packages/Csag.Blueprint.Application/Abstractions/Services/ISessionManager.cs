@@ -9,10 +9,22 @@ public interface ISessionManager
     /// Tracks a new active session for a user.
     /// </summary>
     /// <param name="userId">The user ID.</param>
-    /// <param name="sessionKey">The session key (ticket store key).</param>
+    /// <param name="sessionKey">
+    /// The session key (ticket store key). It is stored and looked up verbatim, never truncated to fit, and
+    /// must be unique across all active sessions. The built-in implementation throws
+    /// <see cref="ArgumentException"/> for a blank key, or one whose URL-encoded form exceeds 231 bytes — 231
+    /// characters for a base64url or hex key, fewer once characters outside the URI unreserved set are
+    /// escaped. The throw reaches the caller directly rather than the returned task.
+    /// </param>
     /// <param name="expiresAt">When the session expires.</param>
-    /// <param name="userAgent">The user agent string from the browser.</param>
-    /// <param name="ipAddress">The IP address of the client.</param>
+    /// <param name="userAgent">
+    /// The user agent string from the browser. Client-supplied, so the built-in implementation clamps it to
+    /// the mapped column length of 500 characters rather than letting an over-length header fail the insert.
+    /// </param>
+    /// <param name="ipAddress">
+    /// The IP address of the client, clamped to 50 characters for the same reason. A forwarded-for chain
+    /// passed here can exceed that; pass a single address if the stored value needs to remain parsable.
+    /// </param>
     /// <param name="currentTenantId">The current tenant ID for this session.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -55,7 +67,7 @@ public interface ISessionManager
     /// <param name="userId">The user ID whose other sessions should be revoked.</param>
     /// <param name="keepSessionKey">
     /// The session key to preserve — typically the current request's session
-    /// (see <c>HttpContext.GetCurrentSessionKeyAsync()</c>). Must be non-empty; to revoke every session
+    /// (see <c>HttpContext.GetCurrentSessionKeyAsync()</c>). Must be non-blank; to revoke every session
     /// including the current one, call <see cref="RevokeUserSessionsAsync(Guid, CancellationToken)"/> instead.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -76,7 +88,10 @@ public interface ISessionManager
     /// <summary>
     /// Revokes a specific session by its session key.
     /// </summary>
-    /// <param name="sessionKey">The session key to revoke.</param>
+    /// <param name="sessionKey">
+    /// The session key to revoke. A blank or over-long key reports <see langword="false"/> rather than
+    /// raising, since no such session can have been tracked.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the session was found and revoked, false otherwise.</returns>
     Task<bool> RevokeSessionAsync(string sessionKey, CancellationToken cancellationToken = default);
@@ -86,7 +101,10 @@ public interface ISessionManager
     /// Used by cookie authentication events during normal logout flow.
     /// For manual revocation (admin actions), use RevokeSessionAsync instead.
     /// </summary>
-    /// <param name="sessionKey">The session key to untrack.</param>
+    /// <param name="sessionKey">
+    /// The session key to untrack. A blank or over-long key reports <see langword="false"/> rather than
+    /// raising, since no such session can have been tracked.
+    /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if the session was found and removed, false otherwise.</returns>
     Task<bool> UntrackSessionAsync(string sessionKey, CancellationToken cancellationToken = default);

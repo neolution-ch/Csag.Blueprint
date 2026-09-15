@@ -66,6 +66,10 @@ public static class BlueprintBuilderExtensions
         // ITenantResolver registered before this call wins over the claims-based default.
         builder.Services.TryAddScoped<ITenantResolver, ClaimsTenantResolver>();
 
+        // Clock seam: everything blueprint-side reads time through TimeProvider so tests can supply a
+        // fake. TryAdd, so a TimeProvider registered before this call (a FakeTimeProvider in tests) wins.
+        builder.Services.TryAddSingleton(TimeProvider.System);
+
         return builder;
     }
 }

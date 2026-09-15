@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Csag.Blueprint.TestHost.Extensions;
+using Csag.Blueprint.TestHost.Time;
 using Csag.Blueprint.Tests.Shared.Database;
 using Csag.Blueprint.Tests.Shared.Entities;
 using Csag.Blueprint.Web.Extensions;
@@ -11,6 +12,11 @@ var builder = WebApplication.CreateBuilder(args);
 // Bind and validate every Blueprint option section up front; validation failures stop the host
 // before any service can observe half-configured options.
 builder.Services.AddBlueprintDefaultValidatedOptions(builder.Configuration);
+
+// Registered before AddBlueprintServices, whose TryAddSingleton(TimeProvider.System) would otherwise win.
+// Unpinned it IS the system clock; a test pins it to drive components that captured the provider at startup.
+builder.Services.AddSingleton<PinnableTimeProvider>();
+builder.Services.AddSingleton<TimeProvider>(sp => sp.GetRequiredService<PinnableTimeProvider>());
 
 // Package-level services: server options, OIDC, FastEndpoints, Swagger, distributed cache,
 // anti-forgery, and the claims-based tenant resolver.

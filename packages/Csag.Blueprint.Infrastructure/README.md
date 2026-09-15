@@ -51,6 +51,12 @@ the central database. Classify each entity by plane before splitting anything.
 | `AuditableTimestampInterceptor` | Sets `CreatedAt`/`UpdatedAt` automatically for `IAuditable` entities. |
 | `TenantSaveInterceptor` | Assigns and protects `TenantId` for `IMustHaveTenant` entities. |
 
+Both are registered as singletons by `AddBlueprintTenancyRuntime()`. Resolve them from the container
+when wiring the pooled `DbContext` factory rather than constructing them — they are singleton-safe
+because they read ambient `AsyncLocal` state and a singleton `TimeProvider`, never scoped services.
+`AuditableTimestampInterceptor` stamps from that `TimeProvider`, so a `FakeTimeProvider` registered
+before `AddBlueprintTenancyRuntime()` controls the timestamps it writes.
+
 ### Session and authorization infrastructure
 
 | Component | Purpose |

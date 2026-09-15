@@ -8,6 +8,7 @@ using Csag.Blueprint.Tests.Shared.Entities;
 using Csag.Blueprint.Tests.Shared.Helpers;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 /// <summary>
 /// Unit tests for <see cref="BlueprintTableViewPreferencesService{TContext, TUser}"/>.
@@ -16,13 +17,15 @@ public sealed class TableViewPreferencesServiceTests : IDisposable
 {
     private readonly TestDbContextScope<TestDbContext> scope;
     private readonly BlueprintTableViewPreferencesService<TestDbContext, TestUser> service;
+    private readonly FakeTimeProvider clock = new(new DateTimeOffset(2026, 3, 14, 9, 15, 0, TimeSpan.Zero));
 
     public TableViewPreferencesServiceTests()
     {
         this.scope = TestDbContextFactory.CreateInMemoryDbContext();
         this.service = new BlueprintTableViewPreferencesService<TestDbContext, TestUser>(
             this.scope.Context,
-            new NullLogger<BlueprintTableViewPreferencesService<TestDbContext, TestUser>>());
+            new NullLogger<BlueprintTableViewPreferencesService<TestDbContext, TestUser>>(),
+            this.clock);
     }
 
     public void Dispose()
@@ -271,8 +274,6 @@ public sealed class TableViewPreferencesServiceTests : IDisposable
             Version = "1.0",
         };
 
-        var beforeSave = DateTimeOffset.UtcNow.AddSeconds(-1);
-
         // Act
         var preferenceId = await this.service.CreatePreferenceAsync(userId, tableViewId, preferences, TestContext.Current.CancellationToken);
 
@@ -280,6 +281,64 @@ public sealed class TableViewPreferencesServiceTests : IDisposable
         var saved = await this.scope.Context.TableViewPreferences
             .FirstOrDefaultAsync(p => p.Id == preferenceId, TestContext.Current.CancellationToken);
         saved.ShouldNotBeNull();
-        saved.CreatedAt.ShouldBeGreaterThan(beforeSave);
+        saved.CreatedAt.ShouldBe(this.clock.GetUtcNow());
     }
+
+    [Fact]
+    public async Task SetDefaultAsync_StampsUpdatedAtFromTheClock()
+    {
+        // Arrange — the clock moves between the create and the update, so the expected stamp is a value the
+        // wall clock cannot produce: reading DateTimeOffset.UtcNow here would match neither instant.
+        var userId = Guid.NewGuid();
+        var tableViewId = "vehicles";
+        var preferenceId = await this.service.CreatePreferenceAsync(
+            userId, tableViewId, NewPreferences(tableViewId), TestContext.Current.CancellationToken);
+        var createdAt = this.clock.GetUtcNow();
+        this.clock.Advance(TimeSpan.FromMinutes(7));
+
+        // Act
+        var result = await this.service.SetDefaultAsync(userId, tableViewId, preferenceId, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.ShouldBeTrue();
+        var saved = await this.scope.Context.TableViewPreferences
+            .FirstOrDefaultAsync(p => p.Id == preferenceId, TestContext.Current.CancellationToken);
+        saved.ShouldNotBeNull();
+        saved.UpdatedAt.ShouldBe(createdAt.AddMinutes(7));
+        saved.CreatedAt.ShouldBe(createdAt);
+    }
+
+    [Fact]
+    public async Task UpdatePreferenceAsync_StampsUpdatedAtFromTheClock()
+    {
+        // Arrange — as above: the advance is what distinguishes the injected clock from the wall clock.
+        var userId = Guid.NewGuid();
+        var tableViewId = "vehicles";
+        var preferenceId = await this.service.CreatePreferenceAsync(
+            userId, tableViewId, NewPreferences(tableViewId), TestContext.Current.CancellationToken);
+        var createdAt = this.clock.GetUtcNow();
+        this.clock.Advance(TimeSpan.FromMinutes(3));
+
+        var edited = NewPreferences(tableViewId);
+        edited.Name = "Renamed View";
+
+        // Act
+        var result = await this.service.UpdatePreferenceAsync(userId, preferenceId, edited, TestContext.Current.CancellationToken);
+
+        // Assert
+        result.ShouldBeTrue();
+        var saved = await this.scope.Context.TableViewPreferences
+            .FirstOrDefaultAsync(p => p.Id == preferenceId, TestContext.Current.CancellationToken);
+        saved.ShouldNotBeNull();
+        saved.UpdatedAt.ShouldBe(createdAt.AddMinutes(3));
+        saved.CreatedAt.ShouldBe(createdAt);
+    }
+
+    private static TableViewPreferencesModel NewPreferences(string tableViewId) => new()
+    {
+        TableViewId = tableViewId,
+        Name = "My View",
+        Columns = [],
+        Version = "1.0",
+    };
 }

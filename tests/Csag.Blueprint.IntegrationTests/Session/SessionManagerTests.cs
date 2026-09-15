@@ -281,7 +281,8 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
                 recordingTicketCache,
                 provider.GetRequiredService<UserManager<TestUser>>(),
                 contextFactory,
-                provider.GetRequiredService<ITenantAuthorizationResolver>());
+                provider.GetRequiredService<ITenantAuthorizationResolver>(),
+                provider.GetRequiredService<TimeProvider>());
 
             (await sessionManager.RevokeSessionAsync(sessionKey, ct)).ShouldBeTrue();
             rowStillPresentAtTicketRemoval = recordingTicketCache.RowPresentAtRemoval.ShouldHaveSingleItem();

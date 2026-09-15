@@ -104,11 +104,22 @@ public sealed class SessionManager<TUser, TContext> : ISessionManager
 
         // Manual revocation must remove both the cached authentication ticket and the tracking row.
         // This immediately invalidates the specific session and ensures it no longer appears in session listings.
-        await this.ticketCacheService.RemoveTicketAsync(sessionKey, cancellationToken);
-
+        //
+        // Delete the tracking row BEFORE removing the cached ticket, for the reason spelled out in
+        // RevokeSessionsCoreAsync: a concurrent sliding renewal re-writes its ticket unconditionally and only
+        // then extends its row, so with the row already gone that extension reports "no row" and the renewal
+        // removes its own ticket (see DistributedCacheTicketStore.RenewAsync). The opposite order leaves a
+        // window — ticket removed, row still present — in which the renewal both resurrects the ticket and
+        // extends the row successfully, and the delete below then strips the tracking row off a session whose
+        // ticket is live again: invisible to listing, unreachable by revocation.
         var deletedCount = await dbContext.Set<BlueprintActiveSession>()
             .Where(s => s.SessionKey == sessionKey)
             .ExecuteDeleteAsync(cancellationToken);
+
+        // Remove the ticket even when no row matched. A live ticket whose row is already gone is invisible to
+        // every revocation path that snapshots rows first, so removing it by the key the caller supplied is
+        // the only way such a session can be reached at all.
+        await this.ticketCacheService.RemoveTicketAsync(sessionKey, cancellationToken);
 
         return deletedCount > 0;
     }

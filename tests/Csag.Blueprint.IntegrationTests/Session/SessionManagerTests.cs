@@ -6,6 +6,7 @@ using System.Security.Claims;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
+using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.TestHost.Endpoints.Auth.Login;
 using Csag.Blueprint.TestHost.Endpoints.Auth.Logout;
@@ -231,6 +232,53 @@ public sealed class SessionManagerTests(AppFixture app) : IntegrationTestBase(ap
             var sessionManager = serviceScope.ServiceProvider.GetRequiredService<ISessionManager>();
             (await sessionManager.RevokeSessionAsync(sessionKey, ct)).ShouldBeFalse();
         }
+    }
+
+    [Fact]
+    public async Task RevokeSessionAsync_DeletesTrackingRowBeforeRemovingTicketAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // A concurrent sliding renewal re-writes its ticket unconditionally and only then extends its row.
+        // Removing the ticket first leaves a window in which such a renewal resurrects the ticket AND extends
+        // the still-present row, so the delete that follows strips the tracking row off a live session —
+        // invisible to GetUserSessionsAsync, unreachable by every revoke that snapshots rows first.
+        var user = await this.CreateTestUserAsync("revoke_order_test@test.local", SeedData.TenantAId);
+        using var client = await this.SignInAsync(user.Email!);
+
+        string sessionKey;
+        using (var scope = this.App.CreateDbContextScope())
+        {
+            sessionKey = (await scope.Context.ActiveSessions.SingleAsync(s => s.UserId == user.Id, ct)).SessionKey;
+        }
+
+        // The manager is built by hand rather than resolved, so the recording decorator wraps only this
+        // instance: the fixture's container is shared by the whole collection and every other test in it.
+        bool rowStillPresentAtTicketRemoval;
+        using (var serviceScope = this.App.Services.CreateScope())
+        {
+            var provider = serviceScope.ServiceProvider;
+            var contextFactory = provider.GetRequiredService<IDbContextFactory<TestDbContext>>();
+
+            var recordingTicketCache = new RowProbingTicketCacheService(
+                provider.GetRequiredService<ITicketCacheService>(),
+                async key =>
+                {
+                    await using var probeContext = await contextFactory.CreateDbContextAsync(ct);
+                    return await probeContext.Set<BlueprintActiveSession>().AnyAsync(s => s.SessionKey == key, ct);
+                });
+
+            var sessionManager = new SessionManager<TestUser, TestDbContext>(
+                recordingTicketCache,
+                provider.GetRequiredService<UserManager<TestUser>>(),
+                contextFactory,
+                provider.GetRequiredService<ITenantAuthorizationResolver>());
+
+            (await sessionManager.RevokeSessionAsync(sessionKey, ct)).ShouldBeTrue();
+            rowStillPresentAtTicketRemoval = recordingTicketCache.RowPresentAtRemoval.ShouldHaveSingleItem();
+        }
+
+        rowStillPresentAtTicketRemoval.ShouldBeFalse("the tracking row must already be gone when the ticket is removed");
     }
 
     [Fact]

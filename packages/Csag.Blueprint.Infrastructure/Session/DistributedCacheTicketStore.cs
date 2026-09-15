@@ -82,7 +82,8 @@ public sealed class DistributedCacheTicketStore : ITicketStore
     /// <summary>
     /// Removes an authentication ticket from the distributed cache and deletes its tracking row.
     /// Called by the cookie handler on sign-out, including the sign-out <c>SecurityStampValidator</c>
-    /// raises when it rejects a principal.
+    /// raises when it rejects a principal, and by its expired-ticket branch in the uncommon case where the
+    /// cache still returns a ticket whose <c>ExpiresUtc</c> has passed.
     /// </summary>
     /// <param name="key">The session key that identifies the ticket to remove.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
@@ -93,12 +94,15 @@ public sealed class DistributedCacheTicketStore : ITicketStore
         // event could only recover it via HttpContext.AuthenticateAsync — which deadlocks when sign-out is
         // raised from inside the handler's own authentication pass, as SecurityStampValidator does.
         //
-        // A session that simply expires does not arrive here. TicketCacheService caches the ticket with
-        // AbsoluteExpiration set to the ticket's own ExpiresUtc, so entry and ticket die together:
-        // RetrieveAsync returns null and ReadCookieTicket fails the pass with "Identity missing in session
-        // store" before it reaches the branch that discards an expired ticket. That branch needs a ticket
-        // still in the cache whose ExpiresUtc is already past, which only a reader whose clock runs ahead
-        // of the writer's sees. Rows of expired sessions are instead reaped by
+        // A session that simply expires is not the path this is written for, and rarely reaches it.
+        // TicketCacheService caches the ticket with AbsoluteExpiration set to the ticket's own ExpiresUtc, so
+        // entry and ticket die together: RetrieveAsync returns null and ReadCookieTicket fails the pass with
+        // "Identity missing in session store" before it reaches the branch that discards an expired ticket.
+        // That branch needs a ticket still in the cache whose ExpiresUtc is already past, which takes clock
+        // skew between writer and reader, or a retrieve whose round trip straddles the expiry instant —
+        // ReadCookieTicket samples the clock only once RetrieveAsync has returned. Either way the untracking
+        // below is the same work the sign-out path does, so the branch is handled rather than special-cased.
+        // Rows of expired sessions that never reach this method are instead reaped by
         // CleanupExpiredSessionsAsync, and GetUserSessionsAsync filters them out by ExpiresAt, so what
         // lingers is storage rather than authorization.
         //

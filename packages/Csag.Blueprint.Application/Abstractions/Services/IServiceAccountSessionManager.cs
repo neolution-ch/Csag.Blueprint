@@ -40,12 +40,13 @@ public interface IServiceAccountSessionManager
     /// changes and deactivation take effect per request.
     /// </summary>
     /// <param name="sessionKey">
-    /// The opaque session key from the token's session-id claim. A blank or over-long key is reported as
-    /// "no session" rather than as an error, since no such session can have been tracked.
+    /// The opaque session key from the token's session-id claim, in the form the claim is read: a token carrying
+    /// no such claim yields <see langword="null"/> from <c>FindFirstValue</c>. A missing, blank or over-long key
+    /// is reported as "no session" rather than as an error, since no such session can have been tracked.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The resolved session authorization, or <see langword="null"/> if the request must be rejected.</returns>
-    Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string sessionKey, CancellationToken cancellationToken = default);
+    Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string? sessionKey, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Revokes a single service-account session by its key, removing both the tracking row and the cached

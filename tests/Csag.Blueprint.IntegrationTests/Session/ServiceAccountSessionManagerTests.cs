@@ -172,7 +172,9 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
 
             // Act & Assert
-            (await manager.ValidateSessionAsync(null!, ct)).ShouldBeNull();
+            // A token with no session-id claim reads as null, which the signature accepts rather than forcing
+            // callers to suppress nullable analysis or guard ahead of a method documented to report "no session".
+            (await manager.ValidateSessionAsync(null, ct)).ShouldBeNull();
             (await manager.ValidateSessionAsync(string.Empty, ct)).ShouldBeNull();
             (await manager.ValidateSessionAsync("   ", ct)).ShouldBeNull();
         }
@@ -469,6 +471,67 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         using var dbScope = this.App.CreateDbContextScope();
         (await dbScope.Context.ServiceAccountSessions.AnyAsync(s => s.SessionKey == sessionKey, ct)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task RevokeSessionAsync_WithAKeySqlMatchesButTheCacheDoesNot_RemovesTheStoredKeysMarkerAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // The two stores disagree on what makes two keys equal: the cache compares the key it is handed, while
+        // the row predicate becomes SQL string equality, which folds case under a case-insensitive column
+        // collation and ignores trailing spaces under every SQL Server collation. Revoking under a spelling that
+        // matches the row but not the marker must still take the marker out — otherwise the row is deleted, the
+        // marker stays live on the validation fast path, and no later revoke can find it, because revocation
+        // enumerates rows.
+        var serviceAccountId = Guid.NewGuid();
+        var storedKey = CreateUnreservedKey(MaxSessionKeyBytes - 1);
+        var revokeKey = storedKey + " ";
+
+        await this.CreateServiceAccountAsync(serviceAccountId, ["TenantViewer"], []);
+
+        using (var serviceScope = this.App.Services.CreateScope())
+        {
+            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            await manager.TrackSessionAsync(
+                serviceAccountId, storedKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
+        }
+
+        var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
+        (await cache.GetAsync<string>(CacheId.ServiceAccountSession, storedKey, ct)).ShouldNotBeNull();
+
+        // Act — revoke under the trailing-space spelling, which SQL equality matches and the cache does not.
+        bool revoked;
+        using (var serviceScope = this.App.Services.CreateScope())
+        {
+            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            revoked = await manager.RevokeSessionAsync(revokeKey, ct);
+        }
+
+        try
+        {
+            revoked.ShouldBeTrue("SQL string equality matches the stored row under this spelling");
+
+            // The marker under the key the row actually stored is the one an outstanding token presents.
+            (await cache.GetAsync<string>(CacheId.ServiceAccountSession, storedKey, ct))
+                .ShouldBeNull("the marker for the deleted row must not survive the revoke");
+
+            using (var dbScope = this.App.CreateDbContextScope())
+            {
+                (await dbScope.Context.ServiceAccountSessions.AnyAsync(s => s.SessionKey == storedKey, ct))
+                    .ShouldBeFalse();
+            }
+
+            using var validationScope = this.App.Services.CreateScope();
+            var validator = validationScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            (await validator.ValidateSessionAsync(storedKey, ct)).ShouldBeNull();
+        }
+        finally
+        {
+            // Cache entries live in the host's memory and outlive the per-test database restore.
+            await cache.RemoveAsync(CacheId.ServiceAccountSession, storedKey, ct);
+            await cache.RemoveAsync(CacheId.ServiceAccountSession, revokeKey, ct);
+        }
     }
 
     [Fact]

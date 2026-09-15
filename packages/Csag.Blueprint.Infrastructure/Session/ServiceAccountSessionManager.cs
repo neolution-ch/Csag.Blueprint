@@ -82,7 +82,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     }
 
     /// <inheritdoc/>
-    public async Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string sessionKey, CancellationToken cancellationToken = default)
+    public async Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string? sessionKey, CancellationToken cancellationToken = default)
     {
         // A key outside the bounds TrackSessionAsync enforces cannot belong to a tracked session, so here it
         // simply means "no such session". The session-id claim reaching this method is client-supplied, so it is
@@ -146,23 +146,49 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
 
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
 
+        // Snapshot the id AND key of the matching rows and delete exactly that set by id, the shape
+        // RevokeServiceAccountSessionsAsync uses. The two stores do not agree on what makes two keys equal: the
+        // cache compares the key it is handed, while this predicate becomes SQL string equality, which folds case
+        // under a case-insensitive column collation and ignores trailing spaces under every collation SQL Server
+        // has. Removing the marker under the caller's spelling alone would then delete the row a differently
+        // spelled key stored and leave that key's marker live — authorizing the revoked session until it expires,
+        // and unreachable by any later revoke, because revocation enumerates rows. The caller's own key stays in
+        // the sweep set so a marker with no row is still removable by the key the caller holds.
+        var tracked = await dbContext.Set<BlueprintServiceAccountSession>()
+            .AsNoTracking()
+            .Where(s => s.SessionKey == sessionKey)
+            .Select(s => new { s.Id, s.SessionKey })
+            .ToListAsync(cancellationToken);
+
+        var markerKeys = tracked.Select(s => s.SessionKey)
+            .Append(sessionKey)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
         // Full revocation requires removing BOTH the cache marker (closes the validation fast path) AND the
         // tracking row (closes the DB fallback in ResolveServiceAccountIdAsync) — while either remains, a
         // still-active account's token keeps authorizing until it expires. The marker is removed FIRST only so a
         // partial failure leaves the row behind as a durable, listable, retry-clearable record; the reverse order
         // could delete the row while the marker survives, orphaning a live marker no later revoke can find (they
         // key off rows) until it expires.
-        await this.cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+        foreach (var markerKey in markerKeys)
+        {
+            await this.RemoveMarkerIgnoringKeyRefusalAsync(markerKey, cancellationToken);
+        }
 
+        var trackedIds = tracked.Select(s => s.Id).ToList();
         var deleted = await dbContext.Set<BlueprintServiceAccountSession>()
-            .Where(s => s.SessionKey == sessionKey)
+            .Where(s => trackedIds.Contains(s.Id))
             .ExecuteDeleteAsync(cancellationToken);
 
-        // Sweep the marker again now the row is gone. Issuance commits its row and only then writes its marker, so
-        // a token issued concurrently can slot a marker in between the removal above and this delete — a marker
+        // Sweep the markers again now the rows are gone. Issuance commits its row and only then writes its marker,
+        // so a token issued concurrently can slot a marker in between the removals above and this delete — a marker
         // that would outlive its row and keep authorizing the revoked session. The removal is idempotent, so this
         // costs one no-op cache delete in the ordinary case.
-        await this.cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+        foreach (var markerKey in markerKeys)
+        {
+            await this.RemoveMarkerIgnoringKeyRefusalAsync(markerKey, cancellationToken);
+        }
 
         return deleted > 0;
     }
@@ -252,6 +278,57 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         }
     }
 
+    /// <summary>
+    /// Removes a fast-path marker, treating the cache's refusal to compose the key as "no such marker".
+    /// </summary>
+    /// <remarks>
+    /// Only a caller-supplied key can be refused here. The budget <c>IsWellFormedSessionKey</c> enforces is
+    /// measured against the cache's default key options, so an application configuring an environment prefix or a
+    /// schema version lowers its own effective ceiling below it, and the abstraction exposes no way to read
+    /// either setting back. A key the cache will not compose is one it also refused at issuance, so no marker can
+    /// exist under it and revocation has nothing to remove. Every other failure propagates, which is what leaves
+    /// the tracking row in place as the durable, retry-clearable record of the session.
+    /// </remarks>
+    /// <param name="sessionKey">The session key identifying the marker to remove.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private async Task RemoveMarkerIgnoringKeyRefusalAsync(string sessionKey, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await this.cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            // Deliberately ignored; see the remarks above.
+        }
+    }
+
+    /// <summary>
+    /// Removes the fast-path marker for a session whose issuance is failing, so no marker is left describing a
+    /// tracking row that is about to be deleted or is already gone.
+    /// </summary>
+    /// <remarks>
+    /// Runs uncancellable and swallows its own failure for the same reasons as
+    /// <see cref="RemoveTrackingRowAsync"/>: the cache failure being compensated may itself have been a
+    /// cancellation, and the caller must still see the original exception, which is the one that explains why
+    /// issuance failed. A key the cache refused to compose is refused for a removal exactly as it was for the
+    /// write, so this throwing is the expected outcome whenever that is what brought issuance here.
+    /// </remarks>
+    /// <param name="sessionKey">The session key identifying the marker to remove.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
+    private async Task RemoveCacheMarkerAsync(string sessionKey)
+    {
+        try
+        {
+            await this.cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // Deliberately ignored; see the remarks above.
+        }
+    }
+
     private async Task TrackSessionCoreAsync(
         Guid serviceAccountId,
         string sessionKey,
@@ -285,9 +362,19 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         // multi-instance hosting): whichever instance issues a token performs the cleanup, seeking on the
         // ServiceAccountId index. Expired rows are inert for authorization (ResolveServiceAccountIdAsync filters
         // ExpiresAt > now); this only stops them accumulating.
-        await dbContext.Set<BlueprintServiceAccountSession>()
-            .Where(s => s.ServiceAccountId == serviceAccountId && s.ExpiresAt <= now)
-            .ExecuteDeleteAsync(cancellationToken);
+        try
+        {
+            await dbContext.Set<BlueprintServiceAccountSession>()
+                .Where(s => s.ServiceAccountId == serviceAccountId && s.ExpiresAt <= now)
+                .ExecuteDeleteAsync(CancellationToken.None);
+        }
+        catch (Exception)
+        {
+            // Housekeeping for rows this session does not own must not decide whether this session is issued.
+            // The row above is already committed and the compensation below covers only the marker write, so a
+            // failure propagating from here would abandon that row with no marker and nothing to take it back
+            // out. Unreaped rows stay inert, and this account's next issuance tries again.
+        }
 
         // Prime the fast-path marker so subsequent requests validate the session existence without a DB read.
         // The absolute expiry matches the token/session lifetime so the marker self-cleans.
@@ -304,6 +391,13 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
             // validated through the fast path, and it aborts RevokeServiceAccountSessionsAsync for every other
             // session on the account, because that method feeds each snapshotted key back to the cache. Take the
             // row out again so issuance fails having written nothing.
+            //
+            // Drop the marker first, and unconditionally. A write that throws has not necessarily been refused:
+            // a timeout or a cancellation can surface after the backend already accepted the entry, and a marker
+            // that survives the row deleted below is a live fast-path entry no revoke can reach, because
+            // revocation enumerates rows. Removing it before the row also keeps the ordering the revocation paths
+            // use, so the two never race in opposite directions.
+            await this.RemoveCacheMarkerAsync(sessionKey);
             await RemoveTrackingRowAsync(dbContext, sessionKey);
             throw;
         }
@@ -315,19 +409,39 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         // Confirm the row is still there and fail closed by dropping the marker if it is not. Revocation sweeps
         // the marker again after deleting the row, which closes the mirror interleaving where this check reads the
         // row before that delete lands.
+        //
+        // Uncancellable, like the compensation above: from the marker write onwards the marker is live, so
+        // abandoning this check on a cancelled request is what leaves the orphan it exists to prevent.
         var stillTracked = await dbContext.Set<BlueprintServiceAccountSession>()
             .AsNoTracking()
-            .AnyAsync(s => s.SessionKey == sessionKey, cancellationToken);
+            .AnyAsync(s => s.SessionKey == sessionKey, CancellationToken.None);
 
         if (!stillTracked)
         {
-            await this.cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+            await this.RemoveCacheMarkerAsync(sessionKey);
         }
     }
 
     private async Task<Guid?> ResolveServiceAccountIdAsync(TContext dbContext, string sessionKey, CancellationToken cancellationToken)
     {
-        var cached = await this.cache.GetAsync<string>(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+        string? cached;
+        try
+        {
+            cached = await this.cache.GetAsync<string>(CacheId.ServiceAccountSession, sessionKey, cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            // The cache composes and length-checks its generated key inside the call, so a key inside the budget
+            // this manager enforces can still be refused: that budget is measured against the cache's default key
+            // options, and an application configuring an environment prefix or a schema version lowers its own
+            // effective ceiling below it — with no way to read either setting back through the abstraction. The
+            // key reaching this method comes from a token's session-id claim, so the refusal must not become an
+            // unhandled exception in the authentication pipeline. It is a definitive "no such session": the same
+            // composition refused the write that would have stored an entry, so no marker under this key exists,
+            // and the fallback below still gets its chance on the tracking row.
+            cached = null;
+        }
+
         if (!string.IsNullOrEmpty(cached) && Guid.TryParse(cached, CultureInfo.InvariantCulture, out var cachedId))
         {
             return cachedId;

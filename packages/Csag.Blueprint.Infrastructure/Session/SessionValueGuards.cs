@@ -1,5 +1,6 @@
 namespace Csag.Blueprint.Infrastructure.Session;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 
 /// <summary>
@@ -32,10 +33,10 @@ internal static class SessionValueGuards
     /// handing a client-supplied key to the cache, which throws on an over-long key and silently redirects a
     /// blank one to the shared slot of the cache id it was given.
     /// </summary>
-    /// <param name="sessionKey">The session key to check.</param>
+    /// <param name="sessionKey">The session key to check; <c>null</c> is reported the same way a blank key is.</param>
     /// <param name="maxCacheKeyBytes">What the caller's cache-id prefix leaves of the cache's key limit, in UTF-8 bytes.</param>
     /// <returns><c>true</c> when the key is neither blank nor over budget.</returns>
-    public static bool IsWellFormedSessionKey(string sessionKey, int maxCacheKeyBytes)
+    public static bool IsWellFormedSessionKey([NotNullWhen(true)] string? sessionKey, int maxCacheKeyBytes)
         => !string.IsNullOrWhiteSpace(sessionKey) && !ExceedsCacheKeyBudget(sessionKey, maxCacheKeyBytes);
 
     /// <summary>

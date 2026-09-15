@@ -30,7 +30,7 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         services.AddSingleton<ITicketCacheService, TicketCacheService>();
-        services.AddSingleton<ISessionExpirationExtender, SessionExpirationExtender<TContext>>();
+        services.AddSingleton<IActiveSessionTracker, ActiveSessionTracker<TContext>>();
         services.AddSingleton<ITicketStore, DistributedCacheTicketStore>();
         services.AddScoped<ISessionManager, SessionManager<TUser, TContext>>();
 

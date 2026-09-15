@@ -341,40 +341,6 @@ public sealed class SessionManagerTests
         VerifyTicketCacheUntouched(ticketCache);
     }
 
-    [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task UntrackSessionAsync_WithBlankSessionKey_ReturnsFalseWithoutQueryingTheDatabase(string? sessionKey)
-    {
-        // Arrange — reaching the database is what the probe factory reports, so this also pins that the guard
-        // runs before the context is created.
-        var manager = CreateManager(new GuardProbeDbContextFactory(), new Mock<ITicketCacheService>());
-
-        // Act
-        var untracked = await manager.UntrackSessionAsync(sessionKey!, TestContext.Current.CancellationToken);
-
-        // Assert — a key no tracked session can carry is reported the same way by both removal methods.
-        untracked.ShouldBeFalse();
-    }
-
-    [Fact]
-    public async Task UntrackSessionAsync_WithSessionKeyOverTheBudget_ReturnsFalse()
-    {
-        // Arrange — the same two shapes RevokeSessionAsync refuses, so the pair stays in step.
-        var manager = CreateManager(new GuardProbeDbContextFactory(), new Mock<ITicketCacheService>());
-
-        // Act
-        var overByOneByte = await manager.UntrackSessionAsync(
-            CreateKey(Base64UrlAlphabet, MaxSessionKeyBytes + 1), TestContext.Current.CancellationToken);
-        var atTheCharacterBudget = await manager.UntrackSessionAsync(
-            CreateStandardBase64Key(MaxSessionKeyBytes), TestContext.Current.CancellationToken);
-
-        // Assert
-        overByOneByte.ShouldBeFalse();
-        atTheCharacterBudget.ShouldBeFalse();
-    }
-
     /// <summary>
     /// Builds a session manager over the given context factory and ticket cache. The user manager and the
     /// tenant authorization resolver are inert: no path exercised here reaches them.

@@ -70,9 +70,12 @@ public static class TestHostSessionExtensions
                 return Task.CompletedTask;
             };
 
-            // Track/untrack sessions in the BlueprintActiveSessions table on sign-in/sign-out.
+            // Create the BlueprintActiveSessions row on sign-in. There is no OnSigningOut counterpart:
+            // the ticket store removes the row, because the cookie handler hands it the session key while
+            // CookieSigningOutContext does not carry one. Recovering it here would mean calling
+            // HttpContext.AuthenticateAsync, which returns the handler's own in-flight authenticate task
+            // when sign-out is raised from inside that pass — and the request would await itself forever.
             options.Events.OnSignedIn = context => OnSignedInAsync(context, sessionLifetime);
-            options.Events.OnSigningOut = OnSigningOutAsync;
         });
 
         // Disable Identity's SecurityStamp re-validation on the application cookie. The principal
@@ -124,27 +127,5 @@ public static class TestHostSessionExtensions
             context.Request.Headers.UserAgent.ToString(),
             context.HttpContext.Connection.RemoteIpAddress?.ToString(),
             currentTenantId);
-    }
-
-    /// <summary>
-    /// Removes the session's tracking row when the user signs out.
-    /// </summary>
-    /// <param name="context">The cookie signing-out context.</param>
-    private static async Task OnSigningOutAsync(CookieSigningOutContext context)
-    {
-        var authenticateResult = await context.HttpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
-        if (!authenticateResult.Succeeded || authenticateResult.Properties == null)
-        {
-            return;
-        }
-
-        authenticateResult.Properties.Items.TryGetValue(SessionConstants.SessionKeyPropertyName, out var sessionKey);
-        if (string.IsNullOrEmpty(sessionKey))
-        {
-            return;
-        }
-
-        var sessionManager = context.HttpContext.RequestServices.GetRequiredService<ISessionManager>();
-        await sessionManager.UntrackSessionAsync(sessionKey);
     }
 }

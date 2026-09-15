@@ -97,19 +97,6 @@ public interface ISessionManager
     Task<bool> RevokeSessionAsync(string sessionKey, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Removes a session from the database without affecting the cache.
-    /// Used by cookie authentication events during normal logout flow.
-    /// For manual revocation (admin actions), use RevokeSessionAsync instead.
-    /// </summary>
-    /// <param name="sessionKey">
-    /// The session key to untrack. A blank or over-long key reports <see langword="false"/> rather than
-    /// raising, since no such session can have been tracked.
-    /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>True if the session was found and removed, false otherwise.</returns>
-    Task<bool> UntrackSessionAsync(string sessionKey, CancellationToken cancellationToken = default);
-
-    /// <summary>
     /// Gets all active sessions for a specific user.
     /// </summary>
     /// <param name="userId">The user ID.</param>

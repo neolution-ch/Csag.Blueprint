@@ -31,12 +31,16 @@ public static class CultureNormalizationHelper
             return exactMatch.Name;
         }
 
-        // Language-only match (e.g., "de" matches "de-CH")
+        // Language-level fallback. It never swaps one region for another: "fr-FR" must not
+        // silently resolve to "fr-CH" — ask for the exact tag if you want a regional variant.
+        // Narrowing is still allowed in either direction, so "de" resolves to "de-CH" and a
+        // region-qualified "en-GB" resolves to a bare supported "en".
         try
         {
             var requestedLanguage = new CultureInfo(normalizedRequest).TwoLetterISOLanguageName;
             var languageMatch = supportedCultures.FirstOrDefault(c =>
-                string.Equals(c.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase));
+                string.Equals(c.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase)
+                && !IsRegionSwap(normalizedRequest, c.Name));
             return languageMatch?.Name;
         }
         catch (CultureNotFoundException)
@@ -70,7 +74,7 @@ public static class CultureNormalizationHelper
             return exactMatch;
         }
 
-        // Language-only match (e.g., "de" matches "de-CH")
+        // Language-level fallback, with the same no-region-swap rule as FindMatchingCulture.
         try
         {
             var requestedLanguage = new CultureInfo(normalizedRequest).TwoLetterISOLanguageName;
@@ -79,7 +83,8 @@ public static class CultureNormalizationHelper
                 try
                 {
                     var supportedCulture = new CultureInfo(l);
-                    return string.Equals(supportedCulture.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase);
+                    return string.Equals(supportedCulture.TwoLetterISOLanguageName, requestedLanguage, StringComparison.OrdinalIgnoreCase)
+                        && !IsRegionSwap(normalizedRequest, l);
                 }
                 catch (CultureNotFoundException)
                 {
@@ -115,5 +120,22 @@ public static class CultureNormalizationHelper
     public static bool IsSupportedLanguage(string? requestedLanguage, IList<string> supportedLanguages)
     {
         return FindMatchingLanguage(requestedLanguage, supportedLanguages) != null;
+    }
+
+    /// <summary>
+    /// Determines whether falling back from <paramref name="requestedTag"/> to
+    /// <paramref name="supportedTag"/> would swap one region for another (e.g. "fr-FR" to "fr-CH").
+    /// Only same-language pairs reach this check, so it is purely about the region subtag: when both
+    /// sides carry one and they differ, the match is refused. If either side is a bare language the
+    /// fallback is a narrowing, not a swap, and is allowed.
+    /// </summary>
+    /// <param name="requestedTag">The normalized requested culture tag.</param>
+    /// <param name="supportedTag">The candidate supported culture tag.</param>
+    /// <returns>True if the pair would cross regions; otherwise, false.</returns>
+    private static bool IsRegionSwap(string requestedTag, string supportedTag)
+    {
+        return requestedTag.Contains('-', StringComparison.Ordinal)
+            && supportedTag.Contains('-', StringComparison.Ordinal)
+            && !string.Equals(requestedTag, supportedTag, StringComparison.OrdinalIgnoreCase);
     }
 }

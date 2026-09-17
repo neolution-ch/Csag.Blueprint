@@ -84,8 +84,10 @@ public static class EntityFilteringExtensions
     /// (midnight), not at the current instant. Use this for day-granular validity such as "valid on
     /// today's date"; use <see cref="WhereActiveNow{T}"/> when the exact instant matters.
     /// <para>
-    /// The day boundary is UTC, so an entity becoming active later today in a local timezone already
-    /// counts as active here.
+    /// Because the comparison happens at midnight, an entity whose <c>ActiveFrom</c> falls later today
+    /// is <b>not</b> active for this query — use <see cref="WhereActiveNow{T}"/> or
+    /// <see cref="WhereActiveAt{T}"/> if it should be. The day boundary is UTC, not the caller's local
+    /// timezone.
     /// </para>
     /// </summary>
     /// <typeparam name="T">The entity type that implements <see cref="IHasActiveRange"/>.</typeparam>

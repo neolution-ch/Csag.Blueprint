@@ -37,6 +37,17 @@ covers call sites that already know the language, such as an endpoint taking it 
 method EF Core could not translate). `ConfigureLocalizedTextIndexes` is gone — its index duplicated
 one already created by `ConfigureLocalizedTextConventions`.
 
+`ConfigureLocalizedTextConventions` resolves the localized-text foreign key from the relationship
+EF Core has discovered (or the application configured) instead of assuming it is named
+`<Owner>Id`. Entities whose foreign key is named otherwise were previously skipped in silence, so
+they got no cascade delete and no per-language unique index. If no relationship and no
+conventionally named property can be found, it now throws instead of skipping.
+
+`ConfigureGuidPrimaryKeyDefaults` also leaves keys that declare an explicit `HasDefaultValue(...)`
+untouched, as its documentation always promised. Previously only `HasDefaultValueSql(...)` was
+honoured, and adding `NEWSEQUENTIALID()` on top of a CLR default made EF Core throw when the model
+was built.
+
 Consuming applications need their own EF Core migration: the new contracts add columns to entities
 that adopt them, `ConfigureEntityFiltering` now also creates `IX_{table}_DeletedAt` and the
 composite `IX_{table}_ActiveRange`, and every single-column `Guid` primary key in the model gets a

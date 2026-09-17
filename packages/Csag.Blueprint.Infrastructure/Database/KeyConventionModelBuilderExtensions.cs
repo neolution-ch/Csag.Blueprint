@@ -36,7 +36,18 @@ public static class KeyConventionModelBuilderExtensions
             }
 
             var keyProperty = primaryKey.Properties[0];
-            if (keyProperty.ClrType != typeof(Guid) || keyProperty.GetDefaultValueSql() != null)
+            if (keyProperty.ClrType != typeof(Guid))
+            {
+                continue;
+            }
+
+            // Skip keys that already declare a default, whether as SQL or as a CLR value. EF Core
+            // rejects a property carrying both ("'DefaultValue' cannot be set ... at the same time as
+            // 'DefaultValueSql'"), so overwriting a consumer's HasDefaultValue(...) would not just
+            // ignore their configuration — it would throw when the model is built.
+            // TryGetDefaultValue is required here: GetDefaultValue() returns the CLR default
+            // (Guid.Empty) for an unconfigured property, so it cannot distinguish "unset" from "set".
+            if (keyProperty.GetDefaultValueSql() != null || keyProperty.TryGetDefaultValue(out _))
             {
                 continue;
             }

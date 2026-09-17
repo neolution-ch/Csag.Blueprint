@@ -81,8 +81,8 @@ the `Csag.Blueprint.Domain` contracts:
 
 `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveInRange()` and `WhereInactiveNow()` compare against
 an instant. `WhereActiveToday()` deliberately compares against **midnight of the current UTC day**, so
-an entity whose range starts later today already counts as active — use `WhereActiveNow()` when you
-need instant precision.
+an entity whose range starts later today does **not** yet count as active — use `WhereActiveNow()` when
+you need instant precision.
 
 **`IHasActiveRange` is deliberately not a global query filter.** An active range is evaluated against
 a point in time chosen by the caller, and "now" is only one of them — availability searches look at a

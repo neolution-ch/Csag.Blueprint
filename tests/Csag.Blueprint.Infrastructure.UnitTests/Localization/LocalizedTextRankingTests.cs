@@ -126,6 +126,73 @@ public sealed class LocalizedTextRankingTests
     }
 
     [Fact]
+    public void GetCurrentLanguageText_TieBreaksRegionalVariantsTheSameWayAsSql()
+    {
+        // Several regional variants qualify for the "same language as current" tier at once. The
+        // in-memory ranking must not just take the first in collection order — it has to agree with
+        // the ordering the translated query applies, or the two disagree about the same data.
+        using var db = new SqliteTestDatabase();
+        db.AddProduct("p", ("de-DE", "DE"), ("de-AT", "AT"));
+        db.Save();
+        db.Context.ChangeTracker.Clear();
+
+        var language = SqliteTestDatabase.Language(Current, Fallback);
+        var fromSql = db.Context.Products
+            .SelectWithCurrentLanguageText<Product, ProductText, string?>(language, (p, text) => text)
+            .Single();
+
+        // Deliberately the reverse of the alphabetical order the query uses.
+        var collection = new List<ProductText>
+        {
+            new() { Id = Guid.NewGuid(), LanguageCode = "de-DE", Text = "DE" },
+            new() { Id = Guid.NewGuid(), LanguageCode = "de-AT", Text = "AT" },
+        };
+
+        collection.GetCurrentLanguageText(language)?.Text.ShouldBe(fromSql);
+        fromSql.ShouldBe("AT");
+    }
+
+    [Fact]
+    public void GetCurrentLanguageText_PrefersTheFallbackCodeAmongVariantsOfTheCurrentLanguage()
+    {
+        // Mirrors the query's ThenByDescending(t => t.LanguageCode == fallbackLanguage), which only
+        // matters when the fallback is a region of the current language.
+        var collection = new List<ProductText>
+        {
+            new() { Id = Guid.NewGuid(), LanguageCode = "de-DE", Text = "DE" },
+            new() { Id = Guid.NewGuid(), LanguageCode = "de-AT", Text = "AT" },
+        };
+
+        collection.GetCurrentLanguageText(SqliteTestDatabase.Language("de-CH", "de-DE"))?.Text.ShouldBe("DE");
+    }
+
+    [Fact]
+    public void IncludeCurrentLanguageText_IsSubjectToFixUpWhenTheContextAlreadyTracksTexts()
+    {
+        // Documents the tracking caveat on IncludeCurrentLanguageText: the "at most one" result is a
+        // property of an untracked read, not of the filtered Include.
+        using var db = new SqliteTestDatabase();
+        db.AddProduct("p", ("de-CH", "Schweizerdeutsch"), ("de-DE", "Hochdeutsch"), ("en-GB", "British"));
+        db.Save();
+        db.Context.ChangeTracker.Clear();
+
+        _ = db.Context.Products.IncludeAllTexts<Product, ProductText>().Single();
+
+        var tracked = db.Context.Products
+            .IncludeCurrentLanguageText<Product, ProductText>(SqliteTestDatabase.Language(Current, Fallback))
+            .Single();
+        tracked.LocalizedTexts.Count.ShouldBe(3, "navigation fix-up restores the already-tracked texts");
+
+        db.Context.ChangeTracker.Clear();
+        var untracked = db.Context.Products
+            .AsNoTracking()
+            .IncludeCurrentLanguageText<Product, ProductText>(SqliteTestDatabase.Language(Current, Fallback))
+            .Single();
+        untracked.LocalizedTexts.ShouldHaveSingleItem();
+        untracked.LocalizedTexts.Single().Text.ShouldBe("Schweizerdeutsch");
+    }
+
+    [Fact]
     public void IncludeCurrentLanguageText_LoadsOnlyTheBestMatch()
     {
         using var db = new SqliteTestDatabase();

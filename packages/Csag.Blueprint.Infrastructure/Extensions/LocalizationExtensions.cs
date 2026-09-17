@@ -22,7 +22,18 @@ public static class LocalizationExtensions
 {
     /// <summary>
     /// Includes only the single best-matching localized text per entity, using the standard fallback
-    /// ranking. After the query runs, <c>LocalizedTexts</c> holds at most one element.
+    /// ranking.
+    /// <para>
+    /// <b>Tracking caveat.</b> The "at most one element" result only holds when the context is not
+    /// already tracking other texts for the same entity. This is a filtered <c>Include</c>, and EF Core
+    /// navigation fix-up adds every <typeparamref name="TLocalizedText"/> the change tracker already
+    /// holds back into <c>LocalizedTexts</c> — so after an earlier <see cref="IncludeAllTexts{TEntity, TLocalizedText}"/>
+    /// on the same context the collection comes back with all of them, not one. Call
+    /// <see cref="EntityFrameworkQueryableExtensions.AsNoTracking{TEntity}(IQueryable{TEntity})"/> first
+    /// (or use a fresh context) when you need the guarantee, or prefer
+    /// <see cref="SelectWithCurrentLanguageText{TEntity, TLocalizedText, TResult}"/>, which projects the
+    /// resolved text and is unaffected by fix-up.
+    /// </para>
     /// </summary>
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
@@ -184,8 +195,16 @@ public static class LocalizationExtensions
             return exactCurrent;
         }
 
-        // Priority 2: Same language as current (e.g., "de" or "de-DE" when current is "de-CH")
-        var sameLanguageAsCurrent = localizedTexts.FirstOrDefault(t => IsSameLanguage(t.LanguageCode, currentLanguagePart));
+        // Priority 2: Same language as current (e.g., "de" or "de-DE" when current is "de-CH").
+        // Several regional variants can qualify at once, so the tie-break has to match the one the
+        // SQL ranking applies (ThenByDescending(== fallback), ThenBy(LanguageCode)). Taking the first
+        // element in collection order instead would let the database and this method disagree about
+        // which translation "the" current-language text is.
+        var sameLanguageAsCurrent = localizedTexts
+            .Where(t => IsSameLanguage(t.LanguageCode, currentLanguagePart))
+            .OrderByDescending(t => string.Equals(t.LanguageCode, fallbackLanguage, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(t => t.LanguageCode, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
         if (sameLanguageAsCurrent != null)
         {
             return sameLanguageAsCurrent;
@@ -199,8 +218,12 @@ public static class LocalizationExtensions
             return exactFallback;
         }
 
-        // Priority 4: Same language as fallback (e.g., "en" or "en-US" when fallback is "en-GB")
-        return localizedTexts.FirstOrDefault(t => IsSameLanguage(t.LanguageCode, fallbackLanguagePart));
+        // Priority 4: Same language as fallback (e.g., "en" or "en-US" when fallback is "en-GB"),
+        // tie-broken by language code for the same reason as priority 2.
+        return localizedTexts
+            .Where(t => IsSameLanguage(t.LanguageCode, fallbackLanguagePart))
+            .OrderBy(t => t.LanguageCode, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 
     /// <summary>

@@ -2,6 +2,7 @@ namespace Csag.Blueprint.Infrastructure.Database;
 
 using Csag.Blueprint.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 /// <summary>
 /// Extension methods for configuring localized text relationships in Entity Framework Core models.
@@ -36,12 +37,13 @@ public static class LocalizationModelBuilderExtensions
                 continue;
             }
 
-            var foreignKeyPropertyName = entityType.ClrType.Name + "Id";
             var localizedEntityType = modelBuilder.Model.FindEntityType(localizedTextType);
-            if (localizedEntityType == null || localizedEntityType.FindProperty(foreignKeyPropertyName) == null)
+            if (localizedEntityType == null)
             {
                 continue;
             }
+
+            var foreignKeyPropertyNames = ResolveOwnerForeignKey(localizedEntityType, entityType.ClrType);
 
             var inverseNavigation = localizedEntityType.GetNavigations()
                 .FirstOrDefault(n => n.TargetEntityType.ClrType == entityType.ClrType)?.Name;
@@ -53,22 +55,23 @@ public static class LocalizationModelBuilderExtensions
             {
                 relationshipBuilder
                     .WithOne(inverseNavigation)
-                    .HasForeignKey(foreignKeyPropertyName)
+                    .HasForeignKey(foreignKeyPropertyNames)
                     .OnDelete(DeleteBehavior.Cascade);
             }
             else
             {
                 relationshipBuilder
                     .WithOne()
-                    .HasForeignKey(foreignKeyPropertyName)
+                    .HasForeignKey(foreignKeyPropertyNames)
                     .OnDelete(DeleteBehavior.Cascade);
             }
 
             var localizedTableName = localizedEntityType.GetTableName();
+            var indexProperties = new List<string>(foreignKeyPropertyNames) { nameof(ILocalizedText.LanguageCode) };
             modelBuilder.Entity(localizedTextType)
-                .HasIndex(foreignKeyPropertyName, nameof(ILocalizedText.LanguageCode))
+                .HasIndex([.. indexProperties])
                 .IsUnique()
-                .HasDatabaseName($"IX_{localizedTableName}_{foreignKeyPropertyName}_LanguageCode_Unique");
+                .HasDatabaseName($"IX_{localizedTableName}_{string.Join('_', foreignKeyPropertyNames)}_LanguageCode_Unique");
         }
 
         return modelBuilder;
@@ -157,5 +160,43 @@ public static class LocalizationModelBuilderExtensions
             .ConfigureLocalizedTextConstraints()
             .ConfigureLocalizedTextRelationship<TEntity, TLocalizedText>(foreignKeyPropertyName)
             .ConfigureLocalizedTextUniqueConstraint<TLocalizedText>(foreignKeyPropertyName);
+    }
+
+    /// <summary>
+    /// Resolves the foreign key on the localized text entity that points back at its owner.
+    /// </summary>
+    /// <remarks>
+    /// The contract only requires the <c>LocalizedTexts</c> navigation, never a foreign key named
+    /// <c>&lt;Owner&gt;Id</c>. Assuming that name meant a consumer who called theirs anything else was
+    /// silently skipped — no cascade delete and, more importantly, no per-language unique index —
+    /// even though this method claims to configure every <see cref="IHasLocalizedTexts{T}"/> entity.
+    /// So the relationship EF has already discovered (or the consumer configured) wins, and the
+    /// conventional name is only the fallback for a model where none exists yet. If neither resolves,
+    /// we fail loudly rather than quietly leaving the entity unconfigured.
+    /// </remarks>
+    /// <param name="localizedEntityType">The localized text entity type.</param>
+    /// <param name="ownerClrType">The CLR type of the owning entity.</param>
+    /// <returns>The foreign key property names, in key order.</returns>
+    private static string[] ResolveOwnerForeignKey(IReadOnlyEntityType localizedEntityType, Type ownerClrType)
+    {
+        var ownerForeignKey = localizedEntityType.GetForeignKeys()
+            .FirstOrDefault(fk => fk.PrincipalEntityType.ClrType == ownerClrType);
+
+        if (ownerForeignKey != null)
+        {
+            return [.. ownerForeignKey.Properties.Select(p => p.Name)];
+        }
+
+        var conventionalName = ownerClrType.Name + "Id";
+        if (localizedEntityType.FindProperty(conventionalName) != null)
+        {
+            return [conventionalName];
+        }
+
+        throw new InvalidOperationException(
+            $"Cannot configure localized texts for '{ownerClrType.Name}': no foreign key from " +
+            $"'{localizedEntityType.ShortName()}' back to it was found, and there is no '{conventionalName}' " +
+            $"property to fall back on. Configure the relationship explicitly in OnModelCreating before " +
+            $"calling {nameof(ConfigureLocalizedTextConventions)}().");
     }
 }

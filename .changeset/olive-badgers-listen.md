@@ -12,15 +12,14 @@ and join entities, none of which need a `DbSet` — silently received none of th
 `ISoftDeletable` that meant no global query filter at all, so soft-deleted rows came back in every
 query.
 
-The conventions now run from `BlueprintModelCustomizer`, an `IModelCustomizer` registered by
-`BlueprintDbContext.OnConfiguring`, which applies them once `OnModelCreating` has run in full.
+The conventions now run from `BlueprintModelFinalizingConvention`, registered in
+`ConfigureConventions`, which applies them once EF Core has finished building the model.
 Registration order no longer matters.
 
 The `Configure*` extension methods are unchanged and remain the entry point for contexts that do not
 derive from `BlueprintDbContext`.
 
-**Two things to check when upgrading:** a context overriding `OnConfiguring` must call
-`base.OnConfiguring`, or no conventions are applied; and a context replacing `IModelCustomizer`
-should derive from `BlueprintModelCustomizer` rather than `ModelCustomizer`. Entities that were
-previously missed now gain a soft-delete filter, a `DeletedAt` index and a `NEWSEQUENTIALID()` key
-default, which produces a migration.
+**When upgrading:** a context overriding `ConfigureConventions` must call
+`base.ConfigureConventions`, or no conventions are applied. Entity types that were previously missed
+now gain a soft-delete filter, a `DeletedAt` index and a `NEWSEQUENTIALID()` key default, which
+produces a migration.

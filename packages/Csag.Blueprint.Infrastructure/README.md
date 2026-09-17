@@ -71,27 +71,35 @@ must stay an explicit, reviewed `IgnoreQueryFilters(BlueprintQueryFilters.Tenant
 ### When the conventions are applied
 
 `BlueprintDbContext` does **not** apply the contract-driven conventions inside `OnModelCreating`. It
-replaces EF Core's `IModelCustomizer` with `BlueprintModelCustomizer`, which runs `OnModelCreating`
-first and applies the conventions to the finished model afterwards.
+registers `BlueprintModelFinalizingConvention` in `ConfigureConventions`, which applies them once EF
+Core has finished building the model.
 
 That ordering matters. Applied inline, the conventions would only see the entity types discovered up
 to that point, so anything your context registers *after* its `base.OnModelCreating(builder)` call —
 the usual shape of `ApplyConfigurationsFromAssembly`, owned types and join entities, none of which
 need a `DbSet` — would silently receive none of them. For `ISoftDeletable` that means no global query
-filter at all, and soft-deleted rows coming back in every query. Running afterwards removes the
+filter at all, and soft-deleted rows coming back in every query. Running at finalization removes the
 ordering requirement entirely: register entity types wherever you like.
 
-Two consequences worth knowing:
+A model convention is used rather than a replaced `IModelCustomizer` because registering that service
+means modifying `DbContextOptions` from `OnConfiguring`, which EF Core forbids once `DbContext`
+pooling is enabled:
 
-- If you override `OnConfiguring`, **call `base.OnConfiguring`**. That is where the customizer is
-  registered; without it none of the conventions — tenant isolation and soft-delete filtering
-  included — are applied.
-- If you replace `IModelCustomizer` yourself, derive from `BlueprintModelCustomizer` rather than from
-  `ModelCustomizer`, or the blueprint conventions are lost.
+```
+'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is enabled.
+```
 
-Applications that do not derive from `BlueprintDbContext` can keep calling the
-`Configure*` extension methods directly from their own `OnModelCreating` — they are unchanged, and
-remain the supported entry point for that case. Call them last.
+Since `AddPooledDbContextFactory` is a normal way to register a context, that approach is not
+available to a library. A convention touches neither options nor the service provider, so it works
+under pooling.
+
+If you override `ConfigureConventions`, **call `base.ConfigureConventions`** — that is where the
+convention is registered, and without it none of the blueprint conventions, tenant isolation and
+soft-delete filtering included, are applied.
+
+Applications that do not derive from `BlueprintDbContext` can keep calling the `Configure*` extension
+methods directly from their own `OnModelCreating` — they are unchanged, and remain the supported
+entry point for that case. Call them last.
 
 ### Query extensions for the domain contracts
 

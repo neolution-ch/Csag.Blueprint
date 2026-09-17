@@ -19,7 +19,9 @@ public static class ContractModelBuilderExtensions
     {
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            if (typeof(IHasInternalName).IsAssignableFrom(entityType.ClrType))
+            // Only the type that declares the contract: in a TPH hierarchy every mapped type reports
+            // the same table, so configuring each of them redefines one index repeatedly.
+            if (EntityFilteringModelBuilderExtensions.DeclaresContract<IHasInternalName>(entityType))
             {
                 var tableName = entityType.GetTableName();
 
@@ -50,7 +52,7 @@ public static class ContractModelBuilderExtensions
     {
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
-            if (typeof(ILocalizedText).IsAssignableFrom(entityType.ClrType))
+            if (EntityFilteringModelBuilderExtensions.DeclaresContract<ILocalizedText>(entityType))
             {
                 var tableName = entityType.GetTableName();
 

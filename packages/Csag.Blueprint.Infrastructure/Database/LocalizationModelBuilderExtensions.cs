@@ -31,6 +31,16 @@ public static class LocalizationModelBuilderExtensions
                 continue;
             }
 
+            // Type.GetInterfaces() reports interfaces inherited from base classes too, so every derived
+            // type in a hierarchy re-reports its base's contract. Configuring it again from the derived
+            // type looks for a foreign key whose principal is the derived CLR type, which does not
+            // exist — the relationship belongs to the base. Only the type that introduces the contract
+            // is configured; a derived type adding a *different* localized-text contract still is.
+            if (entityType.BaseType != null && localizedContract.IsAssignableFrom(entityType.BaseType.ClrType))
+            {
+                continue;
+            }
+
             var localizedTextType = localizedContract.GetGenericArguments()[0];
             if (!typeof(ILocalizedText).IsAssignableFrom(localizedTextType))
             {

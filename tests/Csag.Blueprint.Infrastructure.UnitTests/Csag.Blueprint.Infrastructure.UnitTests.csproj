@@ -8,6 +8,8 @@
     <PackageReference Include="AutoFixture.Xunit3" />
     <PackageReference Include="AutoFixture.AutoMoq" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <!-- SQLite backs the convention/query-translation tests: the in-memory provider never translates to SQL. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
   </ItemGroup>
 

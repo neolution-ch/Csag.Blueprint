@@ -4,6 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Database.Configurations;
+using Csag.Blueprint.Infrastructure.Database.Conventions;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -149,12 +150,32 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
         builder.ApplyConfiguration(new BlueprintTranslationConfiguration());
         builder.ApplyConfiguration(new BlueprintUserConfiguration<TAppUser>());
 
-        // Configure multi-tenancy filters and indexes.
-        // Pass 'this' so the extension method builds expressions of the form:
-        //   Expression.Property(Expression.Constant(this, typeof(BlueprintDbContext<...>)), "CurrentTenantId")
-        // EF Core's ParameterExtractingExpressionVisitor detects the DbContext-typed constant and
-        // re-evaluates the property against the current executing context per query,
-        // not the model-building instance captured at startup.
-        builder.ConfigureBlueprintMultiTenancy<TAppTenant, BlueprintDbContext<TAppTenant, TAppUser, TAppRole>>(this);
+        // The contract-driven conventions (multi-tenancy, contract constraints, localized texts,
+        // soft-delete filtering, sequential Guid keys) are NOT applied here. They run at model
+        // finalization via BlueprintModelFinalizingConvention, registered in ConfigureConventions,
+        // so entity types an application registers after calling base.OnModelCreating are covered
+        // as well. See that convention for why.
+    }
+
+    /// <summary>
+    /// Registers the convention that applies the blueprint model conventions once the model is complete.
+    /// </summary>
+    /// <remarks>
+    /// A derived context that overrides this method <b>must</b> call <c>base.ConfigureConventions</c>, or
+    /// the blueprint conventions — tenant isolation and soft-delete filtering among them — are never
+    /// applied.
+    /// </remarks>
+    /// <param name="configurationBuilder">The builder used to set the conventions for this context.</param>
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(configurationBuilder);
+
+        base.ConfigureConventions(configurationBuilder);
+
+        // Pass 'this' so the tenant filter closes over a DbContext-typed constant. EF Core's
+        // ParameterExtractingExpressionVisitor detects it and re-evaluates CurrentTenantId against the
+        // executing context per query, rather than baking in the model-building instance.
+        configurationBuilder.Conventions.Add(
+            _ => new BlueprintModelFinalizingConvention<TAppTenant, TAppUser, TAppRole>(this));
     }
 }

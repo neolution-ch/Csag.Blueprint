@@ -42,6 +42,11 @@ This is the line to hold when extending the packages. If a new type would need t
 | `IAuditable` | Marks an entity for automatic timestamp management (`CreatedAt`, `UpdatedAt`) by infrastructure interceptors. |
 | `IMustHaveTenant` | Marks an entity as tenant-scoped and requires a `TenantId`. Used by query filters and save interceptors. |
 | `IUserProfileClaimsSource` | Exposes user profile values that should become claims (such as display name, preferred language). |
+| `ISoftDeletable` | Marks an entity as soft deletable via `DeletedAt`. Infrastructure registers a named global query filter that hides deleted rows. |
+| `IHasActiveRange` | Marks an entity with an optional `ActiveFrom`/`ActiveUntil` validity window. Deliberately **not** a global filter — the point in time is the caller's choice. |
+| `IHasInternalName` | Marks an entity carrying a stable, non-localized key for system identification and reporting (indexed, max 200 chars). |
+| `ILocalizedText` | A translation row: a `LanguageCode` and its `Text`. |
+| `IHasLocalizedTexts<TLocalizedText>` | Marks an entity owning a collection of `ILocalizedText` rows, one per language. |
 
 ### Base identity and tenant types
 

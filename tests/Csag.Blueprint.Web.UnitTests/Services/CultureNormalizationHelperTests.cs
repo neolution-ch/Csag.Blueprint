@@ -68,6 +68,29 @@ public sealed class CultureNormalizationHelperTests
         CultureNormalizationHelper.FindMatchingCulture("de", supported).ShouldBe("de-CH");
     }
 
+    [Theory]
+    [InlineData("en-US-u-nu-latn", "en-US")] // same region, extension only on the request
+    [InlineData("zh-Hans-CN", "zh-Hans")] // same script, region only on the request
+    [InlineData("de-Latn-CH", "de-CH")] // same region, script only on the request
+    public void FindMatchingCulture_NarrowsWhenTheCandidateLeavesSubtagsUnspecified(string requested, string supported)
+    {
+        // The no-region-swap rule compares subtags, not whole tags: a candidate that does not specify a
+        // region or script is a narrowing target, not a swap. Comparing full tags rejected all of these.
+        CultureNormalizationHelper.FindMatchingCulture(requested, new List<CultureInfo> { new(supported) })
+            .ShouldBe(supported);
+    }
+
+    [Theory]
+    [InlineData("zh-Hant-CN", "zh-Hans-CN")] // identical region, different script
+    [InlineData("zh-Hans", "zh-Hant")]
+    public void FindMatchingCulture_DoesNotCrossScripts(string requested, string supported)
+    {
+        // Serving Simplified where Traditional was asked for is the same class of mistake as serving
+        // another region, and the regions here are identical, so a region-only check would allow it.
+        CultureNormalizationHelper.FindMatchingCulture(requested, new List<CultureInfo> { new(supported) })
+            .ShouldBeNull();
+    }
+
     [Fact]
     public void FindMatchingCulture_EmptySupportedList_ReturnsNull()
     {

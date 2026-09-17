@@ -192,6 +192,46 @@ public sealed class LocalizedTextRankingTests
         untracked.LocalizedTexts.Single().Text.ShouldBe("Schweizerdeutsch");
     }
 
+    [Theory]
+    [InlineData("DE")]
+    [InlineData("De-CH")]
+    [InlineData("DE-CH")]
+    public void CurrentLanguageText_MatchesRegardlessOfStoredCasing(string storedLanguageCode)
+    {
+        // Language tags are case-insensitive by definition, but SQL equality follows the database
+        // collation. Under a case-sensitive one a stored "DE" resolved in memory and to null in SQL.
+        using var db = new SqliteTestDatabase();
+        db.AddProduct("p", (storedLanguageCode, "Text"));
+        db.Save();
+        db.Context.ChangeTracker.Clear();
+
+        var language = SqliteTestDatabase.Language(Current, Fallback);
+
+        var fromSql = db.Context.Products
+            .SelectWithCurrentLanguageText<Product, ProductText, string?>(language, (p, text) => text)
+            .Single();
+
+        db.Context.ChangeTracker.Clear();
+        var loaded = db.Context.Products.IncludeAllTexts<Product, ProductText>().Single();
+
+        fromSql.ShouldBe("Text");
+        loaded.LocalizedTexts.GetCurrentLanguageText(language)?.Text.ShouldBe(fromSql);
+    }
+
+    [Fact]
+    public void WhereHasCurrentLanguageText_MatchesRegardlessOfStoredCasing()
+    {
+        using var db = new SqliteTestDatabase();
+        db.AddProduct("p", ("DE", "Text"));
+        db.Save();
+        db.Context.ChangeTracker.Clear();
+
+        db.Context.Products
+            .WhereHasCurrentLanguageText<Product, ProductText>(SqliteTestDatabase.Language(Current, Fallback))
+            .Count()
+            .ShouldBe(1);
+    }
+
     [Fact]
     public void IncludeCurrentLanguageText_LoadsOnlyTheBestMatch()
     {

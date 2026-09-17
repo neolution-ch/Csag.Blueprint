@@ -42,6 +42,10 @@ public static class LocalizationExtensions
     /// <returns>Query including at most one localized text per entity.</returns>
     [SuppressMessage("Globalization", "CA1307:Specify StringComparison for clarity", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
     [SuppressMessage("Globalization", "CA1310:Specify StringComparison for correctness", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
+    [SuppressMessage("SonarQube", "S4056", Justification = "The IFormatProvider overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1304:Specify CultureInfo", Justification = "The CultureInfo overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1311:Specify a culture or use an invariant version", Justification = "The invariant overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1862:Use the StringComparison method overloads", Justification = "StringComparison overloads cannot be translated to SQL by EF Core; ToLower is the translatable way to make the comparison collation-independent.")]
     public static IQueryable<TEntity> IncludeCurrentLanguageText<TEntity, TLocalizedText>(
         this IQueryable<TEntity> query,
         ICurrentLanguageProvider languageProvider)
@@ -50,8 +54,12 @@ public static class LocalizationExtensions
     {
         ArgumentNullException.ThrowIfNull(languageProvider);
 
-        var currentLanguage = languageProvider.CurrentLanguageCode;
-        var fallbackLanguage = languageProvider.FallbackLanguageCode;
+        // Language tags are case-insensitive by definition, but SQL equality follows the database
+        // collation: under a case-sensitive one (SQLite's default, and a valid SQL Server choice) a
+        // stored "DE" did not match a current language of "de-CH" here, while the in-memory helper
+        // matched it. Lowering both sides makes the comparison deterministic on every provider.
+        var currentLanguage = Normalize(languageProvider.CurrentLanguageCode);
+        var fallbackLanguage = Normalize(languageProvider.FallbackLanguageCode);
         var currentLanguagePart = LanguagePart(currentLanguage);
         var fallbackLanguagePart = LanguagePart(fallbackLanguage);
         var currentRegionalPrefix = currentLanguagePart + "-";
@@ -59,14 +67,14 @@ public static class LocalizationExtensions
 
         return query.Include(e => e.LocalizedTexts
             .Where(t =>
-                t.LanguageCode == currentLanguagePart ||
-                t.LanguageCode == fallbackLanguagePart ||
-                t.LanguageCode.StartsWith(currentRegionalPrefix) ||
-                t.LanguageCode.StartsWith(fallbackRegionalPrefix))
-            .OrderByDescending(t => t.LanguageCode == currentLanguage)
-            .ThenByDescending(t => t.LanguageCode == currentLanguagePart || t.LanguageCode.StartsWith(currentRegionalPrefix))
-            .ThenByDescending(t => t.LanguageCode == fallbackLanguage)
-            .ThenBy(t => t.LanguageCode)
+                t.LanguageCode.ToLower() == currentLanguagePart ||
+                t.LanguageCode.ToLower() == fallbackLanguagePart ||
+                t.LanguageCode.ToLower().StartsWith(currentRegionalPrefix) ||
+                t.LanguageCode.ToLower().StartsWith(fallbackRegionalPrefix))
+            .OrderByDescending(t => t.LanguageCode.ToLower() == currentLanguage)
+            .ThenByDescending(t => t.LanguageCode.ToLower() == currentLanguagePart || t.LanguageCode.ToLower().StartsWith(currentRegionalPrefix))
+            .ThenByDescending(t => t.LanguageCode.ToLower() == fallbackLanguage)
+            .ThenBy(t => t.LanguageCode.ToLower())
             .Take(1));
     }
 
@@ -136,6 +144,10 @@ public static class LocalizationExtensions
     /// <returns>Query filtered to entities with text in the current language.</returns>
     [SuppressMessage("Globalization", "CA1307:Specify StringComparison for clarity", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
     [SuppressMessage("Globalization", "CA1310:Specify StringComparison for correctness", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
+    [SuppressMessage("SonarQube", "S4056", Justification = "The IFormatProvider overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1304:Specify CultureInfo", Justification = "The CultureInfo overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1311:Specify a culture or use an invariant version", Justification = "The invariant overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1862:Use the StringComparison method overloads", Justification = "StringComparison overloads cannot be translated to SQL by EF Core; ToLower is the translatable way to make the comparison collation-independent.")]
     public static IQueryable<TEntity> WhereHasCurrentLanguageText<TEntity, TLocalizedText>(
         this IQueryable<TEntity> query,
         ICurrentLanguageProvider languageProvider)
@@ -144,11 +156,11 @@ public static class LocalizationExtensions
     {
         ArgumentNullException.ThrowIfNull(languageProvider);
 
-        var currentLanguagePart = LanguagePart(languageProvider.CurrentLanguageCode);
+        var currentLanguagePart = LanguagePart(Normalize(languageProvider.CurrentLanguageCode));
         var currentRegionalPrefix = currentLanguagePart + "-";
 
         return query.Where(e => e.LocalizedTexts.Any(t =>
-            t.LanguageCode == currentLanguagePart || t.LanguageCode.StartsWith(currentRegionalPrefix)));
+            t.LanguageCode.ToLower() == currentLanguagePart || t.LanguageCode.ToLower().StartsWith(currentRegionalPrefix)));
     }
 
     /// <summary>
@@ -303,6 +315,10 @@ public static class LocalizationExtensions
     /// <returns>An expression selecting the best matching text, or null when no language matches.</returns>
     [SuppressMessage("Globalization", "CA1307:Specify StringComparison for clarity", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
     [SuppressMessage("Globalization", "CA1310:Specify StringComparison for correctness", Justification = "StringComparison overloads cannot be translated to SQL by EF Core.")]
+    [SuppressMessage("SonarQube", "S4056", Justification = "The IFormatProvider overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1304:Specify CultureInfo", Justification = "The CultureInfo overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1311:Specify a culture or use an invariant version", Justification = "The invariant overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1862:Use the StringComparison method overloads", Justification = "StringComparison overloads cannot be translated to SQL by EF Core; ToLower is the translatable way to make the comparison collation-independent.")]
     public static Expression<Func<TEntity, string?>> CurrentLanguageTextExpression<TEntity, TLocalizedText>(
         ICurrentLanguageProvider languageProvider)
         where TEntity : class, IHasLocalizedTexts<TLocalizedText>
@@ -310,25 +326,27 @@ public static class LocalizationExtensions
     {
         ArgumentNullException.ThrowIfNull(languageProvider);
 
-        var currentLanguage = languageProvider.CurrentLanguageCode;
-        var fallbackLanguage = languageProvider.FallbackLanguageCode;
+        // Language tags are case-insensitive by definition, but SQL equality follows the database
+        // collation: under a case-sensitive one (SQLite's default, and a valid SQL Server choice) a
+        // stored "DE" did not match a current language of "de-CH" here, while the in-memory helper
+        // matched it. Lowering both sides makes the comparison deterministic on every provider.
+        var currentLanguage = Normalize(languageProvider.CurrentLanguageCode);
+        var fallbackLanguage = Normalize(languageProvider.FallbackLanguageCode);
         var currentLanguagePart = LanguagePart(currentLanguage);
         var fallbackLanguagePart = LanguagePart(fallbackLanguage);
         var currentRegionalPrefix = currentLanguagePart + "-";
         var fallbackRegionalPrefix = fallbackLanguagePart + "-";
 
-        // Case sensitivity follows the database collation here and OrdinalIgnoreCase in the in-memory
-        // overload; both are case-insensitive under the default SQL Server collation.
         return entity => entity.LocalizedTexts
             .Where(t =>
-                t.LanguageCode == currentLanguagePart ||
-                t.LanguageCode == fallbackLanguagePart ||
-                t.LanguageCode.StartsWith(currentRegionalPrefix) ||
-                t.LanguageCode.StartsWith(fallbackRegionalPrefix))
-            .OrderByDescending(t => t.LanguageCode == currentLanguage)
-            .ThenByDescending(t => t.LanguageCode == currentLanguagePart || t.LanguageCode.StartsWith(currentRegionalPrefix))
-            .ThenByDescending(t => t.LanguageCode == fallbackLanguage)
-            .ThenBy(t => t.LanguageCode)
+                t.LanguageCode.ToLower() == currentLanguagePart ||
+                t.LanguageCode.ToLower() == fallbackLanguagePart ||
+                t.LanguageCode.ToLower().StartsWith(currentRegionalPrefix) ||
+                t.LanguageCode.ToLower().StartsWith(fallbackRegionalPrefix))
+            .OrderByDescending(t => t.LanguageCode.ToLower() == currentLanguage)
+            .ThenByDescending(t => t.LanguageCode.ToLower() == currentLanguagePart || t.LanguageCode.ToLower().StartsWith(currentRegionalPrefix))
+            .ThenByDescending(t => t.LanguageCode.ToLower() == fallbackLanguage)
+            .ThenBy(t => t.LanguageCode.ToLower())
             .Select(t => t.Text)
             .FirstOrDefault();
     }
@@ -376,6 +394,13 @@ public static class LocalizationExtensions
 
         return query.Select(Expression.Lambda<Func<TEntity, TResult>>(body, entityParameter));
     }
+
+    /// <summary>
+    /// Lowercases a language tag so comparisons do not depend on the database collation.
+    /// </summary>
+    /// <param name="languageCode">The language code to normalize.</param>
+    /// <returns>The lowercased language code.</returns>
+    private static string Normalize(string languageCode) => languageCode.ToLowerInvariant();
 
     /// <summary>
     /// Returns the language part of a language code, e.g. "de" for both "de" and "de-CH".

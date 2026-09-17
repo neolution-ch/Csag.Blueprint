@@ -77,7 +77,13 @@ public sealed class BlueprintModelFinalizingConvention<TAppTenant, TAppUser, TAp
         builder.ConfigureLocalizedTextConventions();
         builder.ConfigureEntityFiltering();
 
-        // Last, so entity types introduced by the conventions above are covered as well.
-        builder.ConfigureGuidPrimaryKeyDefaults();
+        // NEWSEQUENTIALID() is a SQL Server function, so this convention only applies there. Applying
+        // it regardless of provider produced a schema that looked fine — SQLite happily accepts the
+        // DDL — and then failed on every insert with a DbUpdateException, because the function does
+        // not exist. Runs last, so entity types introduced by the conventions above are covered too.
+        if (this.context.Database.IsSqlServer())
+        {
+            builder.ConfigureGuidPrimaryKeyDefaults();
+        }
     }
 }

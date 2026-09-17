@@ -18,7 +18,14 @@ public static class KeyConventionModelBuilderExtensions
     /// fragmentation stays low.
     /// <para>
     /// Keys configured explicitly elsewhere are left untouched, and keys assigned in application code
-    /// keep working — the default only applies when no value is provided. This is SQL Server specific.
+    /// keep working — the default only applies when no value is provided.
+    /// </para>
+    /// <para>
+    /// <b>SQL Server only.</b> <c>NEWSEQUENTIALID()</c> does not exist on other providers, and they fail
+    /// late rather than loudly: SQLite accepts the generated DDL and then rejects every insert with a
+    /// <c>DbUpdateException</c>. <see cref="Conventions.BlueprintModelFinalizingConvention{TAppTenant, TAppUser, TAppRole}"/>
+    /// applies this only when the context is running on SQL Server; call it directly only under the same
+    /// condition.
     /// </para>
     /// </summary>
     /// <param name="modelBuilder">The model builder to configure.</param>

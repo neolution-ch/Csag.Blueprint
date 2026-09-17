@@ -23,3 +23,12 @@ derive from `BlueprintDbContext`.
 `base.ConfigureConventions`, or no conventions are applied. Entity types that were previously missed
 now gain a soft-delete filter, a `DeletedAt` index and a `NEWSEQUENTIALID()` key default, which
 produces a migration.
+
+`ConfigureGuidPrimaryKeyDefaults` is applied only when the context runs on SQL Server.
+`NEWSEQUENTIALID()` does not exist elsewhere, and other providers fail late rather than loudly:
+SQLite accepts the generated DDL and then rejects every insert with a `DbUpdateException`.
+
+The localized-text queries compare language codes case-insensitively on every provider. SQL equality
+follows the database collation, so under a case-sensitive one — SQLite's default, and a valid SQL
+Server choice — a stored `DE` resolved through the in-memory helper but to `null` in SQL. Language
+tags are case-insensitive by definition, so the query side was the one that was wrong.

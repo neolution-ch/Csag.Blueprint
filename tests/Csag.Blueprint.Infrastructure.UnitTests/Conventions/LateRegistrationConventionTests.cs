@@ -54,8 +54,10 @@ public sealed class LateRegistrationConventionTests
             .ShouldBe(Describe(context.Model.FindEntityType(typeof(EarlyNote))!));
     }
 
+    // SQL Server, because one of the conventions under test (the NEWSEQUENTIALID key default) only
+    // applies on that provider. Building a model opens no connection, so the server is never reached.
     private static LateRegistrationDbContext Build()
         => new(new DbContextOptionsBuilder<LateRegistrationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseSqlServer("Server=nowhere;Database=late-registration;Trusted_Connection=True;")
             .Options);
 }

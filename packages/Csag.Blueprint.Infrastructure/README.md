@@ -68,31 +68,6 @@ var deleted = await context.Pedalos.OnlySoftDeleted().ToListAsync(ct);
 There is deliberately no convenience extension for opting out of the tenant filter: crossing tenants
 must stay an explicit, reviewed `IgnoreQueryFilters(BlueprintQueryFilters.Tenant)` at the call site.
 
-### When the conventions are applied
-
-`BlueprintDbContext` does **not** apply the contract-driven conventions inside `OnModelCreating`. It
-replaces EF Core's `IModelCustomizer` with `BlueprintModelCustomizer`, which runs `OnModelCreating`
-first and applies the conventions to the finished model afterwards.
-
-That ordering matters. Applied inline, the conventions would only see the entity types discovered up
-to that point, so anything your context registers *after* its `base.OnModelCreating(builder)` call —
-the usual shape of `ApplyConfigurationsFromAssembly`, owned types and join entities, none of which
-need a `DbSet` — would silently receive none of them. For `ISoftDeletable` that means no global query
-filter at all, and soft-deleted rows coming back in every query. Running afterwards removes the
-ordering requirement entirely: register entity types wherever you like.
-
-Two consequences worth knowing:
-
-- If you override `OnConfiguring`, **call `base.OnConfiguring`**. That is where the customizer is
-  registered; without it none of the conventions — tenant isolation and soft-delete filtering
-  included — are applied.
-- If you replace `IModelCustomizer` yourself, derive from `BlueprintModelCustomizer` rather than from
-  `ModelCustomizer`, or the blueprint conventions are lost.
-
-Applications that do not derive from `BlueprintDbContext` can keep calling the
-`Configure*` extension methods directly from their own `OnModelCreating` — they are unchanged, and
-remain the supported entry point for that case. Call them last.
-
 ### Query extensions for the domain contracts
 
 `EntityFilteringExtensions` and `LocalizationExtensions` provide the query-side counterparts to

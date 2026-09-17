@@ -4,9 +4,11 @@ using System.Diagnostics.CodeAnalysis;
 using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Database.Configurations;
+using Csag.Blueprint.Infrastructure.Database.Conventions;
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 /// <summary>
 /// Blueprint base database context for Identity, multi-tenancy, and shared business entities.
@@ -17,7 +19,7 @@ using Microsoft.EntityFrameworkCore;
 /// <typeparam name="TAppRole">The concrete role entity type, must derive from <see cref="BlueprintRole"/>.</typeparam>
 [SuppressMessage("SonarQube", "S1200", Justification = "A DbContext necessarily aggregates all entity type dependencies.")]
 [SuppressMessage("SonarQube", "S2436", Justification = "Three generic parameters are required to support tenant, user, and role entity customization.")]
-public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbContext<TAppUser, TAppRole, Guid>, IDataProtectionKeyContext
+public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbContext<TAppUser, TAppRole, Guid>, IDataProtectionKeyContext, IBlueprintModelConventions
     where TAppTenant : BlueprintTenant
     where TAppUser : BlueprintUser
     where TAppRole : BlueprintRole
@@ -126,6 +128,31 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
     public Guid? CurrentTenantId => this.tenantIdAccessor();
 
     /// <summary>
+    /// Applies the contract-driven blueprint conventions to the completed model.
+    /// </summary>
+    /// <remarks>
+    /// Called by <see cref="BlueprintModelCustomizer"/> after <c>OnModelCreating</c> has run in full, so
+    /// that entity types the application registers after its <c>base.OnModelCreating</c> call are covered
+    /// too. Applying these inline in <c>OnModelCreating</c> silently skipped them.
+    /// </remarks>
+    /// <param name="modelBuilder">The model builder holding the completed model.</param>
+    public void ApplyBlueprintConventions(ModelBuilder modelBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        // Pass 'this' so the tenant filter closes over a DbContext-typed constant. EF Core's
+        // ParameterExtractingExpressionVisitor detects it and re-evaluates CurrentTenantId against the
+        // executing context per query, rather than baking in the model-building instance.
+        modelBuilder.ConfigureBlueprintMultiTenancy<TAppTenant, BlueprintDbContext<TAppTenant, TAppUser, TAppRole>>(this);
+        modelBuilder.ConfigureContractConstraints();
+        modelBuilder.ConfigureLocalizedTextConventions();
+        modelBuilder.ConfigureEntityFiltering();
+
+        // Last, so entity types introduced by the conventions above are covered as well.
+        modelBuilder.ConfigureGuidPrimaryKeyDefaults();
+    }
+
+    /// <summary>
     /// Configures the model that was discovered by convention from the entity types.
     /// </summary>
     /// <param name="builder">The builder being used to construct the model for this context.</param>
@@ -149,25 +176,27 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
         builder.ApplyConfiguration(new BlueprintTranslationConfiguration());
         builder.ApplyConfiguration(new BlueprintUserConfiguration<TAppUser>());
 
-        // Configure multi-tenancy filters and indexes.
-        // Pass 'this' so the extension method builds expressions of the form:
-        //   Expression.Property(Expression.Constant(this, typeof(BlueprintDbContext<...>)), "CurrentTenantId")
-        // EF Core's ParameterExtractingExpressionVisitor detects the DbContext-typed constant and
-        // re-evaluates the property against the current executing context per query,
-        // not the model-building instance captured at startup.
-        builder.ConfigureBlueprintMultiTenancy<TAppTenant, BlueprintDbContext<TAppTenant, TAppUser, TAppRole>>(this);
+        // The contract-driven conventions (multi-tenancy, contract constraints, localized texts,
+        // soft-delete filtering, sequential Guid keys) are NOT applied here. They run at model
+        // finalization via BlueprintModelFinalizingConvention, registered in ConfigureConventions,
+        // so that entity types an application registers after calling base.OnModelCreating are
+        // covered as well. See that convention for why.
+    }
 
-        // Configure domain contract constraints and indexes
-        builder.ConfigureContractConstraints();
+    /// <summary>
+    /// Registers the model customizer that applies the blueprint conventions once the model is complete.
+    /// </summary>
+    /// <remarks>
+    /// A derived context that overrides this method <b>must</b> call <c>base.OnConfiguring</c>, or the
+    /// blueprint conventions — tenant isolation and soft-delete filtering among them — are never applied.
+    /// </remarks>
+    /// <param name="optionsBuilder">The options builder for this context.</param>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        ArgumentNullException.ThrowIfNull(optionsBuilder);
 
-        // Configure localized text relationships and uniqueness conventions.
-        builder.ConfigureLocalizedTextConventions();
+        base.OnConfiguring(optionsBuilder);
 
-        // Configure the named soft-delete global query filter.
-        builder.ConfigureEntityFiltering();
-
-        // Sequential GUID defaults for every single-column Guid key, not just contract entities.
-        // Runs last so entity types discovered by the configuration above are covered as well.
-        builder.ConfigureGuidPrimaryKeyDefaults();
+        optionsBuilder.ReplaceService<IModelCustomizer, BlueprintModelCustomizer>();
     }
 }

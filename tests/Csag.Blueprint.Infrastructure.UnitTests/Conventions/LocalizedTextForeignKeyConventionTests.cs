@@ -1,8 +1,7 @@
 namespace Csag.Blueprint.Infrastructure.UnitTests.Conventions;
 
-using System.Globalization;
 using Csag.Blueprint.Domain.Contracts;
-using Csag.Blueprint.Infrastructure.Database;
+using Csag.Blueprint.Infrastructure.UnitTests.TestModel;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -78,59 +77,5 @@ public sealed class LocalizedTextForeignKeyConventionTests
             this.Context.Dispose();
             this.connection.Dispose();
         }
-    }
-}
-
-/// <summary>An entity whose Guid key already declares an explicit CLR default.</summary>
-public sealed class Widget
-{
-    public static readonly Guid SeededId = Guid.Parse("11111111-1111-1111-1111-111111111111", CultureInfo.InvariantCulture);
-
-    public Guid Id { get; set; }
-}
-
-/// <summary>An owner whose localized texts use a foreign key that is not named "GadgetId".</summary>
-public sealed class Gadget : IHasLocalizedTexts<GadgetText>
-{
-    public Guid Id { get; set; }
-
-    public ICollection<GadgetText> LocalizedTexts { get; set; } = [];
-}
-
-/// <summary>Localized texts keyed by a deliberately unconventional foreign key name.</summary>
-public sealed class GadgetText : ILocalizedText
-{
-    public Guid Id { get; set; }
-
-    public Guid OwnerId { get; set; }
-
-    public Gadget Owner { get; set; } = null!;
-
-    public string LanguageCode { get; set; } = string.Empty;
-
-    public string Text { get; set; } = string.Empty;
-}
-
-/// <summary>Minimal context exercising the conventions against an unconventional model.</summary>
-public sealed class ProbeDbContext : DbContext
-{
-    public ProbeDbContext(DbContextOptions<ProbeDbContext> options)
-        : base(options)
-    {
-    }
-
-    public DbSet<Widget> Widgets => this.Set<Widget>();
-
-    public DbSet<Gadget> Gadgets => this.Set<Gadget>();
-
-    public DbSet<GadgetText> GadgetTexts => this.Set<GadgetText>();
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Widget>().Property(w => w.Id).HasDefaultValue(Widget.SeededId);
-        modelBuilder.Entity<GadgetText>().HasOne(t => t.Owner).WithMany(g => g.LocalizedTexts).HasForeignKey(t => t.OwnerId);
-
-        modelBuilder.ConfigureLocalizedTextConventions();
-        modelBuilder.ConfigureGuidPrimaryKeyDefaults();
     }
 }

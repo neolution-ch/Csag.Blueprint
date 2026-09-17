@@ -61,12 +61,28 @@ public static class MultiTenancyModelBuilderExtensions
                 $"Ensure your DbContext exposes a public Guid? instance property for the current tenant ID.");
 
         var entityTypes = modelBuilder.Model.GetEntityTypes()
-            .Where(e => typeof(IMustHaveTenant).IsAssignableFrom(e.ClrType));
+            .Where(e => typeof(IMustHaveTenant).IsAssignableFrom(e.ClrType))
+            .ToList();
 
         foreach (var entityType in entityTypes)
         {
-            ApplyGlobalQueryFilter(modelBuilder, entityType.ClrType, context, contextType, currentTenantIdProp);
+            // EF Core allows a global query filter only on the root of an inheritance hierarchy, and a
+            // derived type inherits the root's. Registering one per mapped type made any consumer with a
+            // TPH/TPT hierarchy fail model validation outright.
+            if (entityType.BaseType != null)
+            {
+                EntityFilteringModelBuilderExtensions.EnsureContractIsOnTheHierarchyRoot<IMustHaveTenant>(entityType, "tenant isolation");
+                continue;
+            }
 
+            ApplyGlobalQueryFilter(modelBuilder, entityType.ClrType, context, contextType, currentTenantIdProp);
+        }
+
+        foreach (var entityType in entityTypes.Where(EntityFilteringModelBuilderExtensions.DeclaresContract<IMustHaveTenant>))
+        {
+            // The index and foreign key follow the column, which in a TPH hierarchy exists once on the
+            // shared table — so they belong on the topmost type that declares the contract, not on
+            // every mapped type in the hierarchy.
             modelBuilder.Entity(entityType.ClrType)
                 .HasIndex(nameof(IMustHaveTenant.TenantId));
 

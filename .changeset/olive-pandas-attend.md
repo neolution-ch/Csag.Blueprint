@@ -48,6 +48,15 @@ untouched, as its documentation always promised. Previously only `HasDefaultValu
 honoured, and adding `NEWSEQUENTIALID()` on top of a CLR default made EF Core throw when the model
 was built.
 
+Both blueprint-owned global query filters are now registered on the **root** of an inheritance
+hierarchy rather than on every mapped type. EF Core only permits a query filter on the root, so a
+consumer whose TPH or TPT hierarchy adopted `ISoftDeletable` or `IMustHaveTenant` previously could
+not build their context at all ("A filter may only be applied to the root entity type"). Derived
+types inherit the root's filter. A hierarchy that adopts one of these contracts *below* its root
+cannot be filtered by EF Core at all, and now fails at model build with an explanatory message
+instead of silently going unfiltered. The contract indexes are likewise defined once, on the
+topmost type declaring the contract, instead of once per mapped type.
+
 Consuming applications need their own EF Core migration: the new contracts add columns to entities
 that adopt them, `ConfigureEntityFiltering` now also creates `IX_{table}_DeletedAt` and the
 composite `IX_{table}_ActiveRange`, and every single-column `Guid` primary key in the model gets a

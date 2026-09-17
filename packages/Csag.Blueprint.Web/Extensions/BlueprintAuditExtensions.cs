@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// Extension methods for configuring blueprint audit logging on WebApplication.
@@ -21,7 +22,11 @@ public static class BlueprintAuditExtensions
 {
     /// <summary>
     /// Configures Audit.NET with the SQL Server data provider, EF Core entity tracking,
-    /// and custom enrichment from HTTP context (user identity and correlation ID).
+    /// and custom enrichment from HTTP context (user identity and correlation ID). It also turns on
+    /// <see cref="HttpAuditMiddleware"/>, which <c>UseBlueprintMiddleware()</c> always registers but
+    /// which stays inert until this method runs. Set
+    /// <see cref="BlueprintAuditOptions{TContext}.HttpAudit"/>.<see cref="HttpAuditOptions.Enabled"/>
+    /// to <see langword="false"/> in the configure callback to keep it off.
     /// Standard blueprint entity exclusions are applied automatically.
     /// Must be called after the application is built so that IServiceProvider is available.
     /// </summary>
@@ -38,7 +43,13 @@ public static class BlueprintAuditExtensions
         where TUser : BlueprintUser
         where TRole : BlueprintRole
     {
-        var options = new BlueprintAuditOptions<TContext>();
+        // HttpAuditMiddleware is always in the pipeline; this is the same HttpAuditOptions instance
+        // it reads on every request. Default it on now, then let the configure callback below turn
+        // HTTP request auditing back off.
+        var httpAuditOptions = app.Services.GetRequiredService<IOptions<HttpAuditOptions>>().Value;
+        httpAuditOptions.Enabled = true;
+
+        var options = new BlueprintAuditOptions<TContext>(httpAuditOptions);
         configure?.Invoke(options);
 
         var connectionString = app.Configuration.GetConnectionString("Default")
@@ -48,14 +59,19 @@ public static class BlueprintAuditExtensions
         // (important when the app host is recreated, e.g., during integration tests)
         Configuration.ResetCustomActions();
 
-        ConfigureSqlServerDataProvider(connectionString);
+        // Audit logging is self-contained enough to be wired without any of the blueprint registrations that
+        // TryAdd a TimeProvider, so fall back to the system clock rather than failing startup. A registered
+        // provider still wins, which is what lets a test drive audit timestamps from a FakeTimeProvider.
+        var timeProvider = app.Services.GetService<TimeProvider>() ?? TimeProvider.System;
+
+        ConfigureSqlServerDataProvider(connectionString, timeProvider);
         ConfigureEntityFrameworkAudit<TContext, TUser, TRole>(options);
         ConfigureHttpContextEnrichment(app.Services);
 
         return app;
     }
 
-    private static void ConfigureSqlServerDataProvider(string connectionString)
+    private static void ConfigureSqlServerDataProvider(string connectionString, TimeProvider timeProvider)
     {
         Configuration.Setup()
             .UseSqlServer(config => config
@@ -65,7 +81,7 @@ public static class BlueprintAuditExtensions
                 .IdColumnName("Id")
                 .JsonColumnName("JsonData")
                 .CustomColumn("EventType", ev => ev.EventType?.Length > 100 ? ev.EventType[..100] : ev.EventType)
-                .CustomColumn("CreatedAt", _ => DateTimeOffset.UtcNow)
+                .CustomColumn("CreatedAt", _ => timeProvider.GetUtcNow())
                 .CustomColumn("UserId", ev =>
                     ev.CustomFields.TryGetValue("UserId", out var val) ? val?.ToString() : null)
                 .CustomColumn("TenantId", ev =>
@@ -103,6 +119,9 @@ public static class BlueprintAuditExtensions
 
             // Infrastructure: session tracking, high-frequency writes, no business audit value
             .Ignore<BlueprintActiveSession>()
+
+            // Infrastructure: service-account session tracking (reference-token backing rows), same rationale
+            .Ignore<BlueprintServiceAccountSession>()
 
             // Infrastructure: data protection key management, rotated automatically
             .Ignore<DataProtectionKey>()

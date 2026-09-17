@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AutoFixture.Xunit3" />
+    <PackageReference Include="AutoFixture.AutoMoq" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="AutoFixture.AutoMoq" />
+    <Using Include="AutoFixture.Xunit3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Web\Csag.Blueprint.Web.csproj" />
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Testing\Csag.Blueprint.Testing.csproj" />
+    <ProjectReference Include="..\Csag.Blueprint.Tests.Shared\Csag.Blueprint.Tests.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

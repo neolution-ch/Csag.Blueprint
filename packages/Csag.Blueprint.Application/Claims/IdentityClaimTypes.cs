@@ -22,4 +22,12 @@ public static class IdentityClaimTypes
     /// Stored in the authentication ticket so it's available on every request without a DB lookup.
     /// </summary>
     public static readonly string PreferredLanguage = "PreferredLanguage";
+
+    /// <summary>
+    /// Gets the claim type carrying the opaque service-account session id ("sid"). It is the only
+    /// authorization-relevant claim a reference-style service-account token carries; roles, permissions,
+    /// and tenant are resolved server-side from this session on every request rather than trusted from
+    /// the token.
+    /// </summary>
+    public static readonly string ServiceAccountSessionId = "sid";
 }

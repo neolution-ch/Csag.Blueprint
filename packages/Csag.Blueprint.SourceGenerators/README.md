@@ -18,15 +18,28 @@ Given a `TranslationDefaults` class with nested static classes and string consta
 
 1. The generator filters for `ClassDeclarationSyntax` nodes named `TranslationDefaults`.
 2. It recursively collects all constant string fields and nested static classes, building dot-separated key paths (e.g., `Validation.EmailRequired`).
-3. It builds a tree from the flat entries and emits all three source files.
+3. It builds a tree from the flat entries and emits all three source files, with keys sorted ordinally.
+
+A `TranslationDefaults` class in the global namespace is supported: the generated files omit the namespace declaration so the generated types land in the global namespace as well.
+
+## Diagnostics
+
+| ID           | Severity | Meaning |
+|--------------|----------|---------|
+| `CSAGGEN001` | Warning  | The `TranslationDefaults` class is not declared `partial`, so the generated registry cannot extend it. Generation is skipped for that class. |
+| `CSAGGEN002` | Warning  | Multiple `TranslationDefaults` classes exist in the compilation. Their entries are merged into a single registry; the first class in source order determines the namespace and wins duplicate keys. |
 
 ## Usage
 
 ```csharp
-// TranslationDefaults.cs — define keys with English text as the const value
-public static class Validation
+// TranslationDefaults.cs — define keys with English text as the const value.
+// The class must be partial so the generated registry can extend it.
+public static partial class TranslationDefaults
 {
-    public const string EmailRequired = "Email is required";
+    public static class Validation
+    {
+        public const string EmailRequired = "Email is required";
+    }
 }
 
 // Call sites — use the generated TranslationKeys for the localizer

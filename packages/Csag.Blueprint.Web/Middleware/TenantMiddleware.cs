@@ -14,7 +14,9 @@ using Microsoft.AspNetCore.Http;
 /// segment, header) are further resolver implementations, and one registered before the default wins.
 /// </para>
 /// <para>
-/// The context is always cleared afterwards, including on failure, because it is
+/// When the resolver yields no tenant, the context is cleared before the downstream pipeline runs,
+/// so a value inherited from the calling execution context never masquerades as the request's
+/// tenant. The context is always cleared afterwards too, including on failure, because it is
 /// <c>AsyncLocal</c>-backed and a pooled thread must never inherit the previous request's tenant.
 /// </para>
 /// </summary>
@@ -49,6 +51,14 @@ public class TenantMiddleware
         if (tenantId.HasValue)
         {
             TenantContext.SetTenant(tenantId.Value);
+        }
+        else
+        {
+            // The ambient context may already carry a value inherited from the calling execution
+            // context (e.g. an in-process test harness that stamped a tenant before sending the
+            // request). Query filters must fail closed on "no tenant", so the absence is made
+            // explicit instead of letting the inherited value flow into request handling.
+            TenantContext.Clear();
         }
 
         try

@@ -512,3 +512,6 @@ node_modules/
 
 # Local pack output
 nupkgs/
+
+# CI test result output (dotnet test --results-directory)
+test-results/

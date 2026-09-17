@@ -1,0 +1,8 @@
+# Project-local overrides for the shared test-helper assembly.
+
+[*.cs]
+
+# CA1716: Identifiers should not match keywords
+; The root namespace is the project name, Csag.Blueprint.Tests.Shared, and "Shared" is a VB
+; reserved keyword. The assembly is consumed by C#-only test projects, so the collision is harmless.
+dotnet_diagnostic.CA1716.severity = none

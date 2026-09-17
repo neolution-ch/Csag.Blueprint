@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Web.Extensions
 {
     using Csag.Blueprint.Web.Options.Api.Security;
+    using Csag.Blueprint.Web.Options.Api.Security.Cors;
     using Microsoft.AspNetCore.Builder;
     using Microsoft.AspNetCore.Cors.Infrastructure;
     using Microsoft.Extensions.DependencyInjection;
@@ -12,10 +13,17 @@ namespace Csag.Blueprint.Web.Extensions
     {
         /// <summary>
         /// Configures CORS policies from SecuritySettings configuration.
+        /// Wildcard misconfigurations are rejected here rather than inside the policy callbacks,
+        /// because those callbacks only run when <see cref="CorsOptions"/> is first resolved —
+        /// which would let a broken policy lie dormant until an arbitrary later point in startup.
         /// </summary>
         /// <param name="builder">The web application builder.</param>
         /// <param name="securitySettings">The security settings.</param>
         /// <returns>The web application builder for chaining.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// Thrown when a policy mixes the wildcard origin "*" with explicit origins, or combines the
+        /// wildcard origin with AllowCredentials.
+        /// </exception>
         public static WebApplicationBuilder AddConfiguredCors(this WebApplicationBuilder builder, SecuritySettings securitySettings)
         {
             ArgumentNullException.ThrowIfNull(builder);
@@ -23,6 +31,8 @@ namespace Csag.Blueprint.Web.Extensions
 
             foreach (var (policyName, corsSettings) in securitySettings.CorsPolicies)
             {
+                EnsureValidWildcardUsage(policyName, corsSettings);
+
                 builder.Services.AddCors(options =>
                 {
                     options.AddPolicy(policyName, policy =>
@@ -48,14 +58,44 @@ namespace Csag.Blueprint.Web.Extensions
             return builder;
         }
 
-        private static void ConfigureCorsOrigins(CorsPolicyBuilder policy, string? allowedOrigins)
+        private static void EnsureValidWildcardUsage(string policyName, CorsSettings corsSettings)
         {
-            if (string.IsNullOrWhiteSpace(allowedOrigins))
+            var origins = SplitOrigins(corsSettings.AllowedOrigins);
+            if (!origins.Contains("*", StringComparer.Ordinal))
             {
                 return;
             }
 
-            var origins = allowedOrigins.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (origins.Length > 1)
+            {
+                throw new InvalidOperationException(
+                    $"CORS policy '{policyName}' mixes the wildcard origin '*' with explicit origins in AllowedOrigins. " +
+                    "The wildcard only means 'any origin' when it stands alone; use '*' by itself or list explicit origins only.");
+            }
+
+            if (corsSettings.AllowCredentials)
+            {
+                throw new InvalidOperationException(
+                    $"CORS policy '{policyName}' combines the wildcard origin '*' with AllowCredentials. " +
+                    "The CORS protocol forbids credentials with any origin; list explicit origins instead.");
+            }
+        }
+
+        private static string[] SplitOrigins(string? allowedOrigins)
+        {
+            return string.IsNullOrWhiteSpace(allowedOrigins)
+                ? []
+                : allowedOrigins.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        }
+
+        private static void ConfigureCorsOrigins(CorsPolicyBuilder policy, string? allowedOrigins)
+        {
+            var origins = SplitOrigins(allowedOrigins);
+            if (origins.Length == 0)
+            {
+                return;
+            }
+
             if (origins.Length == 1 && origins[0] == "*")
             {
                 policy.AllowAnyOrigin();

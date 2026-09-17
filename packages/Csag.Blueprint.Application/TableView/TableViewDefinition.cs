@@ -337,6 +337,9 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         return dataType switch
         {
             "string" => Expression.Equal(propertyAccess, Expression.Constant(filterValue)),
+            "boolean" => bool.TryParse(filterValue, out var boolValue)
+                ? Expression.Equal(propertyAccess, Expression.Constant(boolValue, propertyAccess.Type))
+                : null,
             "number" => TryParseNumeric(filterValue, propertyAccess.Type, out var numValue)
                 ? Expression.Equal(propertyAccess, Expression.Constant(numValue, propertyAccess.Type))
                 : null,
@@ -352,16 +355,43 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
 
     private static BinaryExpression? BuildRangeExpression(Expression propertyAccess, string filterValue, string dataType)
     {
-        var parts = filterValue.Split('-', 2);
-        if (parts.Length != 2 || dataType != "number")
+        if (dataType != "number")
         {
             return null;
         }
 
+        // The bound separator is the first '-' after position 0 that does not directly follow
+        // another '-'. A leading '-' therefore stays with the minimum bound ("-5-10" is -5..10),
+        // and when the leading '-' is the only candidate it acts as the separator of the
+        // open-minimum form ("-20" is ..20). A '-' right after the separator belongs to a
+        // negative maximum ("-5--1" is -5..-1).
+        var separatorIndex = -1;
+        for (var i = 1; i < filterValue.Length; i++)
+        {
+            if (filterValue[i] == '-' && filterValue[i - 1] != '-')
+            {
+                separatorIndex = i;
+                break;
+            }
+        }
+
+        if (separatorIndex < 0)
+        {
+            if (filterValue.Length == 0 || filterValue[0] != '-')
+            {
+                return null;
+            }
+
+            separatorIndex = 0;
+        }
+
+        var minPart = filterValue[..separatorIndex];
+        var maxPart = filterValue[(separatorIndex + 1)..];
+
         object? minValue = null;
         object? maxValue = null;
-        var hasMin = !string.IsNullOrWhiteSpace(parts[0]) && TryParseNumeric(parts[0], propertyAccess.Type, out minValue);
-        var hasMax = !string.IsNullOrWhiteSpace(parts[1]) && TryParseNumeric(parts[1], propertyAccess.Type, out maxValue);
+        var hasMin = !string.IsNullOrWhiteSpace(minPart) && TryParseNumeric(minPart, propertyAccess.Type, out minValue);
+        var hasMax = !string.IsNullOrWhiteSpace(maxPart) && TryParseNumeric(maxPart, propertyAccess.Type, out maxValue);
 
         if (hasMin && hasMax)
         {
@@ -445,7 +475,9 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
             return null;
         }
 
-        if (Enum.TryParse(enumType, filterValue, true, out var enumValue))
+        // Enum.TryParse accepts any numeric string, defined or not, so definedness is checked
+        // explicitly to reject undefined values like any other malformed filter input.
+        if (Enum.TryParse(enumType, filterValue, true, out var enumValue) && Enum.IsDefined(enumType, enumValue!))
         {
             return Expression.Equal(propertyAccess, Expression.Constant(enumValue, propertyAccess.Type));
         }

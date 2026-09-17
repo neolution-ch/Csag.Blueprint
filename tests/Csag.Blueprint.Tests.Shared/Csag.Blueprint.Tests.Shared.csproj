@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Infrastructure\Csag.Blueprint.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\packages\Csag.Blueprint.Testing\Csag.Blueprint.Testing.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -119,6 +119,12 @@ var cards = await context.Pedalos
 | `AuditableTimestampInterceptor` | Sets `CreatedAt`/`UpdatedAt` automatically for `IAuditable` entities. |
 | `TenantSaveInterceptor` | Assigns and protects `TenantId` for `IMustHaveTenant` entities. |
 
+Both are registered as singletons by `AddBlueprintTenancyRuntime()`. Resolve them from the container
+when wiring the pooled `DbContext` factory rather than constructing them — they are singleton-safe
+because they read ambient `AsyncLocal` state and a singleton `TimeProvider`, never scoped services.
+`AuditableTimestampInterceptor` stamps from that `TimeProvider`, so a `FakeTimeProvider` registered
+before `AddBlueprintTenancyRuntime()` controls the timestamps it writes.
+
 ### Session and authorization infrastructure
 
 | Component | Purpose |
@@ -127,6 +133,7 @@ var cards = await context.Pedalos
 | `TicketCacheService` | Serialization/cache wrapper for authentication tickets. |
 | `PostConfigureCookieAuthenticationOptions` | Injects the ticket store into cookie authentication options. |
 | `SessionManager` | Shared session revocation/refresh management. |
+| `ServiceAccountSessionManager` | Tracks, validates, and revokes service-account sessions (cache marker plus tracking row) for reference-style JWTs. |
 | `PermissionClaimsTransformation` | Expands role claims into permission claims after authentication. |
 | `UserManagerAuthorizationExtensions` | Loads roles and permissions for users. |
 

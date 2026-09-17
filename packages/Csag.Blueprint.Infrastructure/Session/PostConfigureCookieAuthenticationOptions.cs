@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Infrastructure.Session;
 
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
 /// <summary>
@@ -27,6 +28,17 @@ public class PostConfigureCookieAuthenticationOptions : IPostConfigureOptions<Co
     /// <param name="options">The options instance to configure.</param>
     public void PostConfigure(string? name, CookieAuthenticationOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+
+        // Cookie options are named per scheme, and AddIdentity registers four of them. Only the
+        // application cookie is a reference token backed by a tracked session; the external and
+        // two-factor cookies are short-lived, self-contained, and have no tracking row — installing
+        // the store on those would make every one of their removals delete a row that never existed.
+        if (!string.Equals(name, IdentityConstants.ApplicationScheme, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         options.SessionStore = this.ticketStore;
     }
 }

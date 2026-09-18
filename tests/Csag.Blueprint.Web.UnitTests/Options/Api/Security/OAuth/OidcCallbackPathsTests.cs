@@ -49,6 +49,8 @@ public sealed class OidcCallbackPathsTests
     [InlineData("/api//signin-google")]
     [InlineData("/api/auth/signin-google/")]
     [InlineData("/api/auth\\..\\signin-google")]
+    [InlineData("/api/auth/signin-google?x=1")]
+    [InlineData("/api/auth/signin-google#fragment")]
     public void IsUnderProxiedPrefix_PathOutsideThePrefixOrNotNormalized_IsFalse(string path)
     {
         OidcCallbackPaths.IsUnderProxiedPrefix(path).ShouldBeFalse();

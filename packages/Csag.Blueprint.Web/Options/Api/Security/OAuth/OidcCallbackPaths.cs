@@ -34,7 +34,8 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
         /// <summary>
         /// Returns whether a callback path sits under <see cref="ProxiedPrefix"/> as written. A proxy decodes and
         /// normalizes a path before routing it, so a path with empty, <c>.</c> or <c>..</c> segments, percent-encoding
-        /// or a backslash could be routed somewhere its prefix does not suggest, and does not count.
+        /// or a backslash could be routed somewhere its prefix does not suggest, and does not count. Neither does one
+        /// carrying a query or fragment: the handler matches its callback path against the request path alone.
         /// </summary>
         /// <param name="path">The callback path.</param>
         /// <returns>True when the path is plain, normalized and under the proxied prefix.</returns>
@@ -42,9 +43,7 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
         {
             ArgumentNullException.ThrowIfNull(path);
 
-            if (!path.StartsWith(ProxiedPrefix, StringComparison.Ordinal)
-                || path.Contains('\\', StringComparison.Ordinal)
-                || path.Contains('%', StringComparison.Ordinal))
+            if (!path.StartsWith(ProxiedPrefix, StringComparison.Ordinal) || path.IndexOfAny(['\\', '%', '?', '#']) >= 0)
             {
                 return false;
             }

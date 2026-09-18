@@ -144,7 +144,7 @@ public sealed class OAuthSettingsValidatorTests
 
         this.validator.TestValidate(settings)
             .ShouldHaveValidationErrorFor(x => x.Providers)
-            .WithErrorMessage("OAuth provider(s) google need a CallbackPath under /api/ with no empty, '.' or '..' segments, percent-encoding or backslashes, because OAuth.FrontendBaseUrl is set and that origin only forwards those paths to the API");
+            .WithErrorMessage("OAuth provider(s) google need a CallbackPath under /api/ with no empty, '.' or '..' segments, percent-encoding, backslashes, query or fragment, because OAuth.FrontendBaseUrl is set and that origin only forwards those paths to the API");
     }
 
     [Fact]

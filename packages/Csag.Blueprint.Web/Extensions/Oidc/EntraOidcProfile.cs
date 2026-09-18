@@ -48,8 +48,20 @@ public sealed class EntraOidcProfile : OidcProviderProfileBase
     /// the application's configuration, and composed with any handler already there, so no application handler
     /// can replace it by accident. The normalization runs first, so such a handler sees the trusted claims.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The scheme sets <see cref="Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions.EventsType"/>.
+    /// </exception>
     public override void PostConfigure(OpenIdConnectOptions options, OidcProviderSettings settings)
     {
+        // With EventsType set, the handler resolves its events from DI and never reads Options.Events, so the
+        // normalization below would silently not run.
+        if (options.EventsType is not null)
+        {
+            throw new InvalidOperationException(
+                "An Entra OpenID Connect provider sets EventsType, which would bypass the claim normalization its " +
+                "email-trust policy depends on. Configure its events on OpenIdConnectOptions.Events instead.");
+        }
+
         var tokenValidated = options.Events.OnTokenValidated;
         options.Events.OnTokenValidated = context =>
         {

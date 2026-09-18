@@ -179,6 +179,33 @@ public sealed class EntraOidcProfileTests
         options.Events.OnRedirectToIdentityProvider.ShouldBeSameAs(redirectHandler);
     }
 
+    [Fact]
+    public void PostConfigure_EventsType_Throws()
+    {
+        // The handler would resolve its events from DI, so the normalization could not be installed.
+        var options = new OpenIdConnectOptions { EventsType = typeof(OpenIdConnectEvents) };
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.MultiTenant);
+        this.profile.Configure(options, settings);
+
+        var exception = Should.Throw<InvalidOperationException>(() => this.profile.PostConfigure(options, settings));
+
+        exception.Message.ShouldContain("EventsType");
+    }
+
+    [Fact]
+    public void PostConfigure_InterfaceDefault_LeavesTheOptionsAlone()
+    {
+        // A profile implementing the interface directly keeps compiling and gets a no-op post-configure step.
+        IOidcProviderProfile directImplementation = new ConfigureOnlyProfile();
+        var options = new OpenIdConnectOptions();
+        Func<TokenValidatedContext, Task> tokenValidated = _ => Task.CompletedTask;
+        options.Events.OnTokenValidated = tokenValidated;
+
+        directImplementation.PostConfigure(options, CreateSettings(MicrosoftEntraSignInAudience.MultiTenant));
+
+        options.Events.OnTokenValidated.ShouldBeSameAs(tokenValidated);
+    }
+
     private static OidcProviderSettings CreateSettings(MicrosoftEntraSignInAudience audience) => new()
     {
         Enabled = true,
@@ -188,4 +215,12 @@ public sealed class EntraOidcProfileTests
         TenantId = TenantId,
         SignInAudience = audience,
     };
+
+    private sealed class ConfigureOnlyProfile : IOidcProviderProfile
+    {
+        public void Configure(OpenIdConnectOptions options, OidcProviderSettings settings)
+        {
+            options.ClientId = settings.ClientId;
+        }
+    }
 }

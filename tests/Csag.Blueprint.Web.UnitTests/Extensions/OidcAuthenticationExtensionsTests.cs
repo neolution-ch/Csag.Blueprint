@@ -44,6 +44,20 @@ public sealed class OidcAuthenticationExtensionsTests
     }
 
     [Fact]
+    public void AddOidcAuthentication_FrontendBaseUrlWithApplicationMovingTheCallbackPath_FailsNamingTheProvider()
+    {
+        // Settings validation only sees the configured path; the option itself can still be changed afterwards.
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.CallbackPath = "/signin-google"));
+
+        var exception = Should.Throw<InvalidOperationException>(() => GetOptions(services));
+
+        exception.Message.ShouldContain($"'{Scheme}' listens on '/signin-google'");
+    }
+
+    [Fact]
     public void AddOidcAuthentication_EventsTypeWithoutFrontendBaseUrl_IsLeftAlone()
     {
         using var services = BuildServices(

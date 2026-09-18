@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Web.Extensions.Oidc;
 
 using Csag.Blueprint.Web.Helpers;
+using Csag.Blueprint.Web.Options.Api.Security.OAuth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Identity;
@@ -30,7 +31,10 @@ internal static class FrontendRoutedCallbacks
     /// <param name="scheme">The authentication scheme the options belong to.</param>
     /// <param name="options">The scheme's options, with its callback path already set.</param>
     /// <param name="frontendBaseUrl">The validated frontend base URL.</param>
-    /// <exception cref="InvalidOperationException">The scheme sets <see cref="AuthenticationSchemeOptions.EventsType"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The scheme sets <see cref="AuthenticationSchemeOptions.EventsType"/>, or its final callback path is not under
+    /// <see cref="OidcCallbackPaths.ProxiedPrefix"/>.
+    /// </exception>
     public static void Apply(string scheme, OpenIdConnectOptions options, string frontendBaseUrl)
     {
         // With EventsType set, the handler resolves its events from DI and never reads Options.Events, so the
@@ -40,6 +44,15 @@ internal static class FrontendRoutedCallbacks
             throw new InvalidOperationException(
                 $"OpenID Connect provider '{scheme}' sets EventsType, which OAuth.FrontendBaseUrl cannot route through the " +
                 "frontend origin. Configure its events on OpenIdConnectOptions.Events instead.");
+        }
+
+        // Settings validation covers the configured path; an application Configure can still change the option itself.
+        if (!OidcCallbackPaths.IsUnderProxiedPrefix(options.CallbackPath.Value ?? string.Empty))
+        {
+            throw new InvalidOperationException(
+                $"OpenID Connect provider '{scheme}' listens on '{options.CallbackPath}', but with OAuth.FrontendBaseUrl set " +
+                $"its callback path must sit under {OidcCallbackPaths.ProxiedPrefix} (no empty, '.' or '..' segments, " +
+                "percent-encoding, backslashes, query or fragment), the only paths the frontend origin forwards to the API.");
         }
 
         var redirectUri = new Uri(frontendBaseUrl).GetLeftPart(UriPartial.Authority) + options.CallbackPath;

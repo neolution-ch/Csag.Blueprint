@@ -58,6 +58,42 @@ public sealed class OidcAuthenticationExtensionsTests
     }
 
     [Fact]
+    public async Task TokenValidated_EntraWithApplicationHandlerConfiguredAfterRegistration_StillNormalizesClaims()
+    {
+        // The email-trust gate relies on the Entra normalization dropping an email_verified that arrived in the
+        // token; an application handler assigned later must not replace it.
+        string? emailVerifiedSeenByApplication = null;
+        using var services = BuildServices(
+            frontendBaseUrl: null,
+            profile: OidcProviderProfile.Entra,
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnTokenValidated = context =>
+                {
+                    emailVerifiedSeenByApplication = context.Principal!.FindFirst("email_verified")?.Value;
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim("sub", "user-1"),
+                new System.Security.Claims.Claim("email", "victim@example.com"),
+                new System.Security.Claims.Claim("email_verified", "true"),
+            ],
+            authenticationType: "Test");
+
+        await options.Events.TokenValidated(new TokenValidatedContext(
+            CreateHttpContext(services),
+            CreateScheme(),
+            options,
+            new System.Security.Claims.ClaimsPrincipal(identity),
+            new AuthenticationProperties()));
+
+        // Multi-tenant without xms_edov: the stamped value is "false", whatever the token claimed.
+        identity.FindAll("email_verified").Select(claim => claim.Value).ShouldBe(["false"]);
+        emailVerifiedSeenByApplication.ShouldBe("false");
+    }
+
+    [Fact]
     public void AddOidcAuthentication_EventsTypeWithoutFrontendBaseUrl_IsLeftAlone()
     {
         using var services = BuildServices(

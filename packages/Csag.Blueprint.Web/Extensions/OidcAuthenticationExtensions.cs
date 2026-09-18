@@ -52,10 +52,12 @@ public static class OidcAuthenticationExtensions
                 profile.Configure(options, provider);
             });
 
+            // Post-configure steps run after every Configure, so they wrap whatever events the profile and the
+            // application installed, in whichever order those were registered.
+            services.PostConfigure<OpenIdConnectOptions>(scheme, options => profile.PostConfigure(options, provider));
+
             if (!string.IsNullOrWhiteSpace(frontendBaseUrl))
             {
-                // A post-configure step runs after every Configure, so it wraps whatever events the profile and
-                // the application installed, in whichever order they were registered.
                 services.PostConfigure<OpenIdConnectOptions>(scheme, options => FrontendRoutedCallbacks.Apply(scheme, options, frontendBaseUrl));
             }
         }

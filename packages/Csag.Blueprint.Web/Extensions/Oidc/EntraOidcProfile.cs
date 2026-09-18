@@ -39,9 +39,17 @@ public sealed class EntraOidcProfile : OidcProviderProfileBase
                 options.TokenValidationParameters.ValidateIssuer = true;
             }
         }
+    }
 
-        // Composed with the existing handler rather than replacing the events, so handlers an application
-        // configured on this scheme survive. The normalization runs first, so they see the trusted claims.
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The claim normalization is what the external callback's email-trust gate relies on: it drops any
+    /// <c>email_verified</c> that arrived in the token and stamps a trustworthy one. It is installed here, after
+    /// the application's configuration, and composed with any handler already there, so no application handler
+    /// can replace it by accident. The normalization runs first, so such a handler sees the trusted claims.
+    /// </remarks>
+    public override void PostConfigure(OpenIdConnectOptions options, OidcProviderSettings settings)
+    {
         var tokenValidated = options.Events.OnTokenValidated;
         options.Events.OnTokenValidated = context =>
         {

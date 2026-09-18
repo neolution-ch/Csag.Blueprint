@@ -16,6 +16,11 @@ public abstract class OidcProviderProfileBase : IOidcProviderProfile
     /// <inheritdoc/>
     public abstract void Configure(OpenIdConnectOptions options, OidcProviderSettings settings);
 
+    /// <inheritdoc/>
+    public virtual void PostConfigure(OpenIdConnectOptions options, OidcProviderSettings settings)
+    {
+    }
+
     /// <summary>
     /// Applies the OIDC configuration shared by all providers. Only enabled providers reach this code,
     /// so <see cref="OidcProviderSettings.ClientId"/> / <see cref="OidcProviderSettings.ClientSecret"/>

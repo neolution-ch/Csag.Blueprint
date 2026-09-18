@@ -121,7 +121,7 @@ public sealed class EntraOidcProfileTests
     }
 
     [Fact]
-    public async Task Configure_OnTokenValidated_NormalizesClaimsForCallbackAsync()
+    public async Task PostConfigure_OnTokenValidated_NormalizesClaimsForCallbackAsync()
     {
         // The wired event delegates to EntraClaimPolicy.NormalizeClaimsForCallback: the raw "sub" claim
         // is mapped to NameIdentifier and a computed email_verified claim is stamped ("true" here
@@ -129,6 +129,7 @@ public sealed class EntraOidcProfileTests
         var options = new OpenIdConnectOptions();
         var settings = CreateSettings(MicrosoftEntraSignInAudience.SingleTenant);
         this.profile.Configure(options, settings);
+        this.profile.PostConfigure(options, settings);
 
         var identity = new ClaimsIdentity(
             new[] { new Claim("sub", "user-1"), new Claim("email", "user@example.com") },
@@ -148,10 +149,10 @@ public sealed class EntraOidcProfileTests
     }
 
     [Fact]
-    public async Task Configure_ExistingEvents_AreKeptAndSeeTheNormalizedClaimsAsync()
+    public async Task PostConfigure_ExistingEvents_AreKeptAndSeeTheNormalizedClaimsAsync()
     {
-        // An application may configure events on the scheme before the profile runs; the profile composes
-        // with them instead of replacing the events object.
+        // The application's own handlers are already on the options when the profile post-configures them,
+        // and the profile composes with them instead of replacing them.
         var options = new OpenIdConnectOptions();
         string? nameIdentifierSeenByExistingHandler = null;
         Func<RedirectContext, Task> redirectHandler = _ => Task.CompletedTask;
@@ -162,7 +163,9 @@ public sealed class EntraOidcProfileTests
             return Task.CompletedTask;
         };
 
-        this.profile.Configure(options, CreateSettings(MicrosoftEntraSignInAudience.SingleTenant));
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.SingleTenant);
+        this.profile.Configure(options, settings);
+        this.profile.PostConfigure(options, settings);
 
         var identity = new ClaimsIdentity(new[] { new Claim("sub", "user-1") }, authenticationType: "Test");
         await options.Events.OnTokenValidated(new TokenValidatedContext(

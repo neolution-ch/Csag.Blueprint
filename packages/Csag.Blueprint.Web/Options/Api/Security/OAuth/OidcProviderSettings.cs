@@ -67,8 +67,10 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
 
         /// <summary>
         /// Gets or sets the path the provider redirects back to after authentication. Must be unique per
-        /// provider and registered as an authorized redirect URI with the provider. Defaults to
-        /// "/signin-oidc/{scheme}" when left null.
+        /// provider, and must sit under <see cref="OidcCallbackPaths.ProxiedPrefix"/> when
+        /// <see cref="OAuthSettings.FrontendBaseUrl"/> is set. Register it with the provider as an authorized
+        /// redirect URI, prefixed with the origin the user returns to. Defaults to "/api/auth/signin-oidc/{scheme}"
+        /// when left null.
         /// </summary>
         public string? CallbackPath { get; set; }
 

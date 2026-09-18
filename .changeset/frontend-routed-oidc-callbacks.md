@@ -1,0 +1,21 @@
+---
+"@neolution-ch/csag-blueprint-web": minor
+---
+
+Route OpenID Connect callbacks through the frontend origin when `OAuth.FrontendBaseUrl` is set
+
+Behind the SPA's `/api/` proxy the API only sees the proxy's upstream host, so the OpenID Connect handler built its `redirect_uri` from that: on Cloud Run, the API's internal `run.app` address. Found on a deployed blueprint app, where Google refused the authorize request with `redirect_uri_mismatch`. Registering that address would not have helped: staging's API ingress is internal, and the challenge's correlation and nonce cookies live on the frontend host the browser used, so no callback on another host could validate.
+
+**Behaviour change:** With `OAuth.FrontendBaseUrl` set, every provider is now told to return to that origin plus the scheme's callback path (set in `OnRedirectToIdentityProvider`, which the handler reads back for the code exchange, so the authorize and token requests send the same value). The frontend origin forwards `/api/` to the API, so the callback and its cookies reach the handler. Register `<frontend origin><CallbackPath>` with each provider, e.g. `https://app.example.com/api/auth/signin-google`. Nothing is read from forwarded headers.
+
+**Breaking:** With `OAuth.FrontendBaseUrl` set, `OAuthSettingsValidator` rejects an enabled provider whose effective `CallbackPath` is not under `/api/`, naming the provider. Such a path lands on the SPA, not the API. Move it under `/api/` and re-register it with the provider.
+
+**Breaking:** The default `CallbackPath` is now `/api/auth/signin-oidc/{scheme}` instead of `/signin-oidc/{scheme}`, so a provider relying on the default satisfies the rule above. Providers that set `CallbackPath` explicitly are unaffected; one relying on the default must re-register its redirect URI.
+
+**Behaviour change:** With `OAuth.FrontendBaseUrl` set, a failed provider round trip (the user cancels at the provider, a missing or expired correlation cookie) no longer throws `AuthenticationFailureException` into a 500. The failure is logged as a warning, the external cookie is cleared so an earlier attempt's identity cannot be judged in its place, and the user is redirected to the challenge's `AuthenticationProperties.RedirectUri` when it is a local path (the application's external callback, which answers a missing external login with its usual error redirect), otherwise to `FrontendBaseUrl` with `?error=external_auth_failed`. Both handlers are installed in a per-scheme post-configure step, so they wrap whatever the provider profile and any application `Configure<OpenIdConnectOptions>` put on the events, in either registration order: those handlers run first, and an `OnRemoteFailure` handler that handles the failure itself is left to do so.
+
+New `OidcCallbackPaths` resolves each scheme's effective callback path (registration and validation both use it) and exposes the proxied prefix.
+
+`OAuthSettings.FrontendBaseUrl` and `OAuthHelpers.BuildPostAuthRedirect` no longer describe external sign-in as completing on the API origin.
+
+Consumer migration: `csag-blueprint-web` carries the same behaviour as `FrontendRoutedOidcCallbackExtensions` (plus its own startup check). Delete that class, its registration and its tests when upgrading, and point `docs/security/EXTERNAL_OIDC.md` (the *Routing Through the Frontend Origin* section and the `CallbackPath` row, whose default and failure mode change) and the default-path comment in `PackageOAuthSettingsValidatorTests` at the package. Its explicit `/api/auth/signin-google` and `/api/auth/signin-microsoft` callback paths already satisfy the new rule.

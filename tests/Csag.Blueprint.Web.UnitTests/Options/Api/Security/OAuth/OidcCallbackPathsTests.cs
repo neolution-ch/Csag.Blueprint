@@ -26,4 +26,29 @@ public sealed class OidcCallbackPathsTests
 
         path.ShouldBe("/api/auth/signin-google");
     }
+
+    [Theory]
+    [InlineData("/api/auth/signin-google")]
+    [InlineData("/api/signin-oidc/okta")]
+    [InlineData("/api/auth/signin.google")]
+    public void IsUnderProxiedPrefix_NormalizedPathUnderThePrefix_IsTrue(string path)
+    {
+        OidcCallbackPaths.IsUnderProxiedPrefix(path).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("/signin-google")]
+    [InlineData("/apifoo/signin-google")]
+    [InlineData("/api")]
+    [InlineData("/api/")]
+    [InlineData("/api/../signin-google")]
+    [InlineData("/api/%2e%2E/signin-google")]
+    [InlineData("/api/./signin-google")]
+    [InlineData("/api//signin-google")]
+    [InlineData("/api/auth/signin-google/")]
+    [InlineData("/api/auth\\..\\signin-google")]
+    public void IsUnderProxiedPrefix_PathOutsideThePrefixOrNotNormalized_IsFalse(string path)
+    {
+        OidcCallbackPaths.IsUnderProxiedPrefix(path).ShouldBeFalse();
+    }
 }

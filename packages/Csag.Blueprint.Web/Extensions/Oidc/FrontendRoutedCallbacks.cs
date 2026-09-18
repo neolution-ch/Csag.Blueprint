@@ -24,7 +24,8 @@ internal static class FrontendRoutedCallbacks
     /// <summary>
     /// Sends the provider back to the frontend origin plus the scheme's callback path, and turns a failed round trip
     /// into a redirect back to the application rather than an unhandled exception. The handlers already installed on
-    /// <see cref="OpenIdConnectOptions.Events"/> keep running, before this handling.
+    /// <see cref="OpenIdConnectOptions.Events"/> keep running, before this handling; the redirect URI is still the
+    /// frontend one whatever they set.
     /// </summary>
     /// <param name="options">The scheme's options, with its callback path already set.</param>
     /// <param name="frontendBaseUrl">The validated frontend base URL.</param>
@@ -37,12 +38,13 @@ internal static class FrontendRoutedCallbacks
             ExternalAuthFailedError);
 
         var redirectToIdentityProvider = options.Events.OnRedirectToIdentityProvider;
-        options.Events.OnRedirectToIdentityProvider = context =>
+        options.Events.OnRedirectToIdentityProvider = async context =>
         {
-            // The handler stores the value as it stands after this event for the code exchange, so the authorize
-            // and token requests send the same redirect_uri.
+            await redirectToIdentityProvider(context);
+
+            // Assigned after the existing handler so nothing undoes it. The handler stores the value as it stands
+            // after this event for the code exchange, so the authorize and token requests send the same redirect_uri.
             context.ProtocolMessage.RedirectUri = redirectUri;
-            return redirectToIdentityProvider(context);
         };
 
         var remoteFailure = options.Events.OnRemoteFailure;

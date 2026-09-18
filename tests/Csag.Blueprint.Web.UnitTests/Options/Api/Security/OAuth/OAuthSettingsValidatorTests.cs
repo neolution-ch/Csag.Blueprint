@@ -134,6 +134,7 @@ public sealed class OAuthSettingsValidatorTests
     [Theory]
     [InlineData("/signin-google")]
     [InlineData("/apifoo/signin-google")]
+    [InlineData("/api/../signin-google")]
     public void Validate_FrontendBaseUrlWithCallbackPathOutsideProxiedPrefix_FailsNamingTheProvider(string callbackPath)
     {
         // The provider returns the user to the frontend origin, which only forwards /api/ to the API.
@@ -143,7 +144,7 @@ public sealed class OAuthSettingsValidatorTests
 
         this.validator.TestValidate(settings)
             .ShouldHaveValidationErrorFor(x => x.Providers)
-            .WithErrorMessage("OAuth provider(s) google need a CallbackPath under /api/, because OAuth.FrontendBaseUrl is set and that origin only forwards those paths to the API");
+            .WithErrorMessage("OAuth provider(s) google need a CallbackPath under /api/ with no empty, '.' or '..' segments, because OAuth.FrontendBaseUrl is set and that origin only forwards those paths to the API");
     }
 
     [Fact]

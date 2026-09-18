@@ -147,6 +147,35 @@ public sealed class EntraOidcProfileTests
         identity.FindFirst("email_verified")!.Value.ShouldBe("true");
     }
 
+    [Fact]
+    public async Task Configure_ExistingEvents_AreKeptAndSeeTheNormalizedClaimsAsync()
+    {
+        // An application may configure events on the scheme before the profile runs; the profile composes
+        // with them instead of replacing the events object.
+        var options = new OpenIdConnectOptions();
+        string? nameIdentifierSeenByExistingHandler = null;
+        Func<RedirectContext, Task> redirectHandler = _ => Task.CompletedTask;
+        options.Events.OnRedirectToIdentityProvider = redirectHandler;
+        options.Events.OnTokenValidated = context =>
+        {
+            nameIdentifierSeenByExistingHandler = context.Principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Task.CompletedTask;
+        };
+
+        this.profile.Configure(options, CreateSettings(MicrosoftEntraSignInAudience.SingleTenant));
+
+        var identity = new ClaimsIdentity(new[] { new Claim("sub", "user-1") }, authenticationType: "Test");
+        await options.Events.OnTokenValidated(new TokenValidatedContext(
+            new DefaultHttpContext(),
+            new AuthenticationScheme("TestScheme", displayName: null, typeof(OpenIdConnectHandler)),
+            options,
+            new ClaimsPrincipal(identity),
+            new AuthenticationProperties()));
+
+        nameIdentifierSeenByExistingHandler.ShouldBe("user-1");
+        options.Events.OnRedirectToIdentityProvider.ShouldBeSameAs(redirectHandler);
+    }
+
     private static OidcProviderSettings CreateSettings(MicrosoftEntraSignInAudience audience) => new()
     {
         Enabled = true,

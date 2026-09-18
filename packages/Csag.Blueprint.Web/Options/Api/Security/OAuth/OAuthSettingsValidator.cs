@@ -69,8 +69,8 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
                     .Must(providers => !UnproxiedProviders(providers).Any())
                     .WithMessage(x =>
                         $"OAuth provider(s) {string.Join(", ", UnproxiedProviders(x.Providers))} need a CallbackPath under " +
-                        $"{OidcCallbackPaths.ProxiedPrefix}, because OAuth.FrontendBaseUrl is set and that origin only " +
-                        "forwards those paths to the API");
+                        $"{OidcCallbackPaths.ProxiedPrefix} with no empty, '.' or '..' segments, because OAuth.FrontendBaseUrl " +
+                        "is set and that origin only forwards those paths to the API");
             });
         }
 
@@ -88,7 +88,7 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
         {
             return providers
                 .Where(kvp => kvp.Value.Enabled
-                    && !OidcCallbackPaths.Resolve(kvp.Key, kvp.Value).StartsWith(OidcCallbackPaths.ProxiedPrefix, StringComparison.Ordinal))
+                    && !OidcCallbackPaths.IsUnderProxiedPrefix(OidcCallbackPaths.Resolve(kvp.Key, kvp.Value)))
                 .Select(kvp => kvp.Key);
         }
 

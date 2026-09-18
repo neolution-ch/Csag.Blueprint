@@ -57,7 +57,7 @@ public sealed class OidcAuthenticationExtensionsTests
     }
 
     [Fact]
-    public async Task RedirectToIdentityProvider_EntraProfile_IsStillRoutedAfterTheProfileReplacesItsEvents()
+    public async Task RedirectToIdentityProvider_EntraProfile_IsRouted()
     {
         using var services = BuildServices("https://app.example.com", profile: OidcProviderProfile.Entra);
         var options = GetOptions(services);
@@ -66,6 +66,56 @@ public sealed class OidcAuthenticationExtensionsTests
         await options.Events.RedirectToIdentityProvider(context);
 
         context.ProtocolMessage.RedirectUri.ShouldBe("https://app.example.com/api/auth/signin-google");
+    }
+
+    [Fact]
+    public async Task RedirectToIdentityProvider_ApplicationHandlerSettingItsOwnRedirectUri_IsOverruled()
+    {
+        var applicationHandlerRan = false;
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnRedirectToIdentityProvider = context =>
+                {
+                    applicationHandlerRan = true;
+                    context.ProtocolMessage.RedirectUri = "https://elsewhere.example.com/signin";
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var context = CreateRedirectContext(services, options);
+
+        await options.Events.RedirectToIdentityProvider(context);
+
+        applicationHandlerRan.ShouldBeTrue();
+        context.ProtocolMessage.RedirectUri.ShouldBe("https://app.example.com/api/auth/signin-google");
+    }
+
+    [Theory]
+    [InlineData(OidcProviderProfile.Google)]
+    [InlineData(OidcProviderProfile.Entra)]
+    public async Task RemoteFailure_ApplicationHandlerConfiguredBeforeRegistration_StillRuns(OidcProviderProfile profile)
+    {
+        // The Entra profile installs its own OnTokenValidated; an earlier application Configure must survive it.
+        var applicationHandlerRan = false;
+        using var services = BuildServices(
+            "https://app.example.com",
+            profile: profile,
+            configureApplicationFirst: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnRemoteFailure = _ =>
+                {
+                    applicationHandlerRan = true;
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var context = CreateRemoteFailureContext(services, options, new AuthenticationProperties
+        {
+            RedirectUri = "/api/auth/external/callback?returnUrl=%2F",
+        });
+
+        await options.Events.RemoteFailure(context);
+
+        applicationHandlerRan.ShouldBeTrue();
+        context.Response.Headers.Location.ToString().ShouldBe("/api/auth/external/callback?returnUrl=%2F");
     }
 
     [Fact]
@@ -173,7 +223,8 @@ public sealed class OidcAuthenticationExtensionsTests
         string? frontendBaseUrl,
         string? callbackPath = CallbackPath,
         OidcProviderProfile profile = OidcProviderProfile.Google,
-        Action<IServiceCollection>? configureApplication = null)
+        Action<IServiceCollection>? configureApplication = null,
+        Action<IServiceCollection>? configureApplicationFirst = null)
     {
         var securitySettings = new SecuritySettings
         {
@@ -197,6 +248,7 @@ public sealed class OidcAuthenticationExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddAuthentication().AddCookie(IdentityConstants.ExternalScheme);
+        configureApplicationFirst?.Invoke(services);
         services.AddOidcAuthentication(securitySettings);
         configureApplication?.Invoke(services);
         return services.BuildServiceProvider();

@@ -2,7 +2,6 @@ namespace Csag.Blueprint.Web.Extensions.Oidc;
 
 using System;
 using System.Security.Claims;
-using System.Threading.Tasks;
 using Csag.Blueprint.Web.Options.Api.Security.OAuth;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 
@@ -41,17 +40,17 @@ public sealed class EntraOidcProfile : OidcProviderProfileBase
             }
         }
 
-        options.Events = new OpenIdConnectEvents
+        // Composed with the existing handler rather than replacing the events, so handlers an application
+        // configured on this scheme survive. The normalization runs first, so they see the trusted claims.
+        var tokenValidated = options.Events.OnTokenValidated;
+        options.Events.OnTokenValidated = context =>
         {
-            OnTokenValidated = context =>
+            if (context.Principal?.Identity is ClaimsIdentity identity)
             {
-                if (context.Principal?.Identity is ClaimsIdentity identity)
-                {
-                    EntraClaimPolicy.NormalizeClaimsForCallback(identity, settings.SignInAudience);
-                }
+                EntraClaimPolicy.NormalizeClaimsForCallback(identity, settings.SignInAudience);
+            }
 
-                return Task.CompletedTask;
-            },
+            return tokenValidated(context);
         };
     }
 

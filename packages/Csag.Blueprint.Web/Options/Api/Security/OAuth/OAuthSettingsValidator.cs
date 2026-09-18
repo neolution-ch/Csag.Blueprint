@@ -19,14 +19,13 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
 
         public OAuthSettingsValidator()
         {
-            // When set, the frontend base URL is used as a trusted origin for post-login redirects,
-            // so it must be a well-formed absolute http(s) URL.
+            // When set, the frontend base URL is used as a trusted origin for post-login redirects, which append a
+            // path to it, so it must be a well-formed absolute http(s) URL with no query or fragment to append after.
             this.When(x => !string.IsNullOrWhiteSpace(x.FrontendBaseUrl), () =>
             {
                 this.RuleFor(x => x.FrontendBaseUrl)
-                    .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var parsed)
-                        && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps))
-                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL (e.g. \"https://app.example.com\")");
+                    .Must(BeAnAbsoluteHttpUrlWithoutQueryOrFragment)
+                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL without a query or fragment (e.g. \"https://app.example.com\")");
             });
 
             this.RuleFor(x => x.Providers)
@@ -72,6 +71,17 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
                         $"{OidcCallbackPaths.ProxiedPrefix} with no empty, '.' or '..' segments, percent-encoding, backslashes, " +
                         "query or fragment, because OAuth.FrontendBaseUrl is set and that origin only forwards those paths to the API");
             });
+        }
+
+        private static bool BeAnAbsoluteHttpUrlWithoutQueryOrFragment(string? url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed))
+            {
+                return false;
+            }
+
+            var isHttp = parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps;
+            return isHttp && parsed.Query.Length == 0 && parsed.Fragment.Length == 0;
         }
 
         private static bool HaveUniqueCallbackPaths(IDictionary<string, OidcProviderSettings> providers)

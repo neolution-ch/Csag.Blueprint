@@ -8,7 +8,7 @@ Behind the SPA's `/api/` proxy the API only sees the proxy's upstream host, so t
 
 **Behaviour change:** With `OAuth.FrontendBaseUrl` set, every provider is now told to return to that origin plus the scheme's callback path (set in `OnRedirectToIdentityProvider` after any existing handler has run, so nothing undoes it; the handler reads the value back for the code exchange, so the authorize and token requests send the same one). The frontend origin forwards `/api/` to the API, so the callback and its cookies reach the handler. Register `<frontend origin><CallbackPath>` with each provider, e.g. `https://app.example.com/api/auth/signin-google`. Nothing is read from forwarded headers.
 
-**Breaking:** With `OAuth.FrontendBaseUrl` set, `OAuthSettingsValidator` rejects an enabled provider whose effective `CallbackPath` is not under `/api/`, naming the provider. Such a path lands on the SPA, not the API. The check is on the path as a proxy would route it: empty, `.` or `..` segments, percent-encoding and backslashes are rejected, so neither `/api/../signin-google` nor `/api/%2e%2e%2fsignin-google` passes. So is a query or fragment, which the handler's match against the request path would never see. Move it under `/api/` and re-register it with the provider.
+**Breaking:** With `OAuth.FrontendBaseUrl` set, `OAuthSettingsValidator` rejects an enabled provider whose effective `CallbackPath` is not under `/api/`, naming the provider. Such a path lands on the SPA, not the API. The check is on the path as a proxy would route it: empty, `.` or `..` segments, percent-encoding and backslashes are rejected, so neither `/api/../signin-google` nor `/api/%2e%2e%2fsignin-google` passes. The same applies to a query or fragment, which the handler's match against the request path would never see. Move it under `/api/` and re-register it with the provider.
 
 **Breaking:** The default `CallbackPath` is now `/api/auth/signin-oidc/{scheme}` instead of `/signin-oidc/{scheme}`, so a provider relying on the default satisfies the rule above. Providers that set `CallbackPath` explicitly are unaffected; one relying on the default must re-register its redirect URI.
 
@@ -17,6 +17,8 @@ Behind the SPA's `/api/` proxy the API only sees the proxy's upstream host, so t
 **Behaviour change:** The Entra profile composes its `OnTokenValidated` claim normalization with the handler already on the options instead of replacing `OpenIdConnectEvents`, so events an application configured on an Entra scheme before `AddBlueprintServices` are no longer discarded. The normalization runs first, so such a handler sees the trusted claims.
 
 New `OidcCallbackPaths` resolves each scheme's effective callback path (registration and validation both use it), exposes the proxied prefix, and checks a path against it (`IsUnderProxiedPrefix`).
+
+**Breaking:** `OAuthSettingsValidator` rejects an `OAuth.FrontendBaseUrl` carrying a query or fragment. Redirects append a path to it, which would have landed after them.
 
 `OAuthSettings.FrontendBaseUrl` and `OAuthHelpers.BuildPostAuthRedirect` no longer describe external sign-in as completing on the API origin.
 

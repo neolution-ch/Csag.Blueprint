@@ -35,6 +35,17 @@ public sealed class OAuthSettingsValidatorTests
         this.validator.TestValidate(settings).ShouldHaveValidationErrorFor(x => x.FrontendBaseUrl);
     }
 
+    [Theory]
+    [InlineData("https://app.example.com/?tenant=a")]
+    [InlineData("https://app.example.com/#home")]
+    public void Validate_FrontendBaseUrlWithQueryOrFragment_Fails(string frontendBaseUrl)
+    {
+        // Redirects append a path to the base URL, which would land after the query or fragment.
+        var settings = new OAuthSettings { FrontendBaseUrl = frontendBaseUrl };
+
+        this.validator.TestValidate(settings).ShouldHaveValidationErrorFor(x => x.FrontendBaseUrl);
+    }
+
     [Fact]
     public void Validate_EnabledProviderInvalid_MakesSettingsInvalid()
     {

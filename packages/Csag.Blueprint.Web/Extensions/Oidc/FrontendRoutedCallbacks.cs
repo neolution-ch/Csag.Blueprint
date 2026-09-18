@@ -32,19 +32,18 @@ internal static class FrontendRoutedCallbacks
     /// <param name="options">The scheme's options, with its callback path already set.</param>
     /// <param name="frontendBaseUrl">The validated frontend base URL.</param>
     /// <exception cref="InvalidOperationException">
-    /// The scheme sets <see cref="AuthenticationSchemeOptions.EventsType"/>, or its final callback path is not under
+    /// The handler would not call the delegates installed here (see
+    /// <see cref="OpenIdConnectEventsGuard.EnsureDelegatesAreDispatched"/>), or the final callback path is not under
     /// <see cref="OidcCallbackPaths.ProxiedPrefix"/>.
     /// </exception>
     public static void Apply(string scheme, OpenIdConnectOptions options, string frontendBaseUrl)
     {
-        // With EventsType set, the handler resolves its events from DI and never reads Options.Events, so the
-        // handlers below would silently not run.
-        if (options.EventsType is not null)
-        {
-            throw new InvalidOperationException(
-                $"OpenID Connect provider '{scheme}' sets EventsType, which OAuth.FrontendBaseUrl cannot route through the " +
-                "frontend origin. Configure its events on OpenIdConnectOptions.Events instead.");
-        }
+        OpenIdConnectEventsGuard.EnsureDelegatesAreDispatched(
+            scheme,
+            options,
+            "OAuth.FrontendBaseUrl cannot route through the frontend origin",
+            nameof(OpenIdConnectEvents.RedirectToIdentityProvider),
+            nameof(OpenIdConnectEvents.RemoteFailure));
 
         // Settings validation covers the configured path; an application Configure can still change the option itself.
         if (!OidcCallbackPaths.IsUnderProxiedPrefix(options.CallbackPath.Value ?? string.Empty))

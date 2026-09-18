@@ -17,7 +17,7 @@ public abstract class OidcProviderProfileBase : IOidcProviderProfile
     public abstract void Configure(OpenIdConnectOptions options, OidcProviderSettings settings);
 
     /// <inheritdoc/>
-    public virtual void PostConfigure(OpenIdConnectOptions options, OidcProviderSettings settings)
+    public virtual void PostConfigure(string scheme, OpenIdConnectOptions options, OidcProviderSettings settings)
     {
     }
 

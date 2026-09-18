@@ -23,9 +23,10 @@ public interface IOidcProviderProfile
     /// after every <c>Configure&lt;OpenIdConnectOptions&gt;</c>, so an application's own event handlers are
     /// composed with it rather than replacing it. Does nothing unless the profile needs it.
     /// </summary>
+    /// <param name="scheme">The authentication scheme the options belong to.</param>
     /// <param name="options">The OpenID Connect options, after all configuration has run.</param>
     /// <param name="settings">The validated provider settings.</param>
-    void PostConfigure(OpenIdConnectOptions options, OidcProviderSettings settings)
+    void PostConfigure(string scheme, OpenIdConnectOptions options, OidcProviderSettings settings)
     {
         // Most profiles are fully applied by Configure.
     }

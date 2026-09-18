@@ -17,6 +17,7 @@ using Microsoft.IdentityModel.Tokens;
 /// </summary>
 public sealed class EntraOidcProfileTests
 {
+    private const string Scheme = "entra";
     private const string TenantId = "11111111-1111-1111-1111-111111111111";
 
     private readonly EntraOidcProfile profile = new();
@@ -129,7 +130,7 @@ public sealed class EntraOidcProfileTests
         var options = new OpenIdConnectOptions();
         var settings = CreateSettings(MicrosoftEntraSignInAudience.SingleTenant);
         this.profile.Configure(options, settings);
-        this.profile.PostConfigure(options, settings);
+        this.profile.PostConfigure(Scheme, options, settings);
 
         var identity = new ClaimsIdentity(
             new[] { new Claim("sub", "user-1"), new Claim("email", "user@example.com") },
@@ -165,7 +166,7 @@ public sealed class EntraOidcProfileTests
 
         var settings = CreateSettings(MicrosoftEntraSignInAudience.SingleTenant);
         this.profile.Configure(options, settings);
-        this.profile.PostConfigure(options, settings);
+        this.profile.PostConfigure(Scheme, options, settings);
 
         var identity = new ClaimsIdentity(new[] { new Claim("sub", "user-1") }, authenticationType: "Test");
         await options.Events.OnTokenValidated(new TokenValidatedContext(
@@ -187,9 +188,34 @@ public sealed class EntraOidcProfileTests
         var settings = CreateSettings(MicrosoftEntraSignInAudience.MultiTenant);
         this.profile.Configure(options, settings);
 
-        var exception = Should.Throw<InvalidOperationException>(() => this.profile.PostConfigure(options, settings));
+        var exception = Should.Throw<InvalidOperationException>(() => this.profile.PostConfigure(Scheme, options, settings));
 
-        exception.Message.ShouldContain("EventsType");
+        exception.Message.ShouldContain($"'{Scheme}' sets EventsType");
+    }
+
+    [Fact]
+    public void PostConfigure_EventsSubclassOverridingTokenValidated_Throws()
+    {
+        // The handler calls the virtual method, which would never reach the normalization delegate.
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.MultiTenant);
+        var options = new OpenIdConnectOptions();
+        this.profile.Configure(options, settings);
+        options.Events = new TokenValidatedOverridingEvents();
+
+        var exception = Should.Throw<InvalidOperationException>(() => this.profile.PostConfigure(Scheme, options, settings));
+
+        exception.Message.ShouldContain($"'{Scheme}' uses {nameof(TokenValidatedOverridingEvents)}, which overrides TokenValidated");
+    }
+
+    [Fact]
+    public void PostConfigure_EventsSubclassOverridingOtherMethods_IsAccepted()
+    {
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.MultiTenant);
+        var options = new OpenIdConnectOptions();
+        this.profile.Configure(options, settings);
+        options.Events = new RemoteFailureOverridingEvents();
+
+        Should.NotThrow(() => this.profile.PostConfigure(Scheme, options, settings));
     }
 
     [Fact]
@@ -201,7 +227,7 @@ public sealed class EntraOidcProfileTests
         Func<TokenValidatedContext, Task> tokenValidated = _ => Task.CompletedTask;
         options.Events.OnTokenValidated = tokenValidated;
 
-        directImplementation.PostConfigure(options, CreateSettings(MicrosoftEntraSignInAudience.MultiTenant));
+        directImplementation.PostConfigure(Scheme, options, CreateSettings(MicrosoftEntraSignInAudience.MultiTenant));
 
         options.Events.OnTokenValidated.ShouldBeSameAs(tokenValidated);
     }
@@ -222,5 +248,15 @@ public sealed class EntraOidcProfileTests
         {
             options.ClientId = settings.ClientId;
         }
+    }
+
+    private sealed class TokenValidatedOverridingEvents : OpenIdConnectEvents
+    {
+        public override Task TokenValidated(TokenValidatedContext context) => Task.CompletedTask;
+    }
+
+    private sealed class RemoteFailureOverridingEvents : OpenIdConnectEvents
+    {
+        public override Task RemoteFailure(RemoteFailureContext context) => Task.CompletedTask;
     }
 }

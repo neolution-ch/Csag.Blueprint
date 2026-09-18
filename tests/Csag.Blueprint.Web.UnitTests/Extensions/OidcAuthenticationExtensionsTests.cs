@@ -44,6 +44,20 @@ public sealed class OidcAuthenticationExtensionsTests
     }
 
     [Fact]
+    public void AddOidcAuthentication_FrontendBaseUrlWithEventsOverridingRemoteFailure_FailsNamingTheScheme()
+    {
+        // The handler calls the virtual method, which would never reach the failure redirect delegate.
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events = new RemoteFailureOverridingEvents()));
+
+        var exception = Should.Throw<InvalidOperationException>(() => GetOptions(services));
+
+        exception.Message.ShouldContain($"'{Scheme}' uses {nameof(RemoteFailureOverridingEvents)}, which overrides RemoteFailure");
+    }
+
+    [Fact]
     public void AddOidcAuthentication_FrontendBaseUrlWithApplicationMovingTheCallbackPath_FailsNamingTheProvider()
     {
         // Settings validation only sees the configured path; the option itself can still be changed afterwards.
@@ -361,5 +375,10 @@ public sealed class OidcAuthenticationExtensionsTests
     private static AuthenticationScheme CreateScheme()
     {
         return new AuthenticationScheme(Scheme, displayName: null, typeof(OpenIdConnectHandler));
+    }
+
+    private sealed class RemoteFailureOverridingEvents : OpenIdConnectEvents
+    {
+        public override Task RemoteFailure(RemoteFailureContext context) => Task.CompletedTask;
     }
 }

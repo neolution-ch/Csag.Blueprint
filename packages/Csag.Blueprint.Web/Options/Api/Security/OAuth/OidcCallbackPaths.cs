@@ -32,28 +32,24 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
         }
 
         /// <summary>
-        /// Returns whether a callback path sits under <see cref="ProxiedPrefix"/> as written. A proxy normalizes a
-        /// path before routing it, so a path with empty, <c>.</c> or <c>..</c> segments (percent-encoded or not) or a
-        /// backslash could be routed somewhere its prefix does not suggest, and does not count.
+        /// Returns whether a callback path sits under <see cref="ProxiedPrefix"/> as written. A proxy decodes and
+        /// normalizes a path before routing it, so a path with empty, <c>.</c> or <c>..</c> segments, percent-encoding
+        /// or a backslash could be routed somewhere its prefix does not suggest, and does not count.
         /// </summary>
         /// <param name="path">The callback path.</param>
-        /// <returns>True when the path is normalized and under the proxied prefix.</returns>
+        /// <returns>True when the path is plain, normalized and under the proxied prefix.</returns>
         public static bool IsUnderProxiedPrefix(string path)
         {
             ArgumentNullException.ThrowIfNull(path);
 
-            if (!path.StartsWith(ProxiedPrefix, StringComparison.Ordinal) || path.Contains('\\', StringComparison.Ordinal))
+            if (!path.StartsWith(ProxiedPrefix, StringComparison.Ordinal)
+                || path.Contains('\\', StringComparison.Ordinal)
+                || path.Contains('%', StringComparison.Ordinal))
             {
                 return false;
             }
 
-            return path.Split('/').Skip(1).All(segment => segment.Length > 0 && !IsDotSegment(segment));
-        }
-
-        private static bool IsDotSegment(string segment)
-        {
-            var decoded = segment.Replace("%2e", ".", StringComparison.OrdinalIgnoreCase);
-            return decoded is "." or "..";
+            return path.Split('/').Skip(1).All(segment => segment.Length > 0 && segment is not "." and not "..");
         }
     }
 }

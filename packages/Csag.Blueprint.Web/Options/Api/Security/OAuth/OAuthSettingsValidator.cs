@@ -69,7 +69,7 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
                     .Must(providers => !UnproxiedProviders(providers).Any())
                     .WithMessage(x =>
                         $"OAuth provider(s) {string.Join(", ", UnproxiedProviders(x.Providers))} need a CallbackPath under " +
-                        $"{OidcCallbackPaths.ProxiedPrefix} with no empty, '.' or '..' segments, because OAuth.FrontendBaseUrl " +
+                        $"{OidcCallbackPaths.ProxiedPrefix} with no empty, '.' or '..' segments, percent-encoding or backslashes, because OAuth.FrontendBaseUrl " +
                         "is set and that origin only forwards those paths to the API");
             });
         }

@@ -29,6 +29,31 @@ public sealed class OidcAuthenticationExtensionsTests
         GetOptions(services).CallbackPath.Value.ShouldBe("/api/auth/signin-oidc/google");
     }
 
+    [Fact]
+    public void AddOidcAuthentication_FrontendBaseUrlWithEventsType_FailsNamingTheScheme()
+    {
+        // The handler would resolve its events from DI and never run the frontend routing.
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.EventsType = typeof(OpenIdConnectEvents)));
+
+        var exception = Should.Throw<InvalidOperationException>(() => GetOptions(services));
+
+        exception.Message.ShouldContain($"'{Scheme}' sets EventsType");
+    }
+
+    [Fact]
+    public void AddOidcAuthentication_EventsTypeWithoutFrontendBaseUrl_IsLeftAlone()
+    {
+        using var services = BuildServices(
+            frontendBaseUrl: null,
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.EventsType = typeof(OpenIdConnectEvents)));
+
+        GetOptions(services).EventsType.ShouldBe(typeof(OpenIdConnectEvents));
+    }
+
     [Theory]
     [InlineData("https://app.example.com")]
     [InlineData("https://app.example.com/")]

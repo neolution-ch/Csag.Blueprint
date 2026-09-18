@@ -43,6 +43,8 @@ public sealed class OidcCallbackPathsTests
     [InlineData("/api/")]
     [InlineData("/api/../signin-google")]
     [InlineData("/api/%2e%2E/signin-google")]
+    [InlineData("/api/%2e%2e%2fsignin-google")]
+    [InlineData("/api/auth%5c..%5csignin-google")]
     [InlineData("/api/./signin-google")]
     [InlineData("/api//signin-google")]
     [InlineData("/api/auth/signin-google/")]

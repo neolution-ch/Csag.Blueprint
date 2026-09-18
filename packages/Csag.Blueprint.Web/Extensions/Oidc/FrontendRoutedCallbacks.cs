@@ -27,10 +27,21 @@ internal static class FrontendRoutedCallbacks
     /// <see cref="OpenIdConnectOptions.Events"/> keep running, before this handling; the redirect URI is still the
     /// frontend one whatever they set.
     /// </summary>
+    /// <param name="scheme">The authentication scheme the options belong to.</param>
     /// <param name="options">The scheme's options, with its callback path already set.</param>
     /// <param name="frontendBaseUrl">The validated frontend base URL.</param>
-    public static void Apply(OpenIdConnectOptions options, string frontendBaseUrl)
+    /// <exception cref="InvalidOperationException">The scheme sets <see cref="AuthenticationSchemeOptions.EventsType"/>.</exception>
+    public static void Apply(string scheme, OpenIdConnectOptions options, string frontendBaseUrl)
     {
+        // With EventsType set, the handler resolves its events from DI and never reads Options.Events, so the
+        // handlers below would silently not run.
+        if (options.EventsType is not null)
+        {
+            throw new InvalidOperationException(
+                $"OpenID Connect provider '{scheme}' sets EventsType, which OAuth.FrontendBaseUrl cannot route through the " +
+                "frontend origin. Configure its events on OpenIdConnectOptions.Events instead.");
+        }
+
         var redirectUri = new Uri(frontendBaseUrl).GetLeftPart(UriPartial.Authority) + options.CallbackPath;
         var fallbackFailureRedirect = QueryHelpers.AddQueryString(
             OAuthHelpers.BuildPostAuthRedirect(frontendBaseUrl, "/"),

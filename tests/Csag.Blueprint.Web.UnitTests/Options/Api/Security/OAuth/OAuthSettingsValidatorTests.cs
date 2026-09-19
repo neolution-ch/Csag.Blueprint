@@ -38,6 +38,8 @@ public sealed class OAuthSettingsValidatorTests
     [Theory]
     [InlineData("https://app.example.com/?tenant=a")]
     [InlineData("https://app.example.com/#home")]
+    [InlineData("https://app.example.com/?")]
+    [InlineData("https://app.example.com#")]
     public void Validate_FrontendBaseUrlWithQueryOrFragment_Fails(string frontendBaseUrl)
     {
         // Redirects append a path to the base URL, which would land after the query or fragment.

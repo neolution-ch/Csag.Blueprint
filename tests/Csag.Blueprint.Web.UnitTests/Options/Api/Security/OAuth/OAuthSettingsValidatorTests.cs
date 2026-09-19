@@ -27,10 +27,28 @@ public sealed class OAuthSettingsValidatorTests
         this.validator.TestValidate(settings).ShouldNotHaveValidationErrorFor(x => x.FrontendBaseUrl);
     }
 
-    [Fact]
-    public void Validate_RelativeFrontendBaseUrl_Fails()
+    [Theory]
+    [InlineData("/not-absolute")]
+    [InlineData("https:app.example.com")]
+    [InlineData("https:/app.example.com")]
+    [InlineData("https:///path")]
+    public void Validate_RelativeOrHostlessFrontendBaseUrl_Fails(string frontendBaseUrl)
     {
-        var settings = new OAuthSettings { FrontendBaseUrl = "/not-absolute" };
+        // The redirect URI is built from the base URL's origin, so it needs a host on every platform.
+        var settings = new OAuthSettings { FrontendBaseUrl = frontendBaseUrl };
+
+        this.validator.TestValidate(settings).ShouldHaveValidationErrorFor(x => x.FrontendBaseUrl);
+    }
+
+    [Theory]
+    [InlineData("https://app.example.com/?tenant=a")]
+    [InlineData("https://app.example.com/#home")]
+    [InlineData("https://app.example.com/?")]
+    [InlineData("https://app.example.com#")]
+    public void Validate_FrontendBaseUrlWithQueryOrFragment_Fails(string frontendBaseUrl)
+    {
+        // Redirects append a path to the base URL, which would land after the query or fragment.
+        var settings = new OAuthSettings { FrontendBaseUrl = frontendBaseUrl };
 
         this.validator.TestValidate(settings).ShouldHaveValidationErrorFor(x => x.FrontendBaseUrl);
     }
@@ -122,11 +140,60 @@ public sealed class OAuthSettingsValidatorTests
     [Fact]
     public void Validate_DistinctCallbackPathsAndDisplayNames_Passes()
     {
-        // Both providers rely on the per-scheme defaults (/signin-oidc/{key} and DisplayName = key),
+        // Both providers rely on the per-scheme defaults (/api/auth/signin-oidc/{key} and DisplayName = key),
         // which are inherently unique, so the cross-provider rules do not fire.
         var settings = new OAuthSettings();
         settings.Providers["google"] = ValidGeneric("https://accounts.google.com");
         settings.Providers["okta"] = ValidGeneric("https://id.example.com");
+
+        this.validator.TestValidate(settings).IsValid.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("/signin-google")]
+    [InlineData("/apifoo/signin-google")]
+    [InlineData("/api/../signin-google")]
+    public void Validate_FrontendBaseUrlWithCallbackPathOutsideProxiedPrefix_FailsNamingTheProvider(string callbackPath)
+    {
+        // The provider returns the user to the frontend origin, which only forwards /api/ to the API.
+        var settings = new OAuthSettings { FrontendBaseUrl = "https://app.example.com" };
+        settings.Providers["google"] = ValidGeneric("https://accounts.google.com");
+        settings.Providers["google"].CallbackPath = callbackPath;
+
+        this.validator.TestValidate(settings)
+            .ShouldHaveValidationErrorFor(x => x.Providers)
+            .WithErrorMessage("OAuth provider(s) google need a CallbackPath under /api/ with no empty, '.' or '..' segments, percent-encoding, backslashes, query or fragment, because OAuth.FrontendBaseUrl is set and that origin only forwards those paths to the API");
+    }
+
+    [Fact]
+    public void Validate_FrontendBaseUrlWithDefaultOrProxiedCallbackPaths_Passes()
+    {
+        var settings = new OAuthSettings { FrontendBaseUrl = "https://app.example.com" };
+        settings.Providers["google"] = ValidGeneric("https://accounts.google.com");
+        settings.Providers["google"].CallbackPath = "/api/auth/signin-google";
+        settings.Providers["okta"] = ValidGeneric("https://id.example.com");
+
+        this.validator.TestValidate(settings).IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Validate_FrontendBaseUrlWithDisabledProviderOutsideProxiedPrefix_Passes()
+    {
+        var settings = new OAuthSettings { FrontendBaseUrl = "https://app.example.com" };
+        settings.Providers["google"] = ValidGeneric("https://accounts.google.com");
+        settings.Providers["google"].CallbackPath = "/signin-google";
+        settings.Providers["google"].Enabled = false;
+
+        this.validator.TestValidate(settings).IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Validate_NoFrontendBaseUrlWithCallbackPathOutsideProxiedPrefix_Passes()
+    {
+        // Without a frontend base URL the provider returns to the API's own host, so any path reaches it.
+        var settings = new OAuthSettings();
+        settings.Providers["google"] = ValidGeneric("https://accounts.google.com");
+        settings.Providers["google"].CallbackPath = "/signin-google";
 
         this.validator.TestValidate(settings).IsValid.ShouldBeTrue();
     }

@@ -1,0 +1,384 @@
+namespace Csag.Blueprint.Web.UnitTests.Extensions;
+
+using Csag.Blueprint.Web.Extensions;
+using Csag.Blueprint.Web.Options.Api.Security;
+using Csag.Blueprint.Web.Options.Api.Security.OAuth;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+
+/// <summary>
+/// Unit tests for <see cref="OidcAuthenticationExtensions"/>: the callback path each scheme listens on, and how a
+/// configured frontend base URL routes the provider round trip through the frontend origin.
+/// </summary>
+public sealed class OidcAuthenticationExtensionsTests
+{
+    private const string Scheme = "google";
+    private const string CallbackPath = "/api/auth/signin-google";
+    private const string ApiHostRedirectUri = "https://api-internal.a.run.app/api/auth/signin-google";
+
+    [Fact]
+    public void AddOidcAuthentication_NoCallbackPath_ListensOnTheProxiedDefault()
+    {
+        using var services = BuildServices(frontendBaseUrl: null, callbackPath: null);
+
+        GetOptions(services).CallbackPath.Value.ShouldBe("/api/auth/signin-oidc/google");
+    }
+
+    [Fact]
+    public void AddOidcAuthentication_FrontendBaseUrlWithEventsType_FailsNamingTheScheme()
+    {
+        // The handler would resolve its events from DI and never run the frontend routing.
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.EventsType = typeof(OpenIdConnectEvents)));
+
+        var exception = Should.Throw<InvalidOperationException>(() => GetOptions(services));
+
+        exception.Message.ShouldContain($"'{Scheme}' sets EventsType");
+    }
+
+    [Fact]
+    public void AddOidcAuthentication_FrontendBaseUrlWithEventsOverridingRemoteFailure_FailsNamingTheScheme()
+    {
+        // The handler calls the virtual method, which would never reach the failure redirect delegate.
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events = new RemoteFailureOverridingEvents()));
+
+        var exception = Should.Throw<InvalidOperationException>(() => GetOptions(services));
+
+        exception.Message.ShouldContain($"'{Scheme}' uses {nameof(RemoteFailureOverridingEvents)}, which overrides RemoteFailure");
+    }
+
+    [Fact]
+    public void AddOidcAuthentication_FrontendBaseUrlWithApplicationMovingTheCallbackPath_FailsNamingTheProvider()
+    {
+        // Settings validation only sees the configured path; the option itself can still be changed afterwards.
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.CallbackPath = "/signin-google"));
+
+        var exception = Should.Throw<InvalidOperationException>(() => GetOptions(services));
+
+        exception.Message.ShouldContain($"'{Scheme}' listens on '/signin-google'");
+    }
+
+    [Fact]
+    public async Task TokenValidated_EntraWithApplicationHandlerConfiguredAfterRegistration_StillNormalizesClaims()
+    {
+        // The email-trust gate relies on the Entra normalization dropping an email_verified that arrived in the
+        // token; an application handler assigned later must not replace it.
+        string? emailVerifiedSeenByApplication = null;
+        using var services = BuildServices(
+            frontendBaseUrl: null,
+            profile: OidcProviderProfile.Entra,
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnTokenValidated = context =>
+                {
+                    emailVerifiedSeenByApplication = context.Principal!.FindFirst("email_verified")?.Value;
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var identity = new System.Security.Claims.ClaimsIdentity(
+            [
+                new System.Security.Claims.Claim("sub", "user-1"),
+                new System.Security.Claims.Claim("email", "victim@example.com"),
+                new System.Security.Claims.Claim("email_verified", "true"),
+            ],
+            authenticationType: "Test");
+
+        await options.Events.TokenValidated(new TokenValidatedContext(
+            CreateHttpContext(services),
+            CreateScheme(),
+            options,
+            new System.Security.Claims.ClaimsPrincipal(identity),
+            new AuthenticationProperties()));
+
+        // Multi-tenant without xms_edov: the stamped value is "false", whatever the token claimed.
+        identity.FindAll("email_verified").Select(claim => claim.Value).ShouldBe(["false"]);
+        emailVerifiedSeenByApplication.ShouldBe("false");
+    }
+
+    [Fact]
+    public void AddOidcAuthentication_EventsTypeWithoutFrontendBaseUrl_IsLeftAlone()
+    {
+        using var services = BuildServices(
+            frontendBaseUrl: null,
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.EventsType = typeof(OpenIdConnectEvents)));
+
+        GetOptions(services).EventsType.ShouldBe(typeof(OpenIdConnectEvents));
+    }
+
+    [Theory]
+    [InlineData("https://app.example.com")]
+    [InlineData("https://app.example.com/")]
+    [InlineData("https://app.example.com/portal")]
+    public async Task RedirectToIdentityProvider_WithFrontendBaseUrl_ReturnsThroughTheFrontendOrigin(string frontendBaseUrl)
+    {
+        using var services = BuildServices(frontendBaseUrl);
+        var options = GetOptions(services);
+        var context = CreateRedirectContext(services, options);
+
+        await options.Events.RedirectToIdentityProvider(context);
+
+        context.ProtocolMessage.RedirectUri.ShouldBe("https://app.example.com/api/auth/signin-google");
+    }
+
+    [Fact]
+    public async Task RedirectToIdentityProvider_WithoutFrontendBaseUrl_KeepsTheHandlersRedirectUri()
+    {
+        using var services = BuildServices(frontendBaseUrl: null);
+        var options = GetOptions(services);
+        var context = CreateRedirectContext(services, options);
+
+        await options.Events.RedirectToIdentityProvider(context);
+
+        context.ProtocolMessage.RedirectUri.ShouldBe(ApiHostRedirectUri);
+    }
+
+    [Fact]
+    public async Task RedirectToIdentityProvider_EntraProfile_IsRouted()
+    {
+        using var services = BuildServices("https://app.example.com", profile: OidcProviderProfile.Entra);
+        var options = GetOptions(services);
+        var context = CreateRedirectContext(services, options);
+
+        await options.Events.RedirectToIdentityProvider(context);
+
+        context.ProtocolMessage.RedirectUri.ShouldBe("https://app.example.com/api/auth/signin-google");
+    }
+
+    [Fact]
+    public async Task RedirectToIdentityProvider_ApplicationHandlerSettingItsOwnRedirectUri_IsOverruled()
+    {
+        var applicationHandlerRan = false;
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnRedirectToIdentityProvider = context =>
+                {
+                    applicationHandlerRan = true;
+                    context.ProtocolMessage.RedirectUri = "https://elsewhere.example.com/signin";
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var context = CreateRedirectContext(services, options);
+
+        await options.Events.RedirectToIdentityProvider(context);
+
+        applicationHandlerRan.ShouldBeTrue();
+        context.ProtocolMessage.RedirectUri.ShouldBe("https://app.example.com/api/auth/signin-google");
+    }
+
+    [Theory]
+    [InlineData(OidcProviderProfile.Google)]
+    [InlineData(OidcProviderProfile.Entra)]
+    public async Task RemoteFailure_ApplicationHandlerConfiguredBeforeRegistration_StillRuns(OidcProviderProfile profile)
+    {
+        // The Entra profile installs its own OnTokenValidated; an earlier application Configure must survive it.
+        var applicationHandlerRan = false;
+        using var services = BuildServices(
+            "https://app.example.com",
+            profile: profile,
+            configureApplicationFirst: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnRemoteFailure = _ =>
+                {
+                    applicationHandlerRan = true;
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var context = CreateRemoteFailureContext(services, options, new AuthenticationProperties
+        {
+            RedirectUri = "/api/auth/external/callback?returnUrl=%2F",
+        });
+
+        await options.Events.RemoteFailure(context);
+
+        applicationHandlerRan.ShouldBeTrue();
+        context.Response.Headers.Location.ToString().ShouldBe("/api/auth/external/callback?returnUrl=%2F");
+    }
+
+    [Fact]
+    public async Task RemoteFailure_WithTheChallengesReturnAddress_RedirectsThere()
+    {
+        using var services = BuildServices("https://app.example.com");
+        var options = GetOptions(services);
+        var context = CreateRemoteFailureContext(services, options, new AuthenticationProperties
+        {
+            RedirectUri = "/api/auth/external/callback?returnUrl=%2Finvite",
+        });
+
+        await options.Events.RemoteFailure(context);
+
+        context.Result.ShouldNotBeNull();
+        context.Result.Handled.ShouldBeTrue();
+        context.Response.Headers.Location.ToString().ShouldBe("/api/auth/external/callback?returnUrl=%2Finvite");
+    }
+
+    [Fact]
+    public async Task RemoteFailure_ClearsTheExternalCookie()
+    {
+        // An earlier attempt's external identity must not be judged in place of this failure.
+        using var services = BuildServices("https://app.example.com");
+        var options = GetOptions(services);
+        var context = CreateRemoteFailureContext(services, options, new AuthenticationProperties
+        {
+            RedirectUri = "/api/auth/external/callback?returnUrl=%2F",
+        });
+
+        await options.Events.RemoteFailure(context);
+
+        var cleared = context.Response.Headers.SetCookie.ToString();
+        cleared.ShouldContain($".AspNetCore.{IdentityConstants.ExternalScheme}=;");
+        cleared.ShouldContain("expires=Thu, 01 Jan 1970");
+    }
+
+    [Fact]
+    public async Task RemoteFailure_ApplicationHandlerConfiguredAfterRegistration_RunsFirstAndIsStillFollowedByTheRedirect()
+    {
+        var applicationHandlerRan = false;
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnRemoteFailure = _ =>
+                {
+                    applicationHandlerRan = true;
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var context = CreateRemoteFailureContext(services, options, new AuthenticationProperties
+        {
+            RedirectUri = "/api/auth/external/callback?returnUrl=%2F",
+        });
+
+        await options.Events.RemoteFailure(context);
+
+        applicationHandlerRan.ShouldBeTrue();
+        context.Response.Headers.Location.ToString().ShouldBe("/api/auth/external/callback?returnUrl=%2F");
+    }
+
+    [Fact]
+    public async Task RemoteFailure_ApplicationHandlerThatHandlesTheFailure_IsNotOverridden()
+    {
+        using var services = BuildServices(
+            "https://app.example.com",
+            configureApplication: collection => collection.Configure<OpenIdConnectOptions>(Scheme, options =>
+                options.Events.OnRemoteFailure = context =>
+                {
+                    context.Response.Redirect("/handled-by-the-application");
+                    context.HandleResponse();
+                    return Task.CompletedTask;
+                }));
+        var options = GetOptions(services);
+        var context = CreateRemoteFailureContext(services, options, new AuthenticationProperties
+        {
+            RedirectUri = "/api/auth/external/callback?returnUrl=%2F",
+        });
+
+        await options.Events.RemoteFailure(context);
+
+        context.Response.Headers.Location.ToString().ShouldBe("/handled-by-the-application");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("//evil.example.com/")]
+    [InlineData("/\\evil.example.com/")]
+    [InlineData("https://evil.example.com/")]
+    public async Task RemoteFailure_WithoutALocalReturnAddress_RedirectsToTheFrontendWithAnError(string? returnAddress)
+    {
+        using var services = BuildServices("https://app.example.com");
+        var options = GetOptions(services);
+        var properties = returnAddress is null ? null : new AuthenticationProperties { RedirectUri = returnAddress };
+        var context = CreateRemoteFailureContext(services, options, properties);
+
+        await options.Events.RemoteFailure(context);
+
+        context.Result.ShouldNotBeNull();
+        context.Result.Handled.ShouldBeTrue();
+        context.Response.Headers.Location.ToString().ShouldBe("https://app.example.com/?error=external_auth_failed");
+    }
+
+    private static ServiceProvider BuildServices(
+        string? frontendBaseUrl,
+        string? callbackPath = CallbackPath,
+        OidcProviderProfile profile = OidcProviderProfile.Google,
+        Action<IServiceCollection>? configureApplication = null,
+        Action<IServiceCollection>? configureApplicationFirst = null)
+    {
+        var securitySettings = new SecuritySettings
+        {
+            OAuth = new OAuthSettings
+            {
+                FrontendBaseUrl = frontendBaseUrl,
+                Providers =
+                {
+                    [Scheme] = new OidcProviderSettings
+                    {
+                        Enabled = true,
+                        Profile = profile,
+                        ClientId = "client-id",
+                        ClientSecret = "0123456789abcdef",
+                        CallbackPath = callbackPath,
+                    },
+                },
+            },
+        };
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddAuthentication().AddCookie(IdentityConstants.ExternalScheme);
+        configureApplicationFirst?.Invoke(services);
+        services.AddOidcAuthentication(securitySettings);
+        configureApplication?.Invoke(services);
+        return services.BuildServiceProvider();
+    }
+
+    private static OpenIdConnectOptions GetOptions(ServiceProvider services)
+    {
+        return services.GetRequiredService<IOptionsMonitor<OpenIdConnectOptions>>().Get(Scheme);
+    }
+
+    private static RedirectContext CreateRedirectContext(ServiceProvider services, OpenIdConnectOptions options)
+    {
+        return new RedirectContext(CreateHttpContext(services), CreateScheme(), options, new AuthenticationProperties())
+        {
+            ProtocolMessage = new OpenIdConnectMessage { RedirectUri = ApiHostRedirectUri },
+        };
+    }
+
+    private static RemoteFailureContext CreateRemoteFailureContext(
+        ServiceProvider services,
+        OpenIdConnectOptions options,
+        AuthenticationProperties? properties)
+    {
+        return new RemoteFailureContext(CreateHttpContext(services), CreateScheme(), options, new AuthenticationFailureException("Correlation failed."))
+        {
+            Properties = properties,
+        };
+    }
+
+    private static DefaultHttpContext CreateHttpContext(ServiceProvider services)
+    {
+        return new DefaultHttpContext { RequestServices = services };
+    }
+
+    private static AuthenticationScheme CreateScheme()
+    {
+        return new AuthenticationScheme(Scheme, displayName: null, typeof(OpenIdConnectHandler));
+    }
+
+    private sealed class RemoteFailureOverridingEvents : OpenIdConnectEvents
+    {
+        public override Task RemoteFailure(RemoteFailureContext context) => Task.CompletedTask;
+    }
+}

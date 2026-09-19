@@ -17,6 +17,7 @@ using Microsoft.IdentityModel.Tokens;
 /// </summary>
 public sealed class EntraOidcProfileTests
 {
+    private const string Scheme = "entra";
     private const string TenantId = "11111111-1111-1111-1111-111111111111";
 
     private readonly EntraOidcProfile profile = new();
@@ -121,7 +122,7 @@ public sealed class EntraOidcProfileTests
     }
 
     [Fact]
-    public async Task Configure_OnTokenValidated_NormalizesClaimsForCallbackAsync()
+    public async Task PostConfigure_OnTokenValidated_NormalizesClaimsForCallbackAsync()
     {
         // The wired event delegates to EntraClaimPolicy.NormalizeClaimsForCallback: the raw "sub" claim
         // is mapped to NameIdentifier and a computed email_verified claim is stamped ("true" here
@@ -129,6 +130,7 @@ public sealed class EntraOidcProfileTests
         var options = new OpenIdConnectOptions();
         var settings = CreateSettings(MicrosoftEntraSignInAudience.SingleTenant);
         this.profile.Configure(options, settings);
+        this.profile.PostConfigure(Scheme, options, settings);
 
         var identity = new ClaimsIdentity(
             new[] { new Claim("sub", "user-1"), new Claim("email", "user@example.com") },
@@ -147,6 +149,89 @@ public sealed class EntraOidcProfileTests
         identity.FindFirst("email_verified")!.Value.ShouldBe("true");
     }
 
+    [Fact]
+    public async Task PostConfigure_ExistingEvents_AreKeptAndSeeTheNormalizedClaimsAsync()
+    {
+        // The application's own handlers are already on the options when the profile post-configures them,
+        // and the profile composes with them instead of replacing them.
+        var options = new OpenIdConnectOptions();
+        string? nameIdentifierSeenByExistingHandler = null;
+        Func<RedirectContext, Task> redirectHandler = _ => Task.CompletedTask;
+        options.Events.OnRedirectToIdentityProvider = redirectHandler;
+        options.Events.OnTokenValidated = context =>
+        {
+            nameIdentifierSeenByExistingHandler = context.Principal!.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return Task.CompletedTask;
+        };
+
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.SingleTenant);
+        this.profile.Configure(options, settings);
+        this.profile.PostConfigure(Scheme, options, settings);
+
+        var identity = new ClaimsIdentity(new[] { new Claim("sub", "user-1") }, authenticationType: "Test");
+        await options.Events.OnTokenValidated(new TokenValidatedContext(
+            new DefaultHttpContext(),
+            new AuthenticationScheme("TestScheme", displayName: null, typeof(OpenIdConnectHandler)),
+            options,
+            new ClaimsPrincipal(identity),
+            new AuthenticationProperties()));
+
+        nameIdentifierSeenByExistingHandler.ShouldBe("user-1");
+        options.Events.OnRedirectToIdentityProvider.ShouldBeSameAs(redirectHandler);
+    }
+
+    [Fact]
+    public void PostConfigure_EventsType_Throws()
+    {
+        // The handler would resolve its events from DI, so the normalization could not be installed.
+        var options = new OpenIdConnectOptions { EventsType = typeof(OpenIdConnectEvents) };
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.MultiTenant);
+        this.profile.Configure(options, settings);
+
+        var exception = Should.Throw<InvalidOperationException>(() => this.profile.PostConfigure(Scheme, options, settings));
+
+        exception.Message.ShouldContain($"'{Scheme}' sets EventsType");
+    }
+
+    [Fact]
+    public void PostConfigure_EventsSubclassOverridingTokenValidated_Throws()
+    {
+        // The handler calls the virtual method, which would never reach the normalization delegate.
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.MultiTenant);
+        var options = new OpenIdConnectOptions();
+        this.profile.Configure(options, settings);
+        options.Events = new TokenValidatedOverridingEvents();
+
+        var exception = Should.Throw<InvalidOperationException>(() => this.profile.PostConfigure(Scheme, options, settings));
+
+        exception.Message.ShouldContain($"'{Scheme}' uses {nameof(TokenValidatedOverridingEvents)}, which overrides TokenValidated");
+    }
+
+    [Fact]
+    public void PostConfigure_EventsSubclassOverridingOtherMethods_IsAccepted()
+    {
+        var settings = CreateSettings(MicrosoftEntraSignInAudience.MultiTenant);
+        var options = new OpenIdConnectOptions();
+        this.profile.Configure(options, settings);
+        options.Events = new RemoteFailureOverridingEvents();
+
+        Should.NotThrow(() => this.profile.PostConfigure(Scheme, options, settings));
+    }
+
+    [Fact]
+    public void PostConfigure_InterfaceDefault_LeavesTheOptionsAlone()
+    {
+        // A profile implementing the interface directly keeps compiling and gets a no-op post-configure step.
+        IOidcProviderProfile directImplementation = new ConfigureOnlyProfile();
+        var options = new OpenIdConnectOptions();
+        Func<TokenValidatedContext, Task> tokenValidated = _ => Task.CompletedTask;
+        options.Events.OnTokenValidated = tokenValidated;
+
+        directImplementation.PostConfigure(Scheme, options, CreateSettings(MicrosoftEntraSignInAudience.MultiTenant));
+
+        options.Events.OnTokenValidated.ShouldBeSameAs(tokenValidated);
+    }
+
     private static OidcProviderSettings CreateSettings(MicrosoftEntraSignInAudience audience) => new()
     {
         Enabled = true,
@@ -156,4 +241,22 @@ public sealed class EntraOidcProfileTests
         TenantId = TenantId,
         SignInAudience = audience,
     };
+
+    private sealed class ConfigureOnlyProfile : IOidcProviderProfile
+    {
+        public void Configure(OpenIdConnectOptions options, OidcProviderSettings settings)
+        {
+            options.ClientId = settings.ClientId;
+        }
+    }
+
+    private sealed class TokenValidatedOverridingEvents : OpenIdConnectEvents
+    {
+        public override Task TokenValidated(TokenValidatedContext context) => Task.CompletedTask;
+    }
+
+    private sealed class RemoteFailureOverridingEvents : OpenIdConnectEvents
+    {
+        public override Task RemoteFailure(RemoteFailureContext context) => Task.CompletedTask;
+    }
 }

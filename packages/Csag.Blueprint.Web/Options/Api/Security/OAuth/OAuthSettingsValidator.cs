@@ -19,14 +19,13 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
 
         public OAuthSettingsValidator()
         {
-            // When set, the frontend base URL is used as a trusted origin for post-login redirects,
-            // so it must be a well-formed absolute http(s) URL.
+            // When set, the frontend base URL is used as a trusted origin for post-login redirects, which append a
+            // path to it, so it must be a well-formed absolute http(s) URL with no query or fragment to append after.
             this.When(x => !string.IsNullOrWhiteSpace(x.FrontendBaseUrl), () =>
             {
                 this.RuleFor(x => x.FrontendBaseUrl)
-                    .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var parsed)
-                        && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps))
-                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL (e.g. \"https://app.example.com\")");
+                    .Must(BeAnAbsoluteHttpUrlWithoutQueryOrFragment)
+                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL with a host and without a query or fragment (e.g. \"https://app.example.com\")");
             });
 
             this.RuleFor(x => x.Providers)
@@ -60,20 +59,48 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
                     .Must(HaveNoReservedSchemeKeys)
                     .WithMessage("OAuth provider keys may not be a reserved route segment (callback, providers)");
             });
+
+            // With a frontend base URL, providers return the user to the frontend origin, which only forwards
+            // the proxied prefix to the API. A callback path outside it would land on the SPA instead.
+            this.When(x => !string.IsNullOrWhiteSpace(x.FrontendBaseUrl) && x.Providers != null, () =>
+            {
+                this.RuleFor(x => x.Providers)
+                    .Must(providers => !UnproxiedProviders(providers).Any())
+                    .WithMessage(x =>
+                        $"OAuth provider(s) {string.Join(", ", UnproxiedProviders(x.Providers))} need a CallbackPath under " +
+                        $"{OidcCallbackPaths.ProxiedPrefix} with no empty, '.' or '..' segments, percent-encoding, backslashes, " +
+                        "query or fragment, because OAuth.FrontendBaseUrl is set and that origin only forwards those paths to the API");
+            });
+        }
+
+        private static bool BeAnAbsoluteHttpUrlWithoutQueryOrFragment(string? url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed))
+            {
+                return false;
+            }
+
+            var isHttp = parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps;
+            var isPlainOrigin = parsed.Host.Length > 0 && parsed.Query.Length == 0 && parsed.Fragment.Length == 0;
+            return isHttp && isPlainOrigin;
         }
 
         private static bool HaveUniqueCallbackPaths(IDictionary<string, OidcProviderSettings> providers)
         {
-            // Mirror the effective callback path computed in OidcAuthenticationExtensions:
-            // "/signin-oidc/{scheme}" when the provider does not specify one.
             var paths = providers
                 .Where(kvp => kvp.Value.Enabled)
-                .Select(kvp => string.IsNullOrWhiteSpace(kvp.Value.CallbackPath)
-                    ? $"/signin-oidc/{kvp.Key}"
-                    : kvp.Value.CallbackPath!)
+                .Select(kvp => OidcCallbackPaths.Resolve(kvp.Key, kvp.Value))
                 .ToList();
 
             return paths.Count == paths.Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        }
+
+        private static IEnumerable<string> UnproxiedProviders(IDictionary<string, OidcProviderSettings> providers)
+        {
+            return providers
+                .Where(kvp => kvp.Value.Enabled
+                    && !OidcCallbackPaths.IsUnderProxiedPrefix(OidcCallbackPaths.Resolve(kvp.Key, kvp.Value)))
+                .Select(kvp => kvp.Key);
         }
 
         private static bool HaveUniqueDisplayNames(IDictionary<string, OidcProviderSettings> providers)

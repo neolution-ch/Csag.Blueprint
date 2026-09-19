@@ -27,10 +27,15 @@ public sealed class OAuthSettingsValidatorTests
         this.validator.TestValidate(settings).ShouldNotHaveValidationErrorFor(x => x.FrontendBaseUrl);
     }
 
-    [Fact]
-    public void Validate_RelativeFrontendBaseUrl_Fails()
+    [Theory]
+    [InlineData("/not-absolute")]
+    [InlineData("https:app.example.com")]
+    [InlineData("https:/app.example.com")]
+    [InlineData("https:///path")]
+    public void Validate_RelativeOrHostlessFrontendBaseUrl_Fails(string frontendBaseUrl)
     {
-        var settings = new OAuthSettings { FrontendBaseUrl = "/not-absolute" };
+        // The redirect URI is built from the base URL's origin, so it needs a host on every platform.
+        var settings = new OAuthSettings { FrontendBaseUrl = frontendBaseUrl };
 
         this.validator.TestValidate(settings).ShouldHaveValidationErrorFor(x => x.FrontendBaseUrl);
     }

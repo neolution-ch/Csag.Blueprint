@@ -25,7 +25,7 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
             {
                 this.RuleFor(x => x.FrontendBaseUrl)
                     .Must(BeAnAbsoluteHttpUrlWithoutQueryOrFragment)
-                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL without a query or fragment (e.g. \"https://app.example.com\")");
+                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL with a host and without a query or fragment (e.g. \"https://app.example.com\")");
             });
 
             this.RuleFor(x => x.Providers)
@@ -81,7 +81,8 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
             }
 
             var isHttp = parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps;
-            return isHttp && parsed.Query.Length == 0 && parsed.Fragment.Length == 0;
+            var isPlainOrigin = parsed.Host.Length > 0 && parsed.Query.Length == 0 && parsed.Fragment.Length == 0;
+            return isHttp && isPlainOrigin;
         }
 
         private static bool HaveUniqueCallbackPaths(IDictionary<string, OidcProviderSettings> providers)

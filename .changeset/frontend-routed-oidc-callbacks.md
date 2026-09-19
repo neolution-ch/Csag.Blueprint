@@ -18,7 +18,7 @@ Behind the SPA's `/api/` proxy the API only sees the proxy's upstream host, so t
 
 New `OidcCallbackPaths` resolves each scheme's effective callback path (registration and validation both use it), exposes the proxied prefix, and checks a path against it (`IsUnderProxiedPrefix`).
 
-**Breaking:** `OAuthSettingsValidator` rejects an `OAuth.FrontendBaseUrl` carrying a query or fragment. Redirects append a path to it, which would have landed after them.
+**Breaking:** `OAuthSettingsValidator` rejects an `OAuth.FrontendBaseUrl` without a host or carrying a query or fragment. The redirect URI is built from its origin, and redirects append a path to it, which would have landed after a query or fragment.
 
 `OAuthSettings.FrontendBaseUrl` and `OAuthHelpers.BuildPostAuthRedirect` no longer describe external sign-in as completing on the API origin.
 

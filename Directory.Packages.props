@@ -15,13 +15,13 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" />
     <!-- Domain -->
-    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.12" />
     <!-- Application -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <!-- Infrastructure -->
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore"
-      Version="10.0.11" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.11" />
+      Version="10.0.12" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.12" />
     <PackageVersion Include="Neolution.Extensions.Caching.Distributed" Version="3.0.0-beta.0" />
     <!-- Web -->
     <PackageVersion Include="Audit.NET" Version="32.3.1" />
@@ -33,9 +33,9 @@
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.23.0" />
     <PackageVersion Include="Microsoft.ApplicationInsights.NLogTarget" Version="2.23.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.SqlServer" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.11" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.OpenIdConnect" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.SqlServer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.12" />
     <PackageVersion Include="Neolution.Extensions.Configuration.GoogleSecrets" Version="1.6.0" />
     <PackageVersion Include="NLog.Web.AspNetCore" Version="6.2.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
@@ -43,17 +43,17 @@
     <PackageVersion Include="AutoFixture.Xunit3" Version="5.0.0-rc.1" />
     <PackageVersion Include="FastEndpoints.Testing" Version="8.3.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
-    <PackageVersion Include="Testcontainers.MsSql" Version="4.14.0" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
     <PackageVersion Include="WireMock.Net.Testcontainers" Version="2.15.0" />
     <!-- Unit tests (tests/, not packed) -->
     <PackageVersion Include="AutoFixture.AutoMoq" Version="4.18.1" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="GitHubActionsTestLogger" Version="3.0.5" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.11" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.9.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
     <PackageVersion Include="Neolution.CodeAnalysis.TestsRuleset" Version="3.3.0-beta.2" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
     <PackageVersion Include="xunit.v3.mtp-off" Version="4.0.0" />
   </ItemGroup>
 </Project>

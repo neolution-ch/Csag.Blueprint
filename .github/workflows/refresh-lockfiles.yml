@@ -96,6 +96,31 @@ jobs:
           pnpm install --no-frozen-lockfile
 
       # -----------------------------------------------------------------------
+      # Changeset
+      #
+      # The CI Changeset Check fails a PR that changes a package and has no
+      # changeset. The Dependabot Changeset workflow writes changesets only for
+      # Dependabot PRs. Thus, this job writes its own changeset. It uses the
+      # same script and the same rules as the Dependabot Changeset workflow:
+      #   - A change to packages/*/packages.lock.json gives a patch for the
+      #     fixed package group.
+      #   - Other changes give an empty changeset.
+      # If the refresh does not change a file, this step does nothing.
+      # -----------------------------------------------------------------------
+      - name: Add changeset
+        env:
+          PR_TITLE: "chore: refresh lockfiles (transitive dependency update)"
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No lock file changed, so no changeset is needed"
+            exit 0
+          fi
+          if [ -n "$(git status --porcelain -- 'packages/*/packages.lock.json')" ]; then
+            export WORKSPACE_PACKAGES_CHANGED=true
+          fi
+          node scripts/generate-dependabot-changeset.mjs
+
+      # -----------------------------------------------------------------------
       # Open (or update) a single PR with whatever changed.
       #
       # IMPORTANT: the PR must be created with a token that is allowed to trigger

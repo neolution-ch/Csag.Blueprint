@@ -2,7 +2,6 @@ namespace Csag.Blueprint.Web.Extensions.Oidc;
 
 using System;
 using System.Security.Claims;
-using System.Threading.Tasks;
 using Csag.Blueprint.Web.Options.Api.Security.OAuth;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 
@@ -40,18 +39,35 @@ public sealed class EntraOidcProfile : OidcProviderProfileBase
                 options.TokenValidationParameters.ValidateIssuer = true;
             }
         }
+    }
 
-        options.Events = new OpenIdConnectEvents
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The claim normalization is what the external callback's email-trust gate relies on: it drops any
+    /// <c>email_verified</c> that arrived in the token and stamps a trustworthy one. It is installed here, after
+    /// the application's configuration, and composed with any handler already there, so no application handler
+    /// can replace it by accident. The normalization runs first, so such a handler sees the trusted claims.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The handler would not call the normalization (see <see cref="OpenIdConnectEventsGuard.EnsureDelegatesAreDispatched"/>).
+    /// </exception>
+    public override void PostConfigure(string scheme, OpenIdConnectOptions options, OidcProviderSettings settings)
+    {
+        OpenIdConnectEventsGuard.EnsureDelegatesAreDispatched(
+            scheme,
+            options,
+            "would bypass the claim normalization the Entra email-trust policy depends on",
+            nameof(OpenIdConnectEvents.TokenValidated));
+
+        var tokenValidated = options.Events.OnTokenValidated;
+        options.Events.OnTokenValidated = context =>
         {
-            OnTokenValidated = context =>
+            if (context.Principal?.Identity is ClaimsIdentity identity)
             {
-                if (context.Principal?.Identity is ClaimsIdentity identity)
-                {
-                    EntraClaimPolicy.NormalizeClaimsForCallback(identity, settings.SignInAudience);
-                }
+                EntraClaimPolicy.NormalizeClaimsForCallback(identity, settings.SignInAudience);
+            }
 
-                return Task.CompletedTask;
-            },
+            return tokenValidated(context);
         };
     }
 

@@ -70,10 +70,9 @@ public static class OAuthHelpers
     }
 
     /// <summary>
-    /// Builds the post-authentication redirect target. External-auth flows complete on the API origin
-    /// (the OAuth provider's redirect URI points at the API), so when a trusted frontend base URL is
-    /// configured the validated local path is appended to it, returning the browser to the frontend origin.
-    /// Falls back to the local path unchanged when no base URL is set (same-origin deployments).
+    /// Builds the post-authentication redirect target: the validated local path appended to the trusted frontend
+    /// base URL when one is configured, returning the browser to the frontend origin. Falls back to the local path
+    /// unchanged when no base URL is set (same-origin deployments).
     /// </summary>
     /// <param name="frontendBaseUrl">The trusted, server-configured frontend base URL (scheme + host), or null.</param>
     /// <param name="localPath">A safe local path produced by <see cref="ValidateLocalPath"/> (always starts with "/").</param>

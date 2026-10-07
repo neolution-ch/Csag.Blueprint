@@ -121,23 +121,28 @@ jobs:
           node scripts/generate-dependabot-changeset.mjs
 
       # -----------------------------------------------------------------------
-      # Open (or update) a single PR with whatever changed.
+      # Open or update one PR with the changes.
       #
-      # IMPORTANT: the PR must be created with a token that is allowed to trigger
-      # other workflows. The default GITHUB_TOKEN deliberately does NOT trigger
-      # `pull_request` events for commits it creates (GitHub prevents recursive
-      # workflow runs). To get the existing CI workflow to run on this PR, supply
-      # a fine-grained PAT or GitHub App token via the LOCKFILE_REFRESH_TOKEN
-      # secret (needs: contents:write, pull-requests:write).
-      #
-      # The expression falls back to GITHUB_TOKEN so the workflow still opens a PR
-      # if the secret is absent — but in that case CI must be kicked off manually
-      # (e.g. close/reopen the PR) until the secret is configured.
+      # The job opens the PR with a token of the csag-changesets-bot GitHub App.
+      # GitHub does not start `pull_request` workflows for a push with
+      # GITHUB_TOKEN. This rule prevents workflow loops. With the app token, CI
+      # starts on the PR. The token is valid only for this repository and has
+      # only the two permissions below. The action masks the token in the log
+      # and revokes it at the end of the job. No step prints the token.
       # -----------------------------------------------------------------------
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.CHANGESETS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGESETS_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.LOCKFILE_REFRESH_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
           branch: chore/refresh-lockfiles
           delete-branch: true
           commit-message: "chore: refresh lockfiles (transitive dependency update)"

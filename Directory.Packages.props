@@ -38,13 +38,13 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.12" />
     <PackageVersion Include="Neolution.Extensions.Configuration.GoogleSecrets" Version="1.6.0" />
     <PackageVersion Include="NLog.Web.AspNetCore" Version="6.2.1" />
-    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.3" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.0" />
     <!-- Testing -->
     <PackageVersion Include="AutoFixture.Xunit3" Version="5.0.0-rc.1" />
     <PackageVersion Include="FastEndpoints.Testing" Version="8.3.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="Testcontainers.MsSql" Version="4.15.0" />
-    <PackageVersion Include="WireMock.Net.Testcontainers" Version="2.15.0" />
+    <PackageVersion Include="WireMock.Net.Testcontainers" Version="2.18.0" />
     <!-- Unit tests (tests/, not packed) -->
     <PackageVersion Include="AutoFixture.AutoMoq" Version="4.18.1" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />

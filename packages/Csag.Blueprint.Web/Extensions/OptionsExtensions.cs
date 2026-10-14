@@ -1,5 +1,6 @@
 namespace Csag.Blueprint.Web.Extensions;
 
+using Csag.Blueprint.Infrastructure.ServiceAccounts;
 using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.Web.Options;
 using Csag.Blueprint.Web.Options.Api.Security;
@@ -50,8 +51,10 @@ public static class OptionsExtensions
     /// <summary>
     /// Adds all blueprint default options with FluentValidation support.
     /// Registers DatabaseOptions, SecuritySettings, FeatureFlagOptions, CacheOptions, LocalizationOptions, and FrontendSettings
-    /// with their respective validators, all nested under the "Blueprint" configuration section, and derives the
-    /// session lifetime (<see cref="BlueprintSessionOptions.Lifetime"/>) from <see cref="SecuritySettings.SessionExpirationHours"/>.
+    /// with their respective validators, all nested under the "Blueprint" configuration section. Derives the
+    /// session lifetime (<see cref="BlueprintSessionOptions.Lifetime"/>) from <see cref="SecuritySettings.SessionExpirationHours"/>,
+    /// and the service-account settings (<see cref="BlueprintServiceAccountOptions"/>) from
+    /// <see cref="SecuritySettings.Jwt"/> and <see cref="SecuritySettings.ServiceAccountLockout"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The configuration instance.</param>
@@ -75,6 +78,21 @@ public static class OptionsExtensions
         services.AddOptions<BlueprintSessionOptions>()
             .PostConfigure<IOptions<SecuritySettings>>((session, security) =>
                 session.Lifetime = TimeSpan.FromHours(security.Value.SessionExpirationHours));
+
+        // The same for service-account credentials: Blueprint:Security:Jwt and :ServiceAccountLockout are their single
+        // source, applied after any Configure the application registers.
+        services.AddOptions<BlueprintServiceAccountOptions>()
+            .PostConfigure<IOptions<SecuritySettings>>((serviceAccounts, security) =>
+            {
+                var jwt = security.Value.Jwt;
+                var lockout = security.Value.ServiceAccountLockout;
+                serviceAccounts.SigningKey = jwt.SigningKey;
+                serviceAccounts.Issuer = jwt.Issuer;
+                serviceAccounts.Audience = jwt.Audience;
+                serviceAccounts.TokenLifetime = TimeSpan.FromHours(jwt.ExpirationHours);
+                serviceAccounts.MaxFailedAccessAttempts = lockout.MaxFailedAccessAttempts;
+                serviceAccounts.LockoutDuration = TimeSpan.FromMinutes(lockout.LockoutDurationMinutes);
+            });
 
         services.AddValidatedOptions<FeatureFlagOptions, FeatureFlagOptionsValidator>(
             configuration,

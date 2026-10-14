@@ -17,7 +17,8 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds the blueprint session infrastructure: the ticket store and the session tracking it owns, the
-    /// <see cref="ISessionLifecycle"/>, service-account sessions, and the job that deletes expired session rows.
+    /// <see cref="ISessionLifecycle"/>, and the job that deletes expired session rows — service-account sessions'
+    /// included, which <c>AddBlueprintServiceAccountAuthentication</c> registers.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -71,10 +72,6 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<ISessionLifecycle, SessionLifecycle<TUser, TContext>>();
         services.TryAddSingleton<ISessionEligibility, AllowAllSessionEligibility>();
         services.AddHostedService<ExpiredSessionCleanupService<TContext>>();
-
-        // Service-account (reference-style JWT) sessions: revocable, resolved server-side per request.
-        // Reuses the same distributed-cache backing store as user sessions (see ServiceAccountSessionManager).
-        services.AddScoped<IServiceAccountSessionManager, ServiceAccountSessionManager<TContext>>();
 
         services.AddSingleton<IPostConfigureOptions<CookieAuthenticationOptions>>(sp => new PostConfigureCookieAuthenticationOptions(sp.GetRequiredService<ITicketStore>()));
 

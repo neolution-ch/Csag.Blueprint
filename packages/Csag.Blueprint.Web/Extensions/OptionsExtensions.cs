@@ -1,5 +1,6 @@
 namespace Csag.Blueprint.Web.Extensions;
 
+using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.Web.Options;
 using Csag.Blueprint.Web.Options.Api.Security;
 using Csag.Blueprint.Web.Options.Cache;
@@ -49,7 +50,8 @@ public static class OptionsExtensions
     /// <summary>
     /// Adds all blueprint default options with FluentValidation support.
     /// Registers DatabaseOptions, SecuritySettings, FeatureFlagOptions, CacheOptions, LocalizationOptions, and FrontendSettings
-    /// with their respective validators, all nested under the "Blueprint" configuration section.
+    /// with their respective validators, all nested under the "Blueprint" configuration section, and derives the
+    /// session lifetime (<see cref="BlueprintSessionOptions.Lifetime"/>) from <see cref="SecuritySettings.SessionExpirationHours"/>.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configuration">The configuration instance.</param>
@@ -67,6 +69,12 @@ public static class OptionsExtensions
         services.AddValidatedOptions<SecuritySettings, SecuritySettingsValidator>(
             configuration,
             $"{BlueprintOptions.SectionName}:Security");
+
+        // SessionExpirationHours is the single source of the session lifetime. A post-configure step applies it
+        // after any Configure an application registers for the session options, so the two cannot disagree.
+        services.AddOptions<BlueprintSessionOptions>()
+            .PostConfigure<IOptions<SecuritySettings>>((session, security) =>
+                session.Lifetime = TimeSpan.FromHours(security.Value.SessionExpirationHours));
 
         services.AddValidatedOptions<FeatureFlagOptions, FeatureFlagOptionsValidator>(
             configuration,

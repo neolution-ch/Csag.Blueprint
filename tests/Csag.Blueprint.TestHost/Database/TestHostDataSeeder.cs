@@ -3,6 +3,7 @@ namespace Csag.Blueprint.TestHost.Database;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Domain.Entities;
+using Csag.Blueprint.Infrastructure.ServiceAccounts;
 using Csag.Blueprint.TestHost.Localization;
 using Csag.Blueprint.Tests.Shared.Authorization;
 using Csag.Blueprint.Tests.Shared.Database;
@@ -12,8 +13,8 @@ using Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// Seeds the deterministic test world described by <see cref="SeedData"/>: the shared role catalog,
-/// two tenants, four users with tenant memberships and role assignments, vehicles in both tenants,
-/// and translation rows exercising every localization fallback tier. Every step checks for existing
+/// two tenants, four users with tenant memberships and role assignments, a service account, vehicles
+/// in both tenants, and translation rows exercising every localization fallback tier. Every step checks for existing
 /// rows first, so re-running the seeder against an already-seeded database is a no-op.
 /// </summary>
 public sealed class TestHostDataSeeder
@@ -52,6 +53,7 @@ public sealed class TestHostDataSeeder
         await this.SeedRolesAsync();
         await this.SeedTenantsAsync(cancellationToken);
         await this.SeedUsersAsync(cancellationToken);
+        await this.SeedServiceAccountAsync(cancellationToken);
         await this.SeedVehiclesAsync(cancellationToken);
         await this.SeedTranslationsAsync(cancellationToken);
     }
@@ -124,6 +126,40 @@ public sealed class TestHostDataSeeder
         // The platform admin is a member of tenant A so login resolves an active tenant, but holds
         // no tenant-scoped role there — its only capability is the platform-scope one.
         await this.EnsureUserAsync(SeedData.PlatformAdminUserId, SeedData.PlatformAdminEmail, SeedData.TenantAId, tenantRole: null, globalRole: TestRoles.PlatformAdmin, cancellationToken);
+    }
+
+    /// <summary>
+    /// Creates the service account in tenant A with the known secret from <see cref="SeedData.ServiceAccountSecret"/>,
+    /// as an application's data seed does. Service accounts are tenant-owned, so the check and the insert run with
+    /// tenant A as the ambient tenant.
+    /// </summary>
+    private async Task SeedServiceAccountAsync(CancellationToken cancellationToken)
+    {
+        TenantContext.SetTenant(SeedData.TenantAId);
+        try
+        {
+            if (await this.dbContext.ServiceAccounts.AnyAsync(sa => sa.Id == SeedData.ServiceAccountId, cancellationToken))
+            {
+                return;
+            }
+
+            var serviceAccount = new BlueprintServiceAccount
+            {
+                Id = SeedData.ServiceAccountId,
+                Name = SeedData.ServiceAccountName,
+                ClientId = SeedData.ServiceAccountClientId,
+                Roles = [TestRoles.TenantViewer],
+                IsActive = true,
+            };
+            serviceAccount.SetClientSecret(SeedData.ServiceAccountSecret);
+
+            this.dbContext.ServiceAccounts.Add(serviceAccount);
+            await this.dbContext.SaveChangesAsync(cancellationToken);
+        }
+        finally
+        {
+            TenantContext.Clear();
+        }
     }
 
     /// <summary>

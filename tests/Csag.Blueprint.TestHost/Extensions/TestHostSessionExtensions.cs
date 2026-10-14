@@ -13,8 +13,9 @@ using Microsoft.AspNetCore.Authentication;
 
 /// <summary>
 /// Registers distributed session authentication the way a consuming application does: the package's session
-/// infrastructure, cookie sessions and service-account credentials, plus the host's own hooks — the session eligibility rule, a revocation
-/// participant, and the permission claims transformation driven by <see cref="TestRolePermissionResolver"/>.
+/// infrastructure, cookie sessions and service-account credentials, plus the host's own hooks — the session eligibility
+/// rule, a revocation participant, a service-account claims enricher, and the permission claims transformation driven
+/// by <see cref="TestRolePermissionResolver"/>.
 /// </summary>
 public static class TestHostSessionExtensions
 {
@@ -41,6 +42,7 @@ public static class TestHostSessionExtensions
         });
 
         services.AddBlueprintServiceAccountAuthentication<TestDbContext>();
+        services.AddScoped<IServiceAccountClaimsEnricher, TestHostServiceAccountClaimsEnricher>();
 
         services.AddScoped<ISessionEligibility, TestHostSessionEligibility>();
         services.AddSingleton<RecordingRevocationParticipant>();

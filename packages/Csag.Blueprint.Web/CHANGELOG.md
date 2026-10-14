@@ -1,5 +1,56 @@
 # @neolution-ch/csag-blueprint-web
 
+## 0.4.0
+
+### Minor Changes
+
+- [#45](https://github.com/neolution-ch/Csag.Blueprint/pull/45) [`d61777b`](https://github.com/neolution-ch/Csag.Blueprint/commit/d61777b86ed9c8e917e1a69cb291699c4cdbb891) Thanks [@neotrow](https://github.com/neotrow)! - Route OpenID Connect callbacks through the frontend origin when `OAuth.FrontendBaseUrl` is set
+  
+  Behind the SPA's `/api/` proxy the API only sees the proxy's upstream host, so the OpenID Connect handler built its `redirect_uri` from that: on Cloud Run, the API's internal `run.app` address. Found on a deployed blueprint app, where Google refused the authorize request with `redirect_uri_mismatch`. Registering that address would not have helped: staging's API ingress is internal, and the challenge's correlation and nonce cookies live on the frontend host the browser used, so no callback on another host could validate.
+  
+  **Behaviour change:** With `OAuth.FrontendBaseUrl` set, every provider is now told to return to that origin plus the scheme's callback path (set in `OnRedirectToIdentityProvider` after any existing handler has run, so nothing undoes it; the handler reads the value back for the code exchange, so the authorize and token requests send the same one). The frontend origin forwards `/api/` to the API, so the callback and its cookies reach the handler. Register `<frontend origin><CallbackPath>` with each provider, e.g. `https://app.example.com/api/auth/signin-google`. Nothing is read from forwarded headers.
+  
+  **Breaking:** With `OAuth.FrontendBaseUrl` set, `OAuthSettingsValidator` rejects an enabled provider whose effective `CallbackPath` is not under `/api/`, naming the provider. Such a path lands on the SPA, not the API. The check is on the path as a proxy would route it: empty, `.` or `..` segments, percent-encoding and backslashes are rejected, so neither `/api/../signin-google` nor `/api/%2e%2e%2fsignin-google` passes. The same applies to a query or fragment, which the handler's match against the request path would never see. Move it under `/api/` and re-register it with the provider.
+  
+  **Breaking:** The default `CallbackPath` is now `/api/auth/signin-oidc/{scheme}` instead of `/signin-oidc/{scheme}`, so a provider relying on the default satisfies the rule above. Providers that set `CallbackPath` explicitly are unaffected; one relying on the default must re-register its redirect URI.
+  
+  **Behaviour change:** With `OAuth.FrontendBaseUrl` set, a failed provider round trip (the user cancels at the provider, a missing or expired correlation cookie) no longer throws `AuthenticationFailureException` into a 500. The failure is logged as a warning, the external cookie is cleared so an earlier attempt's identity cannot be judged in its place, and the user is redirected to the challenge's `AuthenticationProperties.RedirectUri` when it is a local path (the application's external callback, which answers a missing external login with its usual error redirect), otherwise to `FrontendBaseUrl` with `?error=external_auth_failed`. Both handlers are installed in a per-scheme post-configure step, so they wrap whatever the provider profile and any application `Configure<OpenIdConnectOptions>` put on the events, in either registration order: those handlers run first, and an `OnRemoteFailure` handler that handles the failure itself is left to do so. Some configurations would bypass both: a scheme that sets `EventsType` (its events come from DI), or whose events object overrides `RedirectToIdentityProvider` or `RemoteFailure` (the handler calls those methods, not the delegates). An application `Configure` could also move `OpenIdConnectOptions.CallbackPath` out of `/api/` after validation. With `FrontendBaseUrl` set, each of these now fails when the scheme's options are built, naming the provider.
+  
+  **Behaviour change:** The Entra profile installs its `OnTokenValidated` claim normalization in a per-scheme post-configure step (new `IOidcProviderProfile.PostConfigure`, a default no-op, so existing implementations keep compiling) and composes it with the handler already there, instead of replacing `OpenIdConnectEvents` during configuration. The normalization is what the external callback's email-trust gate relies on: it drops any `email_verified` that arrived in the token and stamps a trustworthy one. An application `Configure<OpenIdConnectOptions>` on an Entra scheme could previously discard it (registered before `AddBlueprintServices`, its events were replaced) or replace it (registered after), letting a token-supplied `email_verified` through. Now it runs in either order, first, so the application's handler sees the trusted claims. An Entra scheme whose events would skip it (one that sets `EventsType`, or whose events object overrides `TokenValidated`) now fails when the scheme's options are built, naming the provider, whether or not `FrontendBaseUrl` is set.
+  
+  New `OidcCallbackPaths` resolves each scheme's effective callback path (registration and validation both use it), exposes the proxied prefix, and checks a path against it (`IsUnderProxiedPrefix`).
+  
+  **Breaking:** `OAuthSettingsValidator` rejects an `OAuth.FrontendBaseUrl` without a host or carrying user-info, a query or a fragment. The redirect URI is built from its origin, which would have sent any user-info to the provider, and redirects append a path to it, which would have landed after a query or fragment.
+  
+  `OAuthSettings.FrontendBaseUrl` and `OAuthHelpers.BuildPostAuthRedirect` no longer describe external sign-in as completing on the API origin.
+  
+  Consumer migration: `csag-blueprint-web` carries the same behaviour as `FrontendRoutedOidcCallbackExtensions` (plus its own startup check). Delete that class, its registration and its tests when upgrading, and point `docs/security/EXTERNAL_OIDC.md` (the *Routing Through the Frontend Origin* section and the `CallbackPath` row, whose default and failure mode change) and the default-path comment in `PackageOAuthSettingsValidatorTests` at the package. Its explicit `/api/auth/signin-google` and `/api/auth/signin-microsoft` callback paths already satisfy the new rule.
+
+### Patch Changes
+
+- [#48](https://github.com/neolution-ch/Csag.Blueprint/pull/48) [`1e4037d`](https://github.com/neolution-ch/Csag.Blueprint/commit/1e4037d1733ed52f70b7851f136c561ee5e48674) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the nuget-ecosystem group with 18 updates
+  
+  | Package | From | To | Bump |
+  |---------|------|----|------|
+  | Audit.EntityFramework.Core | 32.3.1 | 33.0.0 | 🔴 major |
+  | Audit.NET | 32.3.1 | 33.0.0 | 🔴 major |
+  | Audit.NET.SqlServer | 32.3.1 | 33.0.0 | 🔴 major |
+  | Microsoft.AspNetCore.Authentication.OpenIdConnect | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.AspNetCore.DataProtection.EntityFrameworkCore | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.AspNetCore.Identity.EntityFrameworkCore | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Data.SqlClient | 7.0.2 | 7.0.3 | 🟢 patch |
+  | Microsoft.EntityFrameworkCore | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.EntityFrameworkCore.InMemory | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.EntityFrameworkCore.SqlServer | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Extensions.Caching.SqlServer | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Extensions.Caching.StackExchangeRedis | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Extensions.TimeProvider.Testing | 10.9.0 | 10.10.0 | 🟡 minor |
+  | Microsoft.NET.Test.Sdk | 18.7.0 | 18.10.1 | 🟡 minor |
+  | NLog.Web.AspNetCore | 6.2.0 | 6.2.1 | 🟢 patch |
+  | Testcontainers.MsSql | 4.14.0 | 4.15.0 | 🟡 minor |
+  | xunit.runner.visualstudio | 3.1.5 | 4.0.0 | 🔴 major |
+  | xunit.v3.mtp-off | 4.0.0 | 4.0.1 | 🟢 patch |
+
 ## 0.3.0
 
 ### Minor Changes

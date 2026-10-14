@@ -16,8 +16,8 @@ using Microsoft.Extensions.Options;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds the blueprint session infrastructure: the ticket store and the session tracking it owns, the session
-    /// manager, and service-account sessions.
+    /// Adds the blueprint session infrastructure: the ticket store and the session tracking it owns, the
+    /// <see cref="ISessionLifecycle"/>, and service-account sessions.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -28,9 +28,9 @@ public static class ServiceCollectionExtensions
     /// <see cref="IActiveSessionTracker"/> after this call.
     /// </para>
     /// <para>
-    /// Register an <see cref="ISessionEligibility"/> as an ordinary service; without one every account may hold a
-    /// session. Call <see cref="AddBlueprintCookieSessions"/> as well to make the Identity application cookie the
-    /// session cookie.
+    /// Register <see cref="ISessionRevocationParticipant"/>s and an <see cref="ISessionEligibility"/> as ordinary
+    /// services; without an eligibility rule every account may hold a session. Call
+    /// <see cref="AddBlueprintCookieSessions"/> as well to make the Identity application cookie the session cookie.
     /// </para>
     /// </remarks>
     /// <typeparam name="TUser">The concrete application user type.</typeparam>
@@ -49,6 +49,9 @@ public static class ServiceCollectionExtensions
         // registered before this call (a FakeTimeProvider in tests) wins.
         services.TryAddSingleton(TimeProvider.System);
 
+        // The session lifecycle locates the caller's own session through the current request.
+        services.AddHttpContextAccessor();
+
         var sessionOptions = services.AddOptions<BlueprintSessionOptions>();
         if (configure is not null)
         {
@@ -64,7 +67,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<DistributedCacheTicketStore>();
         services.TryAddSingleton<ITicketStore>(sp => sp.GetRequiredService<DistributedCacheTicketStore>());
 
-        services.AddScoped<ISessionManager, SessionManager<TUser, TContext>>();
+        services.TryAddScoped<SessionManager<TUser, TContext>>();
+        services.TryAddScoped<ISessionLifecycle, SessionLifecycle<TUser, TContext>>();
         services.TryAddSingleton<ISessionEligibility, AllowAllSessionEligibility>();
 
         // Service-account (reference-style JWT) sessions: revocable, resolved server-side per request.

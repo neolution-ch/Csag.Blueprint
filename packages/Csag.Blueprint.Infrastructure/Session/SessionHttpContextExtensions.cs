@@ -11,9 +11,8 @@ public static class SessionHttpContextExtensions
 {
     /// <summary>
     /// Resolves the session key of the request's current authentication session, if any. The key is the
-    /// value stored in the authentication ticket properties by <see cref="DistributedCacheTicketStore"/> and
-    /// is what <see cref="Csag.Blueprint.Application.Abstractions.Services.ISessionManager"/> methods operate
-    /// on. Returns <c>null</c> when the request is not authenticated under the Identity application cookie
+    /// value stored in the authentication ticket properties by <see cref="DistributedCacheTicketStore"/>.
+    /// Returns <c>null</c> when the request is not authenticated under the Identity application cookie
     /// (for example, a request carrying only the two-factor scheme, or an anonymous request).
     /// </summary>
     /// <param name="httpContext">The current HTTP context.</param>
@@ -23,6 +22,31 @@ public static class SessionHttpContextExtensions
         ArgumentNullException.ThrowIfNull(httpContext);
 
         return GetCurrentSessionKeyCoreAsync(httpContext);
+    }
+
+    /// <summary>
+    /// Resolves the request's Identity application cookie session: its key and the account it authenticates.
+    /// Returns <c>null</c> when the request has no such session, or the session carries a key no tracked session
+    /// could have, so callers never filter or look up by a key that cannot match a tracking row.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <returns>The current session, or <c>null</c>.</returns>
+    internal static async Task<CurrentSession?> GetCurrentSessionAsync(this HttpContext httpContext)
+    {
+        var authenticateResult = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
+        if (!authenticateResult.Succeeded || authenticateResult.Properties == null)
+        {
+            return null;
+        }
+
+        authenticateResult.Properties.Items.TryGetValue(SessionConstants.SessionKeyPropertyName, out var sessionKey);
+        if (!SessionValueGuards.IsWellFormedSessionKey(sessionKey, SessionConstants.SessionKeyMaxCacheKeyBytes)
+            || !SessionPrincipal.TryGetAccountId(authenticateResult.Principal, out var accountId))
+        {
+            return null;
+        }
+
+        return new CurrentSession(sessionKey, accountId);
     }
 
     private static async Task<string?> GetCurrentSessionKeyCoreAsync(HttpContext httpContext)
@@ -36,4 +60,11 @@ public static class SessionHttpContextExtensions
         authenticateResult.Properties.Items.TryGetValue(SessionConstants.SessionKeyPropertyName, out var sessionKey);
         return string.IsNullOrEmpty(sessionKey) ? null : sessionKey;
     }
+
+    /// <summary>
+    /// The Identity application cookie session a request authenticated with.
+    /// </summary>
+    /// <param name="SessionKey">The ticket store key the cookie carries.</param>
+    /// <param name="AccountId">The account the session authenticates.</param>
+    internal sealed record CurrentSession(string SessionKey, Guid AccountId);
 }

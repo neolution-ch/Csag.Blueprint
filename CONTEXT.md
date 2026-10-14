@@ -52,3 +52,17 @@ The caller sees their account's sessions, with their own marked as current.
 
 **Revoke one of my sessions**:
 The caller ends one of their account's sessions; ending their own signs them out.
+
+### Service accounts
+
+**Service account**:
+A tenant-owned, non-human account that calls the API with bearer tokens instead of a session cookie; each token it is issued is backed by a service-account session.
+
+**Service-account credential**:
+A service account's client id and secret — the package generates the secret, hands it out once, stores only its hash, and exchanges it for bearer tokens.
+
+**Token kind**:
+One family of bearer tokens with its own validating scheme.
+
+**Selector**:
+A scheme that forwards each request to exactly one other scheme: the `Bearer` selector to one token kind, the `SessionOrBearer` selector to either the session cookie or `Bearer`.

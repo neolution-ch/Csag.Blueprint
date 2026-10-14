@@ -66,8 +66,8 @@ before `AddBlueprintTenancyRuntime()` controls the timestamps it writes.
 | `TicketCacheService` | Serialization/cache wrapper for authentication tickets. |
 | `PostConfigureCookieAuthenticationOptions` | Injects the ticket store into cookie authentication options. |
 | `ISessionLifecycle` implementation | The intents applications call; registered by `AddBlueprintSessionInfrastructure`. |
-| `ExpiredSessionCleanupService<TContext>` | Hosted job deleting the tracking rows of expired sessions. |
-| `ServiceAccountSessionManager` | Tracks, validates, and revokes service-account sessions (cache marker plus tracking row) for reference-style JWTs. |
+| `ExpiredSessionCleanupService<TContext>` | Hosted job deleting the tracking rows of expired sessions, user and service-account sessions alike. |
+| `IServiceAccountCredentials` / `IServiceAccountSessionLifecycle` implementations | The service-account intents; registered by `AddBlueprintServiceAccountAuthentication`. See [Service-account credentials](#service-account-credentials). |
 | `PermissionClaimsTransformation` | Expands role claims into permission claims after authentication. |
 | `UserManagerAuthorizationExtensions` | Loads roles and permissions for users. |
 
@@ -122,6 +122,53 @@ cookie callback, its own cookie event handlers, and decorators around `ITicketSt
 (resolve `DistributedCacheTicketStore` or `ActiveSessionTracker<TContext>` as the inner instance). The expired-session
 cleanup runs hourly by default; set `ExpiredSessionCleanup.Interval`, or turn it off with
 `ExpiredSessionCleanup.Enabled = false`.
+
+### Service-account credentials
+
+The packages own a service account's credentials from end to end: the secret and its hash, issuing bearer tokens,
+the lockout, rotation, revocation, and validating the tokens. The application keeps its endpoints (route, rate limit,
+OpenAPI text) and the validation of the account data it accepts, and states intents.
+
+```csharp
+services.AddBlueprintServiceAccountAuthentication<ApplicationDbContext>();
+```
+
+The settings come from `Blueprint:Security:Jwt` and `Blueprint:Security:ServiceAccountLockout`, which
+`Csag.Blueprint.Web` applies to `BlueprintServiceAccountOptions`. The registration needs no signing key, so it can run
+unconditionally — also in a host started only to export its OpenAPI document. A configured key must have at least 32
+characters besides surrounding white space, checked at startup; a missing key fails the first issuance or validation.
+
+| Intent | Effect |
+| --- | --- |
+| `IssueTokenAsync(clientId, clientSecret)` | Returns a token (`AccessToken`, `TokenType` = `Bearer`, `ExpiresIn` in seconds) or a refusal: `InvalidCredentials` (401) for an unknown client, a wrong secret or a locked account, `AccountInactive` (403) only for the correct secret of a deactivated account. |
+| `CreateCredentialsAsync(serviceAccount)` | Generates the client id and secret, stores the account with the secret's hash, returns the secret once. |
+| `RotateSecretAsync(serviceAccountId)` | Generates a new secret; the previous secret and its tokens stop working at once. Looks the account up within the ambient tenant; `null` when there is none. |
+| `AccountDeactivatedAsync(serviceAccountId)` / `AccountDeletedAsync(serviceAccountId)` | Ends the account's sessions, after the application committed the change. |
+
+Issuance verifies every secret with the same key derivation, unknown clients included. A wrong secret counts towards
+the lockout in one statement, so concurrent attempts all count; a locked account is refused whatever secret it is given.
+Every time — issuance, expiry, lockout — comes from the injected `TimeProvider`. Rotation, deactivation and deletion tell
+the `ISessionRevocationParticipant`s, with a service-account `SessionSubject`.
+
+Each token refers to a server-side session and carries only `ServiceAccountClaimTypes` claims (`sub`, `name`, `type`,
+`sid`). The service-account scheme pins HS256, validates issuer, audience and lifetime with no clock skew, signs and
+validates over the key's UTF-8 bytes, and does not map inbound claims. Every request resolves the token's session and
+builds the principal from the account's current name, tenant, roles and permissions; register
+`IServiceAccountClaimsEnricher`s to add the application's own claims.
+
+Secrets are hashed in ASP.NET Core Identity's `PasswordHasher` format with fixed parameters, so hashes the application
+wrote with a default `PasswordHasher` keep verifying. A data seed sets a known secret with
+`serviceAccount.SetClientSecret(secret)`.
+
+Three authentication schemes are registered. Each request is authenticated by exactly one scheme:
+
+| Scheme | Role |
+| --- | --- |
+| `BlueprintAuthenticationSchemes.ServiceAccountToken` | Validates service-account tokens. Endpoints do not list it. |
+| `BlueprintAuthenticationSchemes.Bearer` (`"Bearer"`) | Forwards each request to the handler of its token kind; the service-account scheme unless an application token kind added through `BlueprintBearerOptions.AddTokenKind` claims the token. |
+| `BlueprintAuthenticationSchemes.SessionOrBearer` | Forwards a request that carries a bearer token to `Bearer`, every other request to the session cookie. |
+
+Expired service-account sessions are deleted by the job `AddBlueprintSessionInfrastructure` registers.
 
 ### Tenancy and localization infrastructure
 

@@ -24,8 +24,8 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
             this.When(x => !string.IsNullOrWhiteSpace(x.FrontendBaseUrl), () =>
             {
                 this.RuleFor(x => x.FrontendBaseUrl)
-                    .Must(BeAnAbsoluteHttpUrlWithoutQueryOrFragment)
-                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL with a host and without a query or fragment (e.g. \"https://app.example.com\")");
+                    .Must(BeAnAbsoluteHttpUrlWithoutUserInfoQueryOrFragment)
+                    .WithMessage("OAuth.FrontendBaseUrl must be an absolute http(s) URL with a host and without user-info, a query or a fragment (e.g. \"https://app.example.com\")");
             });
 
             this.RuleFor(x => x.Providers)
@@ -73,15 +73,20 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
             });
         }
 
-        private static bool BeAnAbsoluteHttpUrlWithoutQueryOrFragment(string? url)
+        private static bool BeAnAbsoluteHttpUrlWithoutUserInfoQueryOrFragment(string? url)
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed))
             {
                 return false;
             }
 
+            // The redirect_uri sent to providers is built from the URL's scheme-and-authority part, which keeps any
+            // user-info: credentials, or a bare "@" that Uri.UserInfo reports as empty.
             var isHttp = parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps;
-            var isPlainOrigin = parsed.Host.Length > 0 && parsed.Query.Length == 0 && parsed.Fragment.Length == 0;
+            var isPlainOrigin = parsed.Host.Length > 0
+                && !parsed.GetLeftPart(UriPartial.Authority).Contains('@', StringComparison.Ordinal)
+                && parsed.Query.Length == 0
+                && parsed.Fragment.Length == 0;
             return isHttp && isPlainOrigin;
         }
 

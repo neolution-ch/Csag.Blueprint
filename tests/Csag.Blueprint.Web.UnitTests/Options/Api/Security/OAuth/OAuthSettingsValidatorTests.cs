@@ -41,6 +41,18 @@ public sealed class OAuthSettingsValidatorTests
     }
 
     [Theory]
+    [InlineData("https://client:secret@app.example.com")]
+    [InlineData("https://client@app.example.com")]
+    [InlineData("https://@app.example.com")]
+    public void Validate_FrontendBaseUrlWithUserInfo_Fails(string frontendBaseUrl)
+    {
+        // The redirect URI sent to providers is built from the base URL's origin, which would carry the user-info.
+        var settings = new OAuthSettings { FrontendBaseUrl = frontendBaseUrl };
+
+        this.validator.TestValidate(settings).ShouldHaveValidationErrorFor(x => x.FrontendBaseUrl);
+    }
+
+    [Theory]
     [InlineData("https://app.example.com/?tenant=a")]
     [InlineData("https://app.example.com/#home")]
     [InlineData("https://app.example.com/?")]

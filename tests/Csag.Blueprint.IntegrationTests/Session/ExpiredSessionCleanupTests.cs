@@ -13,8 +13,8 @@ using Microsoft.Extensions.Time.Testing;
 
 /// <summary>
 /// Integration tests for <see cref="ExpiredSessionCleanupService{TContext}"/> against the real SQL container: what a
-/// pass deletes, that it deletes in batches until done, and that the hosted loop runs on its interval and not at all
-/// when switched off. Each test builds the job with its own fake clock; every expiry it writes lies far in the past,
+/// pass deletes from both session tables, that it deletes in batches until done, and that the hosted loop runs on its
+/// interval and not at all when switched off. Each test builds the job with its own fake clock; every expiry it writes lies far in the past,
 /// so the set-based deletes can never reach the fixture's own sessions.
 /// </summary>
 [Collection(nameof(AppFixtureCollection))]
@@ -48,6 +48,35 @@ public sealed class ExpiredSessionCleanupTests(AppFixture app) : IntegrationTest
         // clock all three would have been swept, the live one included.
         deleted.ShouldBe(2);
         (await this.RemainingKeysAsync(userId)).ShouldBe([liveKey]);
+    }
+
+    [Fact]
+    public async Task RemoveExpiredSessions_DeletesExpiredServiceAccountSessionsInTheSamePassAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — service-account rows straddling the clock instant, next to one expired user row, so the count
+        // shows both tables are swept by the one pass.
+        var userId = Guid.NewGuid();
+        var serviceAccountId = Guid.NewGuid();
+        var expiredKey = NewKey();
+        var boundaryKey = NewKey();
+        var liveKey = NewKey();
+        await this.SeedSessionsAsync(userId, (NewKey(), ClockEpoch.AddSeconds(-1)));
+        await this.SeedServiceAccountSessionsAsync(
+            serviceAccountId,
+            (expiredKey, ClockEpoch.AddSeconds(-1)),
+            (boundaryKey, ClockEpoch),
+            (liveKey, ClockEpoch.AddSeconds(1)));
+        var job = this.CreateJob(new FakeTimeProvider(ClockEpoch));
+
+        // Act
+        var deleted = await job.RemoveExpiredSessionsAsync(ct);
+
+        // Assert — the same ExpiresAt <= now rule applies to both tables.
+        deleted.ShouldBe(3);
+        (await this.RemainingKeysAsync(userId)).ShouldBeEmpty();
+        (await this.RemainingServiceAccountKeysAsync(serviceAccountId)).ShouldBe([liveKey]);
     }
 
     [Fact]
@@ -158,6 +187,29 @@ public sealed class ExpiredSessionCleanupTests(AppFixture app) : IntegrationTest
             ExpiresAt = s.ExpiresAt,
         }));
         await scope.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private async Task SeedServiceAccountSessionsAsync(Guid serviceAccountId, params (string SessionKey, DateTimeOffset ExpiresAt)[] sessions)
+    {
+        using var scope = this.App.CreateDbContextScope();
+        scope.Context.ServiceAccountSessions.AddRange(sessions.Select(s => new BlueprintServiceAccountSession
+        {
+            ServiceAccountId = serviceAccountId,
+            SessionKey = s.SessionKey,
+            CreatedAt = s.ExpiresAt.AddHours(-1),
+            ExpiresAt = s.ExpiresAt,
+        }));
+        await scope.Context.SaveChangesAsync(TestContext.Current.CancellationToken);
+    }
+
+    private async Task<List<string>> RemainingServiceAccountKeysAsync(Guid serviceAccountId)
+    {
+        using var scope = this.App.CreateDbContextScope();
+        return await scope.Context.ServiceAccountSessions
+            .AsNoTracking()
+            .Where(s => s.ServiceAccountId == serviceAccountId)
+            .Select(s => s.SessionKey)
+            .ToListAsync(TestContext.Current.CancellationToken);
     }
 
     private async Task<List<string>> RemainingKeysAsync(Guid userId)

@@ -97,10 +97,12 @@ public interface ISessionLifecycle
 
     /// <summary>
     /// Ends one session of the caller's account, identified by <see cref="ActiveSessionInfo.Id"/>. A session that
-    /// does not belong to the caller's account, or no longer exists, is left alone. Ending the caller's own session
-    /// signs the caller out, clearing the session cookie on the current response.
+    /// does not belong to the caller's account, or no longer exists, is left alone and no participant hears about
+    /// it. Ending the caller's own session signs the caller out, clearing the session cookie on the current response.
     /// </summary>
     /// <param name="sessionId">The session to end.</param>
-    /// <returns>A task that completes once the session is ended and every participant has run.</returns>
-    Task RevokeMySessionAsync(Guid sessionId);
+    /// <returns><see langword="true"/> once a session of the caller's account with that id is ended and every
+    /// participant has run; <see langword="false"/> when the caller's account has no session with that id, or there
+    /// is no caller session, and nothing was done.</returns>
+    Task<bool> RevokeMySessionAsync(Guid sessionId);
 }

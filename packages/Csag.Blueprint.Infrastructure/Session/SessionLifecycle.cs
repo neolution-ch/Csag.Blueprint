@@ -144,13 +144,13 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     }
 
     /// <inheritdoc/>
-    public async Task RevokeMySessionAsync(Guid sessionId)
+    public async Task<bool> RevokeMySessionAsync(Guid sessionId)
     {
         var httpContext = this.httpContextAccessor.HttpContext;
         var caller = httpContext is null ? null : await httpContext.GetCurrentSessionAsync();
         if (httpContext is null || caller is null)
         {
-            return;
+            return false;
         }
 
         var failures = new List<Exception>();
@@ -167,7 +167,7 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
         if (revokedKeys.Count == 0)
         {
             ThrowIfAnyFailed(failures);
-            return;
+            return false;
         }
 
         if (revokedKeys.Contains(caller.SessionKey, StringComparer.Ordinal))
@@ -186,6 +186,7 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
             failures);
 
         ThrowIfAnyFailed(failures);
+        return true;
     }
 
     private static void ThrowIfAnyFailed(List<Exception> failures)

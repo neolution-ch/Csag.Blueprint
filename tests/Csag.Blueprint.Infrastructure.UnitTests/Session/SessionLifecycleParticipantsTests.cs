@@ -115,11 +115,12 @@ public sealed class SessionLifecycleParticipantsTests
         await lifecycle.ClaimsChangedAsync(AccountId, TenantId);
         var outcome = await lifecycle.SwitchTenantAsync(TenantId);
         var sessions = await lifecycle.ListMySessionsAsync();
-        await lifecycle.RevokeMySessionAsync(Guid.NewGuid());
+        var revoked = await lifecycle.RevokeMySessionAsync(Guid.NewGuid());
 
         // Assert
         outcome.ShouldBe(SessionTenantSwitchOutcome.NoActiveSession);
         sessions.ShouldBeEmpty();
+        revoked.ShouldBeFalse();
         recording.Revocations.ShouldBeEmpty();
     }
 

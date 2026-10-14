@@ -115,7 +115,7 @@ Applications report what happened through `ISessionLifecycle`, after their datab
 | `ClaimsChangedAsync` (optionally per tenant) | profile, language, roles or permissions changed |
 | `TenantRemovedAsync` | tenant deleted |
 | `SwitchTenantAsync` | the caller switches tenant |
-| `ListMySessionsAsync` / `RevokeMySessionAsync` | the caller's own session management |
+| `ListMySessionsAsync` / `RevokeMySessionAsync` | the caller's own session management; `RevokeMySessionAsync` returns `false` when the caller's account has no session with that id, for the application to answer 404 |
 
 Hooks the application keeps: `ISessionRevocationParticipant`s for its own credentials, an `ISessionEligibility`, the
 cookie callback, its own cookie event handlers, and decorators around `ITicketStore` or `IActiveSessionTracker`

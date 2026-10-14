@@ -18,7 +18,7 @@ Applications wired the session cookie by hand (cookie options, 401/403 handlers,
 | `TenantRemovedAsync(tenantId)` | Ends every session scoped to the tenant. |
 | `SwitchTenantAsync(tenantId)` | Checks membership and moves the caller's session to the tenant; returns `SessionTenantSwitchOutcome` (`Switched`, `NotAMember`, `NoActiveSession`, `SessionExpired`). |
 | `ListMySessionsAsync()` | Lists the caller's account's sessions with `ActiveSessionInfo.IsCurrent`; never exposes a session key. |
-| `RevokeMySessionAsync(sessionId)` | Ends one of the caller's account's sessions; an id from another account ends nothing. Ending the caller's own session signs the caller out. |
+| `RevokeMySessionAsync(sessionId)` | Ends one of the caller's account's sessions and returns `true`; returns `false` without ending anything or calling a participant when the caller's account has no session with that id (unknown, already ended, or another account's). Ending the caller's own session signs the caller out. |
 
 No intent takes a `CancellationToken`: once called it runs to completion, so call it after the change it reports is committed. Failures throw; the revoking intents run every step and then throw one `AggregateException` carrying each failure. Every intent is safe to retry.
 
@@ -60,6 +60,6 @@ Consumer migration (`csag-blueprint-web`):
   - `DeleteTenantEndpoint`: `TenantRemovedAsync(id)`.
   - `SwitchTenantEndpoint`: the membership check, session lookup, ticket-store retrieve/renew and rollback become `SwitchTenantAsync(req.TenantId)`; map `NotAMember` to its 400 and `NoActiveSession`/`SessionExpired` to its 401.
   - `ListMySessionsEndpoint`: `ListMySessionsAsync()`, using `IsCurrent`.
-  - `RevokeMySessionEndpoint`: `RevokeMySessionAsync(req.SessionId)`. It does not report whether the id was found; keep the endpoint's own ownership lookup if the 404 must stay.
+  - `RevokeMySessionEndpoint`: the `ActiveSessions` ownership lookup and `RevokeSessionAsync` become `RevokeMySessionAsync(req.SessionId)`; map `false` to its 404 and `true` to its 204, and drop the `ApplicationDbContext` dependency.
 - Optionally register an `ISessionEligibility` (for example: a disabled or locked-out account may not hold a session) and `ISessionRevocationParticipant`s for the application's own credentials.
 - Tests: the package now covers what `SessionManagerTests`, `SessionLifetimeConfigurationTests` and `SwitchTenantSessionTargetingTests` checked; keep one HTTP test per behaviour the application relies on.

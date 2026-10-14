@@ -26,14 +26,20 @@ public sealed class RevokeMySessionEndpoint : EndpointWithoutRequest
         this.Summary(s =>
         {
             s.Summary = "Revoke one of my sessions";
-            s.Response(204, "The session is ended, if it was one of the caller's");
+            s.Response(204, "The session is ended");
+            s.Response(404, "The caller's account has no session with that id");
         });
     }
 
     /// <inheritdoc/>
     public override async Task HandleAsync(CancellationToken ct)
     {
-        await this.sessionLifecycle.RevokeMySessionAsync(this.Route<Guid>("sessionId"));
+        if (!await this.sessionLifecycle.RevokeMySessionAsync(this.Route<Guid>("sessionId")))
+        {
+            await this.Send.NotFoundAsync(ct);
+            return;
+        }
+
         await this.Send.NoContentAsync(ct);
     }
 }

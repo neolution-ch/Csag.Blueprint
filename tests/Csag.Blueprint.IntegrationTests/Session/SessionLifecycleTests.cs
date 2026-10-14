@@ -311,10 +311,26 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
         rsp.Headers.TryGetValues("Set-Cookie", out var setCookies).ShouldBeTrue("signing out clears the session cookie");
         setCookies.ShouldContain(c => c.StartsWith(".AspNetCore.Identity.Application=;", StringComparison.Ordinal));
         await ShouldAuthenticateAsync(caller, HttpStatusCode.Unauthorized);
+        this.RevocationsFor(user.Id).ShouldHaveSingleItem().SessionId.ShouldBe(callerRow.Id);
     }
 
     [Fact]
-    public async Task RevokeMySession_AnotherAccountsSession_LeavesItAsync()
+    public async Task RevokeMySession_AnUnknownId_ReportsNotFoundAndKeepsTheCallerAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var user = await this.CreateTestUserAsync("revoke_my_unknown_test@test.local", SeedData.TenantAId);
+        using var caller = await this.SignInAsync(user.Email!);
+
+        var rsp = await caller.DeleteAsync(new Uri($"{SessionsUri}/{Guid.NewGuid()}", UriKind.Relative), ct);
+
+        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, cancellationToken: ct);
+        await ShouldAuthenticateAsync(caller, HttpStatusCode.OK);
+        this.RevocationsFor(user.Id).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RevokeMySession_AnotherAccountsSession_ReportsNotFoundAndLeavesItAsync()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -326,7 +342,7 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
 
         var rsp = await strangerClient.DeleteAsync(new Uri($"{SessionsUri}/{ownerRow.Id}", UriKind.Relative), ct);
 
-        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.NoContent, cancellationToken: ct);
+        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.NotFound, cancellationToken: ct);
         await ShouldAuthenticateAsync(ownerClient, HttpStatusCode.OK, "a session can only be ended by its own account");
         this.RevocationsFor(owner.Id).ShouldBeEmpty();
         this.RevocationsFor(stranger.Id).ShouldBeEmpty();

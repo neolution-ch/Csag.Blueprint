@@ -29,6 +29,13 @@ internal sealed class BlueprintSessionOptionsValidator : IValidateOptions<Bluepr
             failures.Add("BlueprintSessionOptions.ClientIpHeader must be null or a header name, not blank.");
         }
 
+        var cleanup = options.ExpiredSessionCleanup;
+        if (cleanup.Enabled && (cleanup.Interval <= TimeSpan.Zero || cleanup.Interval > ExpiredSessionCleanupOptions.MaxInterval))
+        {
+            failures.Add(
+                $"BlueprintSessionOptions.ExpiredSessionCleanup.Interval must be positive and at most {ExpiredSessionCleanupOptions.MaxInterval}.");
+        }
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 }

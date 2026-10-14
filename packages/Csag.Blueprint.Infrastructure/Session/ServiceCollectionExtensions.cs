@@ -17,7 +17,7 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds the blueprint session infrastructure: the ticket store and the session tracking it owns, the
-    /// <see cref="ISessionLifecycle"/>, and service-account sessions.
+    /// <see cref="ISessionLifecycle"/>, service-account sessions, and the job that deletes expired session rows.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -36,8 +36,8 @@ public static class ServiceCollectionExtensions
     /// <typeparam name="TUser">The concrete application user type.</typeparam>
     /// <typeparam name="TContext">The application database context type.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">Configures the session settings, for example the client address header. The lifetime
-    /// comes from <c>Blueprint:Security:SessionExpirationHours</c>.</param>
+    /// <param name="configure">Configures the session settings, for example the client address header or the
+    /// expired-session cleanup. The lifetime comes from <c>Blueprint:Security:SessionExpirationHours</c>.</param>
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddBlueprintSessionInfrastructure<TUser, TContext>(
         this IServiceCollection services,
@@ -70,6 +70,7 @@ public static class ServiceCollectionExtensions
         services.TryAddScoped<SessionManager<TUser, TContext>>();
         services.TryAddScoped<ISessionLifecycle, SessionLifecycle<TUser, TContext>>();
         services.TryAddSingleton<ISessionEligibility, AllowAllSessionEligibility>();
+        services.AddHostedService<ExpiredSessionCleanupService<TContext>>();
 
         // Service-account (reference-style JWT) sessions: revocable, resolved server-side per request.
         // Reuses the same distributed-cache backing store as user sessions (see ServiceAccountSessionManager).

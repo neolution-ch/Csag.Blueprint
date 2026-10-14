@@ -32,4 +32,9 @@ public sealed class BlueprintSessionOptions
     /// request, so a client cannot supply its own value.
     /// </remarks>
     public string? ClientIpHeader { get; set; }
+
+    /// <summary>
+    /// Gets the settings of the background job that deletes the tracking rows of expired sessions.
+    /// </summary>
+    public ExpiredSessionCleanupOptions ExpiredSessionCleanup { get; } = new();
 }

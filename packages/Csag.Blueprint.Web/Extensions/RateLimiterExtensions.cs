@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Threading.RateLimiting;
+using Csag.Blueprint.Infrastructure.Extensions;
 using Csag.Blueprint.Web.Middleware;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -30,11 +31,13 @@ public static class RateLimiterExtensions
     /// <item>no key at all.</item>
     /// </list>
     /// <para>
-    /// A trusted header is required because <see cref="ConnectionInfo.RemoteIpAddress"/> is not the
-    /// caller's address behind a load balancer that appends its own <c>X-Forwarded-For</c> entry: the
-    /// forwarded-headers middleware reads only the rightmost entry, which is then the balancer or the
-    /// egress address of an intermediate proxy — one constant value shared by every caller. The header
-    /// must be one the edge stamps itself and overwrites on the way in, so a client cannot forge it.
+    /// The address is resolved by <see cref="ClientAddressHttpContextExtensions.TryGetClientAddress"/>, the rule
+    /// session tracking records client addresses with as well. A trusted header is required because
+    /// <see cref="ConnectionInfo.RemoteIpAddress"/> is not the caller's address behind a load balancer that
+    /// appends its own <c>X-Forwarded-For</c> entry: the forwarded-headers middleware reads only the rightmost
+    /// entry, which is then the balancer or the egress address of an intermediate proxy — one constant value
+    /// shared by every caller. The header must be one the edge stamps itself and overwrites on the way in, so a
+    /// client cannot forge it.
     /// </para>
     /// <para>
     /// Callers MUST map a <see langword="false"/> result to
@@ -59,29 +62,9 @@ public static class RateLimiterExtensions
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (!string.IsNullOrWhiteSpace(trustedClientIpHeader)
-            && context.Request.Headers.TryGetValue(trustedClientIpHeader, out var headerValues)
-            && headerValues.Count > 0)
+        if (context.TryGetClientAddress(trustedClientIpHeader, out var address))
         {
-            // Read the last entry, and the last comma-separated token within it: an edge that appends
-            // rather than overwrites leaves its own trustworthy value at the end. The token is sliced off
-            // at the final comma rather than split out, because only that one is ever read while the number
-            // of entries ahead of it is influenced by the caller — Split would allocate an array
-            // proportional to that count on every request. LastIndexOf returns -1 for a comma-free value,
-            // which slices the whole string.
-            var lastValue = headerValues[^1];
-            if (!string.IsNullOrWhiteSpace(lastValue)
-                && IPAddress.TryParse(lastValue.AsSpan(lastValue.LastIndexOf(',') + 1).Trim(), out var headerAddress))
-            {
-                partitionKey = NormalizeAddress(headerAddress);
-                return true;
-            }
-        }
-
-        var remoteAddress = context.Connection.RemoteIpAddress;
-        if (remoteAddress is not null)
-        {
-            partitionKey = NormalizeAddress(remoteAddress);
+            partitionKey = NormalizeAddress(address);
             return true;
         }
 

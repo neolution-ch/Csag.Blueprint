@@ -294,6 +294,8 @@ public sealed class OidcAuthenticationExtensionsTests
     [InlineData("//evil.example.com/")]
     [InlineData("/\\evil.example.com/")]
     [InlineData("https://evil.example.com/")]
+    [InlineData("/api/auth/external/callback\r\nSet-Cookie: injected=1")]
+    [InlineData("/api/auth/external/callback\n")]
     public async Task RemoteFailure_WithoutALocalReturnAddress_RedirectsToTheFrontendWithAnError(string? returnAddress)
     {
         using var services = BuildServices("https://app.example.com");

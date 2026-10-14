@@ -20,11 +20,13 @@ namespace Csag.Blueprint.Web.Options.Api.Security.OAuth
         public bool AutoCreateUsers { get; set; }
 
         /// <summary>
-        /// Gets or sets the absolute base URL of the frontend application (scheme + host, e.g. "https://localhost:20023").
-        /// External-auth flows always complete on the API origin, because the OAuth provider's redirect URI points at the
-        /// API rather than the frontend. The post-login redirect must therefore be sent back to the frontend origin,
-        /// otherwise the user lands on the API host (where the SPA routes do not exist → 404).
-        /// When null, redirects use a relative path, which is only correct when the frontend and API share an origin.
+        /// Gets or sets the absolute base URL of the frontend application (scheme + host, e.g. "https://localhost:20023"),
+        /// whose origin forwards <see cref="OidcCallbackPaths.ProxiedPrefix"/> to the API. When set, the post-login
+        /// redirect targets it, and every provider returns the user to it: the provider's redirect URI is this origin plus
+        /// the scheme's callback path, which must therefore sit under that prefix. Set it wherever a proxy between browser
+        /// and API rewrites the Host header, because the redirect URI the handler would build on its own names the proxy's
+        /// upstream host. When null, redirects stay relative and the redirect URI uses the request's host, which is only
+        /// correct when the API itself receives the browser's origin.
         /// </summary>
         public string? FrontendBaseUrl { get; set; }
 

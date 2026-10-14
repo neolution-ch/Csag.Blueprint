@@ -16,10 +16,17 @@ using Microsoft.Extensions.Options;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Adds the blueprint session infrastructure: the ticket store, session tracking, the session manager, and
-    /// service-account sessions.
+    /// Adds the blueprint session infrastructure: the ticket store and the session tracking it owns, the session
+    /// manager, and service-account sessions.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// The ticket store, the tracker and the ticket cache are registered with <c>TryAdd</c> under their concrete types
+    /// as well as their interfaces, so an application can register its own implementation first, or wrap the
+    /// package's: resolve <see cref="DistributedCacheTicketStore"/> or <see cref="ActiveSessionTracker{TContext}"/> as
+    /// the inner instance and register the decorator as <see cref="ITicketStore"/> or
+    /// <see cref="IActiveSessionTracker"/> after this call.
+    /// </para>
     /// <para>
     /// Register an <see cref="ISessionEligibility"/> as an ordinary service; without one every account may hold a
     /// session. Call <see cref="AddBlueprintCookieSessions"/> as well to make the Identity application cookie the
@@ -29,8 +36,8 @@ public static class ServiceCollectionExtensions
     /// <typeparam name="TUser">The concrete application user type.</typeparam>
     /// <typeparam name="TContext">The application database context type.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">Configures the session settings. The lifetime comes from
-    /// <c>Blueprint:Security:SessionExpirationHours</c>.</param>
+    /// <param name="configure">Configures the session settings, for example the client address header. The lifetime
+    /// comes from <c>Blueprint:Security:SessionExpirationHours</c>.</param>
     /// <returns>The service collection for chaining.</returns>
     public static IServiceCollection AddBlueprintSessionInfrastructure<TUser, TContext>(
         this IServiceCollection services,
@@ -51,9 +58,11 @@ public static class ServiceCollectionExtensions
         sessionOptions.ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BlueprintSessionOptions>, BlueprintSessionOptionsValidator>());
 
-        services.AddSingleton<ITicketCacheService, TicketCacheService>();
-        services.AddSingleton<IActiveSessionTracker, ActiveSessionTracker<TContext>>();
-        services.AddSingleton<ITicketStore, DistributedCacheTicketStore>();
+        services.TryAddSingleton<ITicketCacheService, TicketCacheService>();
+        services.TryAddSingleton<ActiveSessionTracker<TContext>>();
+        services.TryAddSingleton<IActiveSessionTracker>(sp => sp.GetRequiredService<ActiveSessionTracker<TContext>>());
+        services.TryAddSingleton<DistributedCacheTicketStore>();
+        services.TryAddSingleton<ITicketStore>(sp => sp.GetRequiredService<DistributedCacheTicketStore>());
 
         services.AddScoped<ISessionManager, SessionManager<TUser, TContext>>();
         services.TryAddSingleton<ISessionEligibility, AllowAllSessionEligibility>();

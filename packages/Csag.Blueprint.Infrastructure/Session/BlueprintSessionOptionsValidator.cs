@@ -24,6 +24,11 @@ internal sealed class BlueprintSessionOptionsValidator : IValidateOptions<Bluepr
                 + "those options sets it itself.");
         }
 
+        if (options.ClientIpHeader is not null && string.IsNullOrWhiteSpace(options.ClientIpHeader))
+        {
+            failures.Add("BlueprintSessionOptions.ClientIpHeader must be null or a header name, not blank.");
+        }
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }
 }

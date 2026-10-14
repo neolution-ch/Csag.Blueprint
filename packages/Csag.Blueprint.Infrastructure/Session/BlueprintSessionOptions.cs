@@ -18,4 +18,18 @@ public sealed class BlueprintSessionOptions
     /// that does not register the Web package's options. Must be positive; startup fails otherwise.
     /// </remarks>
     public TimeSpan Lifetime { get; set; }
+
+    /// <summary>
+    /// Gets or sets the name of the request header the edge stamps with the client's address, for example
+    /// <c>X-Client-IP</c>. Session tracking records the address from this header, read with the same rule the
+    /// package's rate limiting uses: the last entry, the last comma-separated token in it, accepted only when it
+    /// parses as an IP address. Without the header, or when it is not set, the connection's remote address is
+    /// recorded.
+    /// </summary>
+    /// <remarks>
+    /// Behind a load balancer that appends its own <c>X-Forwarded-For</c> entry, the connection's remote address
+    /// is the balancer or a proxy, not the client. Name a header here only when the edge overwrites it on every
+    /// request, so a client cannot supply its own value.
+    /// </remarks>
+    public string? ClientIpHeader { get; set; }
 }

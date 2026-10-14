@@ -1,8 +1,10 @@
-# CSAG Blueprint packages
+# Csag.Blueprint
 
-The shared building blocks of CSAG Blueprint applications. This glossary names the concepts the packages own, so code, docs and reviews use one word for each.
+The shared packages CSAG Blueprint applications are built on; this file names the concepts the packages own, so code, docs and reviews use one word for each.
 
-## Sessions
+## Language
+
+### Sessions
 
 **Session**:
 One signed-in presence of a user account, held server-side and identified to the browser only by the session cookie. It belongs to one account, is scoped to at most one tenant at a time, and ends when it expires, is signed out, or is revoked.
@@ -28,18 +30,25 @@ _Avoid_: Revocation hook, listener
 The application's answer to whether an account may hold a session at all; asked at sign-in and whenever a session slides.
 _Avoid_: Account status check
 
-## Session lifecycle intents
+### Session lifecycle intents
 
-**Credentials changed**: an account's password or second factor changed; its sessions end, except the caller's own session when it belongs to that account.
+**Credentials changed**:
+An account's password or second factor changed; its sessions end, except the caller's own session when it belongs to that account.
 
-**Access revoked**: an account lost access, everywhere or in one tenant; its sessions there end.
+**Access revoked**:
+An account lost access, everywhere or in one tenant; its sessions there end.
 
-**Claims changed**: something an account's session claims are built from changed; its sessions keep running with rebuilt claims.
+**Claims changed**:
+Something an account's session claims are built from changed; its sessions keep running with rebuilt claims.
 
-**Tenant removed**: a tenant was removed; every session scoped to it ends.
+**Tenant removed**:
+A tenant was removed; every session scoped to it ends.
 
-**Switch my session's tenant**: the caller moves their own session to another tenant they are a member of.
+**Switch my session's tenant**:
+The caller moves their own session to another tenant they are a member of.
 
-**List my sessions**: the caller sees their account's sessions, with their own marked as current.
+**List my sessions**:
+The caller sees their account's sessions, with their own marked as current.
 
-**Revoke one of my sessions**: the caller ends one of their account's sessions; ending their own signs them out.
+**Revoke one of my sessions**:
+The caller ends one of their account's sessions; ending their own signs them out.

@@ -16,9 +16,9 @@ namespace Csag.Blueprint.Application.Abstractions.Services;
 /// overloads, <see cref="TenantRemovedAsync"/> and <see cref="RevokeMySessionAsync"/>) run every step even when one
 /// fails, then throw an <see cref="AggregateException"/> carrying each failure. Every intent is safe to call again
 /// with the same arguments, so a caller that sees a failure retries the intent rather than compensating for it. A
-/// session whose cached ticket could not be removed stays tracked, so the retry finds and ends it. A retry of
-/// <see cref="RevokeMySessionAsync"/> after its session has ended, when only a participant failed, finds no session:
-/// it returns <see langword="false"/> and calls no participant again.
+/// session whose cached ticket or tracking row could not be removed stays tracked, so the retry finds and ends it and
+/// calls the participants again. A retry of <see cref="RevokeMySessionAsync"/> after its session has ended, when only
+/// a participant failed, finds no session: it returns <see langword="false"/> and calls no participant again.
 /// </para>
 /// <para>
 /// "The caller's session" is the Identity application cookie session the current HTTP request authenticated with.

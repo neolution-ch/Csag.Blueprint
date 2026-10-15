@@ -241,13 +241,13 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
 
     private async Task<IReadOnlyList<string>> RevokeSessionsAsync(Expression<Func<BlueprintActiveSession, bool>> filter, List<Exception> failures)
     {
-        var removalFailures = new List<Exception>();
+        var stepFailures = new List<Exception>();
         IReadOnlyList<string> revokedKeys = [];
-        await this.RunStepAsync(failures, async () => revokedKeys = await this.sessions.RevokeAsync(filter, removalFailures));
+        await this.RunStepAsync(failures, async () => revokedKeys = await this.sessions.RevokeAsync(filter, stepFailures));
 
-        foreach (var failure in removalFailures)
+        foreach (var failure in stepFailures)
         {
-            this.logger.LogWarning(failure, "Removing the cached ticket of a revoked session failed; the remaining steps still run");
+            this.logger.LogWarning(failure, "A session revocation step failed; the remaining steps still run");
             failures.Add(failure);
         }
 

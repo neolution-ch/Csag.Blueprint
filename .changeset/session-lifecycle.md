@@ -20,7 +20,7 @@ Applications wired the session cookie by hand (cookie options, 401/403 handlers,
 | `ListMySessionsAsync()` | Lists the caller's account's sessions with `ActiveSessionInfo.IsCurrent`; never exposes a session key. |
 | `RevokeMySessionAsync(sessionId)` | Ends one of the caller's account's sessions and returns `true`; returns `false` without ending anything or calling a participant when the caller's account has no session with that id (unknown, already ended, or another account's). Ending the caller's own session signs the caller out; when it could not be ended, the caller stays signed in and the intent can be retried. |
 
-No intent takes a `CancellationToken`: once called it runs to completion, so call it after the change it reports is committed. Failures throw; the revoking intents run every step and then throw one `AggregateException` carrying each failure. Every intent is safe to retry: a session whose cached ticket could not be removed stays tracked, so the retry ends it. A retried `RevokeMySessionAsync` whose session already ended (only a participant failed) returns `false` and calls no participant again.
+No intent takes a `CancellationToken`: once called it runs to completion, so call it after the change it reports is committed. Failures throw; the revoking intents run every step and then throw one `AggregateException` carrying each failure. Every intent is safe to retry: a session whose cached ticket or tracking row could not be removed stays tracked, so the retry ends it and calls the participants again. A retried `RevokeMySessionAsync` whose session already ended (only a participant failed) returns `false` and calls no participant again.
 
 **New hooks:**
 

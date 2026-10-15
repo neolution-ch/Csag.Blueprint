@@ -56,9 +56,9 @@ internal sealed class SessionManager<TUser, TContext>
     /// of the sessions whose tickets are gone, then removes those tickets once more.
     /// </summary>
     /// <param name="filter">Selects the sessions to end.</param>
-    /// <param name="failures">Collects the ticket removals that failed. A session whose ticket could not be removed
-    /// keeps its tracking row, so running the revocation again finds it.</param>
-    /// <returns>The keys of the sessions the filter matched.</returns>
+    /// <param name="failures">Collects the ticket removals and the row delete that failed. A session whose ticket or row
+    /// could not be removed keeps its tracking row, so running the revocation again finds it.</param>
+    /// <returns>The keys of the sessions the filter matched, also when a later step failed.</returns>
     public async Task<IReadOnlyList<string>> RevokeAsync(Expression<Func<BlueprintActiveSession, bool>> filter, List<Exception> failures)
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(CancellationToken.None);
@@ -84,9 +84,18 @@ internal sealed class SessionManager<TUser, TContext>
         var removedIds = sessions.Where(s => removed.Contains(s.SessionKey)).Select(s => s.Id).ToList();
         if (removedIds.Count > 0)
         {
-            await dbContext.Set<BlueprintActiveSession>()
-                .Where(s => removedIds.Contains(s.Id))
-                .ExecuteDeleteAsync(CancellationToken.None);
+            try
+            {
+                await dbContext.Set<BlueprintActiveSession>()
+                    .Where(s => removedIds.Contains(s.Id))
+                    .ExecuteDeleteAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                // The sessions are matched and their tickets gone, so the caller's remaining steps still run for
+                // them; the rows stay, and a retry of the intent finds those sessions again.
+                failures.Add(ex);
+            }
 
             // A concurrent sliding renewal that read its ticket before the removal above writes it back, and keeps
             // it when it renews its row before the delete. Removing the tickets again once the rows are gone ends

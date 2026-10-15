@@ -1,5 +1,6 @@
 namespace Csag.Blueprint.IntegrationTests.Session;
 
+using System.Data.Common;
 using System.Net;
 using System.Security.Claims;
 using Csag.Blueprint.Application.Abstractions.Services;
@@ -13,14 +14,16 @@ using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 /// <summary>
-/// Integration tests for revoking intents whose ticket removal fails, against the real SQL container and the host's
-/// ticket cache: the session that could not be ended keeps its tracking row, so retrying the intent ends it, and
-/// <see cref="ISessionLifecycle.RevokeMySessionAsync"/> still tells the participants on the failing attempt. Each test
-/// composes its own session lifecycle over the host's database and cache, with a cache that refuses one removal.
+/// Integration tests for revoking intents whose ticket removal or row delete fails, against the real SQL container and
+/// the host's ticket cache: the session that could not be ended keeps its tracking row, so retrying the intent ends it,
+/// and <see cref="ISessionLifecycle.RevokeMySessionAsync"/> still tells the participants on the failing attempt. Each
+/// test composes its own session lifecycle over the host's database and cache, with a cache that refuses one removal
+/// or a database that refuses the row delete.
 /// </summary>
 [Collection(nameof(AppFixtureCollection))]
 public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBase(app)
@@ -77,6 +80,40 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
         revoked.ShouldBeTrue();
         await ShouldAuthenticateAsync(otherDevice, HttpStatusCode.Unauthorized);
         await ShouldAuthenticateAsync(callerDevice, HttpStatusCode.OK);
+        participant.Revocations.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task RevokeMySession_WhenTheRowCannotBeDeleted_TellsTheParticipantsAndARetryEndsItAsync()
+    {
+        // Arrange — the caller ends another of its account's sessions; the database refuses to delete its row.
+        var user = await this.CreateTestUserAsync("revoke_my_retry_row_test@test.local", SeedData.TenantAId);
+        using var otherDevice = await this.SignInAsync(user.Email!);
+        var otherRow = await this.GetSingleSessionAsync(user.Id);
+        using var callerDevice = await this.SignInAsync(user.Email!);
+        var callerKey = (await this.RemainingKeysAsync(user.Id)).Single(key => key != otherRow.SessionKey);
+        var database = new RowDeleteRefusingInterceptor();
+        var participant = new RecordingParticipant();
+        await using var services = this.BuildLifecycleServices(
+            this.App.Services.GetRequiredService<ITicketCacheService>(),
+            participant,
+            CallerRequest(user.Id, callerKey),
+            this.CreateDbContextFactory(database));
+
+        // Act
+        await Should.ThrowAsync<AggregateException>(() => RunIntentAsync(services, lifecycle => lifecycle.RevokeMySessionAsync(otherRow.Id)));
+
+        // Assert — the session no longer authenticates and the participants heard about it; its row is still there...
+        await ShouldAuthenticateAsync(otherDevice, HttpStatusCode.Unauthorized);
+        participant.Revocations.ShouldHaveSingleItem().SessionId.ShouldBe(otherRow.Id);
+        (await this.RemainingKeysAsync(user.Id)).ShouldContain(otherRow.SessionKey);
+
+        // ...so retrying the intent finds the session, deletes the row and tells the participants again.
+        database.Refuse = false;
+        var revoked = false;
+        await RunIntentAsync(services, async lifecycle => revoked = await lifecycle.RevokeMySessionAsync(otherRow.Id));
+        revoked.ShouldBeTrue();
+        (await this.RemainingKeysAsync(user.Id)).ShouldBe([callerKey]);
         participant.Revocations.Count.ShouldBe(2);
     }
 
@@ -158,11 +195,15 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
     /// Composes the session lifecycle the way an application registers it, over the host's database, with the given
     /// ticket cache and participant. The account services the revoking intents never call are stubs.
     /// </summary>
-    private ServiceProvider BuildLifecycleServices(ITicketCacheService ticketCache, ISessionRevocationParticipant participant, HttpContext? caller = null)
+    private ServiceProvider BuildLifecycleServices(
+        ITicketCacheService ticketCache,
+        ISessionRevocationParticipant participant,
+        HttpContext? caller = null,
+        IDbContextFactory<TestDbContext>? dbContextFactory = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>());
+        services.AddSingleton(dbContextFactory ?? this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>());
         services.AddSingleton(ticketCache);
         services.AddSingleton<IHttpContextAccessor>(new FixedHttpContextAccessor { HttpContext = caller });
         services.AddSingleton(participant);
@@ -172,6 +213,15 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
         services.AddBlueprintSessionInfrastructure<TestUser, TestDbContext>();
 
         return services.BuildServiceProvider();
+    }
+
+    /// <summary>
+    /// Creates contexts on the host's database that run every command past <paramref name="interceptor"/>.
+    /// </summary>
+    private InterceptingDbContextFactory CreateDbContextFactory(IInterceptor interceptor)
+    {
+        using var scope = this.App.CreateDbContextScope();
+        return new InterceptingDbContextFactory(scope.Context.Database.GetConnectionString()!, interceptor);
     }
 
     private async Task<List<string>> RemainingKeysAsync(Guid userId)
@@ -202,6 +252,33 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
             => this.Refuse && string.Equals(sessionKey, refusedKey, StringComparison.Ordinal)
                 ? Task.FromException(new InvalidOperationException("The cache refused the removal."))
                 : inner.RemoveTicketAsync(sessionKey, cancellationToken);
+    }
+
+    /// <summary>
+    /// Refuses every delete from the tracking table while <see cref="Refuse"/> is set.
+    /// </summary>
+    private sealed class RowDeleteRefusingInterceptor : DbCommandInterceptor
+    {
+        public bool Refuse { get; set; } = true;
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            return this.Refuse
+                && command.CommandText.Contains("DELETE", StringComparison.OrdinalIgnoreCase)
+                && command.CommandText.Contains("BlueprintActiveSessions", StringComparison.Ordinal)
+                ? ValueTask.FromException<InterceptionResult<int>>(new InvalidOperationException("The database refused the delete."))
+                : base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+    }
+
+    private sealed class InterceptingDbContextFactory(string connectionString, IInterceptor interceptor) : IDbContextFactory<TestDbContext>
+    {
+        public TestDbContext CreateDbContext()
+            => new(new DbContextOptionsBuilder<TestDbContext>().UseSqlServer(connectionString).AddInterceptors(interceptor).Options);
     }
 
     /// <summary>

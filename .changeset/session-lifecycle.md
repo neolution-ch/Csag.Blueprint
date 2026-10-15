@@ -33,7 +33,7 @@ No intent takes a `CancellationToken`: once called it runs to completion, so cal
 
 **Behaviour change:** The client address recorded for a session follows the rule the package's rate limiting uses (`ClientAddressHttpContextExtensions.TryGetClientAddress`, which `RateLimiterExtensions.TryGetClientPartitionKey` now calls): the configured `ClientIpHeader` when present and parseable, otherwise the connection's remote address.
 
-**Behaviour change:** The session lifetime comes from `Blueprint:Security:SessionExpirationHours` alone: `AddBlueprintDefaultValidatedOptions` sets `BlueprintSessionOptions.Lifetime` from it, the cookie's `ExpireTimeSpan` follows, and a ticket that reaches the store without an expiry gets it too. Sign-in code no longer sets `ExpiresUtc` or `IsPersistent`. Startup fails when the lifetime is not positive.
+**Behaviour change:** The session lifetime comes from `Blueprint:Security:SessionExpirationHours` alone: `AddBlueprintDefaultValidatedOptions` sets `BlueprintSessionOptions.Lifetime` from it, the cookie's `ExpireTimeSpan` follows, and a ticket that reaches the store without an expiry gets it too. Sign-in code no longer sets `ExpiresUtc` or `IsPersistent`. Startup fails when the lifetime is shorter than one second.
 
 **Behaviour change:** A hosted job deletes the tracking rows of expired sessions, by default once an hour. Each pass deletes in batches by the existing `ExpiresAt` index, so every replica can run it without coordination. Switch it off with `ExpiredSessionCleanup.Enabled = false`.
 

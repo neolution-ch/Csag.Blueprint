@@ -16,10 +16,11 @@ internal sealed class BlueprintSessionOptionsValidator : IValidateOptions<Bluepr
 
         var failures = new List<string>();
 
-        if (options.Lifetime <= TimeSpan.Zero)
+        // A ticket keeps its expiry to whole seconds, so a shorter session could be expired as it is issued.
+        if (options.Lifetime < TimeSpan.FromSeconds(1))
         {
             failures.Add(
-                "BlueprintSessionOptions.Lifetime must be positive. Csag.Blueprint.Web sets it from "
+                "BlueprintSessionOptions.Lifetime must be at least one second. Csag.Blueprint.Web sets it from "
                 + "Blueprint:Security:SessionExpirationHours through AddBlueprintDefaultValidatedOptions; a host without "
                 + "those options sets it itself.");
         }

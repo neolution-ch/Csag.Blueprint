@@ -15,7 +15,7 @@ public sealed class BlueprintSessionOptions
     /// <remarks>
     /// <c>Csag.Blueprint.Web</c> sets this from <c>Blueprint:Security:SessionExpirationHours</c> after every other
     /// configuration step, so that setting stays the single source of the lifetime. Set it yourself only in a host
-    /// that does not register the Web package's options. Must be positive; startup fails otherwise.
+    /// that does not register the Web package's options. Must be at least one second; startup fails otherwise.
     /// </remarks>
     public TimeSpan Lifetime { get; set; }
 

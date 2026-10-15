@@ -30,14 +30,24 @@ public sealed class BlueprintSessionOptionsTests
 
     [Theory]
     [InlineData(0)]
-    [InlineData(-1)]
-    public void ANonPositiveLifetime_FailsValidation(int hours)
+    [InlineData(-3_600_000)]
+    [InlineData(999)]
+    public void ALifetimeShorterThanOneSecond_FailsValidation(int milliseconds)
     {
-        using var services = SessionTestServices.Build(after: s => s.Configure<BlueprintSessionOptions>(o => o.Lifetime = TimeSpan.FromHours(hours)));
+        // The ticket's expiry is kept to whole seconds, so a shorter session could be expired as it is issued.
+        using var services = SessionTestServices.Build(after: s => s.Configure<BlueprintSessionOptions>(o => o.Lifetime = TimeSpan.FromMilliseconds(milliseconds)));
 
         var exception = Should.Throw<OptionsValidationException>(() => services.GetRequiredService<IOptions<BlueprintSessionOptions>>().Value);
 
-        exception.Message.ShouldContain("Lifetime must be positive");
+        exception.Message.ShouldContain("Lifetime must be at least one second");
+    }
+
+    [Fact]
+    public void AOneSecondLifetime_PassesValidation()
+    {
+        using var services = SessionTestServices.Build(after: s => s.Configure<BlueprintSessionOptions>(o => o.Lifetime = TimeSpan.FromSeconds(1)));
+
+        services.GetRequiredService<IOptions<BlueprintSessionOptions>>().Value.Lifetime.ShouldBe(TimeSpan.FromSeconds(1));
     }
 
     [Fact]

@@ -52,19 +52,21 @@ internal sealed class SessionManager<TUser, TContext>
     }
 
     /// <summary>
-    /// Ends every session matching <paramref name="filter"/>: deletes the tracking rows, then removes the cached
-    /// tickets.
+    /// Ends every session matching <paramref name="filter"/>: removes the cached tickets, deletes the tracking rows
+    /// of the sessions whose tickets are gone, then removes those tickets once more.
     /// </summary>
     /// <param name="filter">Selects the sessions to end.</param>
-    /// <returns>The keys of the sessions ended.</returns>
-    public async Task<IReadOnlyList<string>> RevokeAsync(Expression<Func<BlueprintActiveSession, bool>> filter)
+    /// <param name="failures">Collects the ticket removals that failed. A session whose ticket could not be removed
+    /// keeps its tracking row, so running the revocation again finds it.</param>
+    /// <returns>The keys of the sessions the filter matched.</returns>
+    public async Task<IReadOnlyList<string>> RevokeAsync(Expression<Func<BlueprintActiveSession, bool>> filter, List<Exception> failures)
     {
         await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(CancellationToken.None);
 
-        // Snapshot the matching rows' keys AND ids first, so the tickets removed and the rows deleted are
-        // exactly the same set. Re-evaluating the filter for the delete would race with sessions tracked
-        // between the two statements: such a session would lose its tracking row while keeping its cached
-        // ticket — a usable session that no longer shows up in listings and cannot be revoked individually.
+        // Snapshot the matching rows' keys AND ids first, so the rows deleted are exactly those of the sessions
+        // whose tickets were removed. Re-evaluating the filter for the delete would race with sessions tracked
+        // between the statements: such a session would lose its tracking row while keeping its cached ticket —
+        // a usable session that no longer shows up in listings and cannot be revoked individually.
         var sessions = await dbContext.Set<BlueprintActiveSession>()
             .Where(filter)
             .Select(s => new { s.Id, s.SessionKey })
@@ -75,20 +77,25 @@ internal sealed class SessionManager<TUser, TContext>
             return [];
         }
 
-        // Delete the tracking rows BEFORE removing the cached tickets. A concurrent sliding renewal
-        // re-writes its ticket unconditionally and then renews its row; with rows already gone, that
-        // renewal reports "no row" and removes its own ticket (see DistributedCacheTicketStore.RenewAsync),
-        // so every interleaving converges on a dead session. With the opposite order there is a window
-        // (ticket removed, row still present) in which a renewal both resurrects the ticket AND renews the
-        // row successfully, surviving revocation.
-        var sessionIds = sessions.Select(s => s.Id).ToList();
-        await dbContext.Set<BlueprintActiveSession>()
-            .Where(s => sessionIds.Contains(s.Id))
-            .ExecuteDeleteAsync(CancellationToken.None);
+        // Tickets first, while every row still names its session: the row is the only way to find a session again,
+        // so a session whose ticket could not be removed keeps it, and a retry of the intent ends that session.
+        var removed = await this.RemoveTicketsAsync(sessions.Select(s => s.SessionKey), failures);
 
-        var sessionKeys = sessions.Select(s => s.SessionKey).ToList();
-        await this.RemoveTicketsAsync(sessionKeys);
-        return sessionKeys;
+        var removedIds = sessions.Where(s => removed.Contains(s.SessionKey)).Select(s => s.Id).ToList();
+        if (removedIds.Count > 0)
+        {
+            await dbContext.Set<BlueprintActiveSession>()
+                .Where(s => removedIds.Contains(s.Id))
+                .ExecuteDeleteAsync(CancellationToken.None);
+
+            // A concurrent sliding renewal that read its ticket before the removal above writes it back, and keeps
+            // it when it renews its row before the delete. Removing the tickets again once the rows are gone ends
+            // such a session; a renewal that comes later finds no row and removes its own ticket (see
+            // DistributedCacheTicketStore.RenewAsync).
+            await this.RemoveTicketsAsync(removed, failures);
+        }
+
+        return sessions.Select(s => s.SessionKey).ToList();
     }
 
     /// <summary>
@@ -259,18 +266,24 @@ internal sealed class SessionManager<TUser, TContext>
             .Select(s => s.SessionKey)
             .ToListAsync(CancellationToken.None);
 
-        await this.RemoveTicketsAsync(sessionKeys.Except(stillTracked, StringComparer.Ordinal).ToList());
+        var failures = new List<Exception>();
+        await this.RemoveTicketsAsync(sessionKeys.Except(stillTracked, StringComparer.Ordinal), failures);
+        if (failures.Count > 0)
+        {
+            throw new AggregateException("Removing the cached tickets of revoked sessions failed.", failures);
+        }
     }
 
-    private async Task RemoveTicketsAsync(List<string> sessionKeys)
+    private async Task<List<string>> RemoveTicketsAsync(IEnumerable<string> sessionKeys, List<Exception> failures)
     {
         // Every removal is attempted even when one fails: each ticket left behind keeps a session alive.
-        var failures = new List<Exception>();
+        var removed = new List<string>();
         foreach (var sessionKey in sessionKeys)
         {
             try
             {
                 await this.ticketCacheService.RemoveTicketAsync(sessionKey, CancellationToken.None);
+                removed.Add(sessionKey);
             }
             catch (Exception ex)
             {
@@ -278,10 +291,7 @@ internal sealed class SessionManager<TUser, TContext>
             }
         }
 
-        if (failures.Count > 0)
-        {
-            throw new AggregateException("Removing the cached tickets of revoked sessions failed.", failures);
-        }
+        return removed;
     }
 
     /// <summary>

@@ -166,13 +166,11 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
 
         // Ownership is part of the filter, so an id from another account matches nothing and ends nothing.
         var accountId = caller.AccountId;
-        IReadOnlyList<string> revokedKeys = [];
-        await this.RunStepAsync(
-            failures,
-            async () => revokedKeys = await this.sessions.RevokeAsync(s => s.Id == sessionId && s.UserId == accountId));
+        var revokedKeys = await this.RevokeSessionsAsync(s => s.Id == sessionId && s.UserId == accountId, failures);
 
         // Participants hear only about a session that was found among the caller's own: an unknown or foreign id
-        // must not reach them as a revocation the caller's account performed.
+        // must not reach them as a revocation the caller's account performed. A session that was found but whose
+        // ticket could not be removed still reaches them; it keeps its row, so a retry finds it again.
         if (revokedKeys.Count == 0)
         {
             ThrowIfAnyFailed(failures);
@@ -228,7 +226,7 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     {
         var failures = new List<Exception>();
 
-        await this.RunStepAsync(failures, () => this.sessions.RevokeAsync(filter));
+        await this.RevokeSessionsAsync(filter, failures);
 
         // Participants hear about the revocation whether or not any package session matched: the intent states what
         // happened to the account, and the application's own credentials may exist without a cookie session. A
@@ -236,6 +234,21 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
         await this.NotifyParticipantsAsync(revocation, failures);
 
         ThrowIfAnyFailed(failures);
+    }
+
+    private async Task<IReadOnlyList<string>> RevokeSessionsAsync(Expression<Func<BlueprintActiveSession, bool>> filter, List<Exception> failures)
+    {
+        var removalFailures = new List<Exception>();
+        IReadOnlyList<string> revokedKeys = [];
+        await this.RunStepAsync(failures, async () => revokedKeys = await this.sessions.RevokeAsync(filter, removalFailures));
+
+        foreach (var failure in removalFailures)
+        {
+            this.logger.LogWarning(failure, "Removing the cached ticket of a revoked session failed; the remaining steps still run");
+            failures.Add(failure);
+        }
+
+        return revokedKeys;
     }
 
     private async Task NotifyParticipantsAsync(SessionRevocation revocation, List<Exception> failures)

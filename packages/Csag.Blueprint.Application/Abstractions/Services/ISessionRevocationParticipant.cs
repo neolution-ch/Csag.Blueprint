@@ -14,7 +14,8 @@ namespace Csag.Blueprint.Application.Abstractions.Services;
 /// <para>
 /// There is no <see cref="CancellationToken"/>, for the same reason the intents have none: revocation runs to
 /// completion. An intent the caller retries calls every participant again, so an implementation must be safe to
-/// run twice for the same revocation.
+/// run twice for the same revocation. The exception is <see cref="ISessionLifecycle.RevokeMySessionAsync"/>, which
+/// calls participants only for a session it still finds: once that session has ended, a retry calls none.
 /// </para>
 /// </remarks>
 public interface ISessionRevocationParticipant

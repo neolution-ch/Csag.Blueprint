@@ -123,13 +123,14 @@ public sealed class DistributedCacheTicketStore : ITicketStore
         // ExpiredSessionCleanupService, and session listings filter them out by ExpiresAt, so what lingers is
         // storage rather than authorization.
         //
-        // Delete the tracking row BEFORE removing the cached ticket, for the reason spelled out in
-        // SessionManager.RevokeAsync: a concurrent sliding renewal re-writes its ticket unconditionally and
-        // only then renews its row, so with the row already gone that renewal reports "no row" and removes its
-        // own ticket (see RenewCoreAsync below). The opposite order leaves a window — ticket removed, row still
-        // present — in which a renewal both resurrects the ticket and renews the row successfully, and the
-        // untracking below then strips the tracking row off a session whose ticket is still live: invisible to
-        // listing, unreachable by revocation.
+        // Delete the tracking row BEFORE removing the cached ticket: a concurrent sliding renewal writes its ticket
+        // back and only then renews its row, so with the row already gone that renewal reports "no row" and
+        // removes its own ticket (see RenewCoreAsync below). The opposite order leaves a window — ticket removed,
+        // row still present — in which a renewal both resurrects the ticket and renews the row successfully, and
+        // the untracking below then strips the tracking row off a session whose ticket is still live: invisible to
+        // listing, unreachable by revocation. A sign-out needs no row to find its session again, unlike a
+        // revocation (see SessionManager.RevokeAsync): the cookie carries the key, so a sign-out that fails here
+        // can simply be repeated.
         try
         {
             await this.activeSessionTracker.UntrackAsync(key, CancellationToken.None);

@@ -18,7 +18,7 @@ Applications wired the session cookie by hand (cookie options, 401/403 handlers,
 | `TenantRemovedAsync(tenantId)` | Ends every session scoped to the tenant. |
 | `SwitchTenantAsync(tenantId)` | Checks membership and moves the caller's session to the tenant; returns `SessionTenantSwitchOutcome` (`Switched`, `NotAMember`, `NoActiveSession`, `SessionExpired`). |
 | `ListMySessionsAsync()` | Lists the caller's account's sessions with `ActiveSessionInfo.IsCurrent`; never exposes a session key. |
-| `RevokeMySessionAsync(sessionId)` | Ends one of the caller's account's sessions and returns `true`; returns `false` without ending anything or calling a participant when the caller's account has no session with that id (unknown, already ended, or another account's). Ending the caller's own session signs the caller out. |
+| `RevokeMySessionAsync(sessionId)` | Ends one of the caller's account's sessions and returns `true`; returns `false` without ending anything or calling a participant when the caller's account has no session with that id (unknown, already ended, or another account's). Ending the caller's own session signs the caller out; when it could not be ended, the caller stays signed in and the intent can be retried. |
 
 No intent takes a `CancellationToken`: once called it runs to completion, so call it after the change it reports is committed. Failures throw; the revoking intents run every step and then throw one `AggregateException` carrying each failure. Every intent is safe to retry: a session whose cached ticket could not be removed stays tracked, so the retry ends it. A retried `RevokeMySessionAsync` whose session already ended (only a participant failed) returns `false` and calls no participant again.
 
@@ -37,7 +37,7 @@ No intent takes a `CancellationToken`: once called it runs to completion, so cal
 
 **Behaviour change:** A hosted job deletes the tracking rows of expired sessions, by default once an hour. Each pass deletes in batches by the existing `ExpiresAt` index, so every replica can run it without coordination. Switch it off with `ExpiredSessionCleanup.Enabled = false`.
 
-**Behaviour change:** Revoking intents keep removing the remaining cached tickets when one removal fails, keep the tracking row of a session whose ticket could not be removed, and still call the participants. A claims refresh that races a revocation removes the tickets it rewrote for sessions whose rows are gone. A claims refresh or tenant switch leaves alone a ticket that by then authenticates another account. A sliding renewal on a request that switched the caller's tenant or changed its own account's claims keeps that change.
+**Behaviour change:** Revoking intents keep removing the remaining cached tickets when one removal fails, keep the tracking row of a session whose ticket could not be removed, and still call the participants. A sign-out removes the cached ticket before it deletes the tracking row, and once more after it, so a sign-out whose ticket removal fails leaves the session tracked. A claims refresh that races a revocation removes the tickets it rewrote for sessions whose rows are gone. A claims refresh or tenant switch leaves alone a ticket that by then authenticates another account. A sliding renewal on a request that switched the caller's tenant or changed its own account's claims keeps that change.
 
 **Breaking:** `ISessionManager` is removed with all its methods, and `ActiveSessionInfo.SessionKey` with it; the package's `SessionManager<TUser, TContext>` is internal. Use the intents above.
 

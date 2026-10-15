@@ -310,6 +310,38 @@ public sealed class CookieSessionsTests
     }
 
     [Fact]
+    public async Task SlidingRenewal_RefusedWhenAnApplicationHandlerAlreadyRejectedThePrincipal_StillEndsTheSession()
+    {
+        // Arrange — the application's handler runs first and rejects the principal, which ends nothing server-side.
+        using var services = SessionTestServices.Build(after: s => s.ConfigureApplicationCookie(options =>
+            options.Events.OnValidatePrincipal = context =>
+            {
+                context.RejectPrincipal();
+                return Task.CompletedTask;
+            }));
+        var options = services.GetCookieOptions();
+        var authentication = new Mock<IAuthenticationService>();
+        var httpContext = SessionTestServices.CreateHttpContext(Eligibility(false), authentication.Object);
+        var ticket = new AuthenticationTicket(SessionTestServices.CreatePrincipal(AccountId), IdentityConstants.ApplicationScheme);
+        var sliding = new CookieSlidingExpirationContext(
+            httpContext, SessionTestServices.SessionScheme(), options, ticket, TimeSpan.FromHours(5), TimeSpan.FromHours(3))
+        {
+            ShouldRenew = true,
+        };
+        var validate = new CookieValidatePrincipalContext(httpContext, SessionTestServices.SessionScheme(), options, ticket);
+
+        // Act
+        await options.Events.CheckSlidingExpiration(sliding);
+        await options.Events.ValidatePrincipal(validate);
+
+        // Assert
+        validate.Principal.ShouldBeNull();
+        authentication.Verify(
+            a => a.SignOutAsync(httpContext, IdentityConstants.ApplicationScheme, It.IsAny<AuthenticationProperties?>()),
+            Times.Once);
+    }
+
+    [Fact]
     public async Task SlidingRenewal_AnEligibleAccount_KeepsTheRenewalAndThePrincipal()
     {
         // Arrange

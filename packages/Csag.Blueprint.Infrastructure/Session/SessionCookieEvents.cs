@@ -83,7 +83,9 @@ internal static class SessionCookieEvents
     /// <returns>A task that completes once the session is ended, if it had to be.</returns>
     public static async Task ValidatePrincipalAsync(CookieValidatePrincipalContext context)
     {
-        if (context.Principal is null || !context.HttpContext.Items.ContainsKey(RenewalRefusedKey))
+        // Decided by the refusal alone: an application handler that already rejected the principal only made this
+        // request unauthenticated, while the session itself and its cookie are still there to end.
+        if (!context.HttpContext.Items.ContainsKey(RenewalRefusedKey))
         {
             return;
         }

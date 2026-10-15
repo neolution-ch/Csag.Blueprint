@@ -4,9 +4,9 @@
     "net10.0": {
       "coverlet.collector": {
         "type": "Direct",
-        "requested": "[10.0.1, )",
-        "resolved": "10.0.1",
-        "contentHash": "27jXSV/0DbVqF5jDrAxuQFZ9oaz6gmG03p8ttxAFk+X0M4woFYj7MoWDLCna5EGLb0CE6OE7X6ZH3Wt5smTtaA=="
+        "requested": "[10.1.0, )",
+        "resolved": "10.1.0",
+        "contentHash": "SlYCIHnBYxINSUpR75SiM5JEmnx11pqT+Ac/C/fUqTTA0dLPl9eYzmFXKKuxmQhL3ZdTQl4PBD3YdAxAauaKLQ=="
       },
       "GitHubActionsTestLogger": {
         "type": "Direct",
@@ -1482,7 +1482,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[0.3.0, )",
+          "Csag.Blueprint.Domain": "[0.4.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )"
         }
       },
@@ -1495,8 +1495,8 @@
       "csag.blueprint.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Application": "[0.3.0, )",
-          "Csag.Blueprint.Domain": "[0.3.0, )",
+          "Csag.Blueprint.Application": "[0.4.0, )",
+          "Csag.Blueprint.Domain": "[0.4.0, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
@@ -1507,7 +1507,7 @@
         "type": "Project",
         "dependencies": {
           "AutoFixture.Xunit3": "[5.0.0-rc.1, )",
-          "Csag.Blueprint.Web": "[0.3.0, )",
+          "Csag.Blueprint.Web": "[0.4.0, )",
           "FastEndpoints.Testing": "[8.3.0, )",
           "Microsoft.Data.SqlClient": "[7.0.3, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )",
@@ -1523,7 +1523,7 @@
           "Audit.NET": "[33.0.0, )",
           "Audit.NET.SqlServer": "[33.0.0, )",
           "ClosedXML": "[0.105.1, )",
-          "Csag.Blueprint.Infrastructure": "[0.3.0, )",
+          "Csag.Blueprint.Infrastructure": "[0.4.0, )",
           "FastEndpoints": "[8.3.0, )",
           "FastEndpoints.Swagger": "[8.3.0, )",
           "FluentValidation": "[12.1.1, )",

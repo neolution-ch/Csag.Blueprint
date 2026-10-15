@@ -132,6 +132,39 @@ public sealed class ServiceAccountRegistrationTests
         services.GetBearerOptions().TokenValidationParameters.IssuerSigningKey.ShouldNotBeNull();
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    [InlineData(999)]
+    public void ATokenLifetimeShorterThanOneSecond_FailsValidation(int milliseconds)
+    {
+        // Token timestamps and the reported lifetime are whole seconds, so a shorter token could be issued expired.
+        using var services = ServiceAccountTestServices.Build(configure: o => o.TokenLifetime = TimeSpan.FromMilliseconds(milliseconds));
+
+        var exception = Should.Throw<OptionsValidationException>(() => services.GetRequiredService<IOptions<BlueprintServiceAccountOptions>>().Value);
+
+        exception.Message.ShouldContain("TokenLifetime (Blueprint:Security:Jwt:ExpirationHours) must be at least one second");
+    }
+
+    [Fact]
+    public void ATokenLifetimeOfExactlyOneSecond_PassesValidation()
+    {
+        using var services = ServiceAccountTestServices.Build(configure: o => o.TokenLifetime = TimeSpan.FromSeconds(1));
+
+        services.GetRequiredService<IOptions<BlueprintServiceAccountOptions>>().Value.TokenLifetime.ShouldBe(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void ATokenLifetimeLongerThanTheReportableSeconds_FailsValidation()
+    {
+        // The lifetime is reported to clients in whole seconds as an int.
+        using var services = ServiceAccountTestServices.Build(configure: o => o.TokenLifetime = TimeSpan.FromSeconds((double)int.MaxValue + 1));
+
+        var exception = Should.Throw<OptionsValidationException>(() => services.GetRequiredService<IOptions<BlueprintServiceAccountOptions>>().Value);
+
+        exception.Message.ShouldContain("TokenLifetime");
+    }
+
     [Fact]
     public void MissingIssuerAudienceLifetimeAndLockout_FailValidationTogether()
     {

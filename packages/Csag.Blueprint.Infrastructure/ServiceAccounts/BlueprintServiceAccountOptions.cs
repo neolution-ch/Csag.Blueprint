@@ -37,7 +37,7 @@ public sealed class BlueprintServiceAccountOptions
     public string? Audience { get; set; }
 
     /// <summary>
-    /// Gets or sets how long an issued token, and the session behind it, lasts. Must be positive.
+    /// Gets or sets how long an issued token, and the session behind it, lasts. Must be at least one second.
     /// </summary>
     public TimeSpan TokenLifetime { get; set; }
 

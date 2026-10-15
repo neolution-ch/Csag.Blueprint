@@ -48,10 +48,13 @@ internal sealed class BlueprintServiceAccountOptionsValidator : IValidateOptions
             failures.Add("BlueprintServiceAccountOptions.Audience (Blueprint:Security:Jwt:Audience) must not be blank.");
         }
 
-        // The lifetime is reported to clients in whole seconds as an int.
-        if (options.TokenLifetime <= TimeSpan.Zero || options.TokenLifetime.TotalSeconds > int.MaxValue)
+        // Token timestamps are whole seconds and the lifetime is reported to clients in whole seconds as an int, so a
+        // shorter lifetime could issue a token that has already expired.
+        if (options.TokenLifetime < TimeSpan.FromSeconds(1) || options.TokenLifetime.TotalSeconds > int.MaxValue)
         {
-            failures.Add("BlueprintServiceAccountOptions.TokenLifetime (Blueprint:Security:Jwt:ExpirationHours) must be positive.");
+            failures.Add(
+                "BlueprintServiceAccountOptions.TokenLifetime (Blueprint:Security:Jwt:ExpirationHours) must be at least one "
+                + $"second and at most {int.MaxValue} seconds.");
         }
 
         if (options.MaxFailedAccessAttempts < 1)

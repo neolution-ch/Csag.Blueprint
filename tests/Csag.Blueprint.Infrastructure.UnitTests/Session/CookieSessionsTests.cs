@@ -250,6 +250,38 @@ public sealed class CookieSessionsTests
     }
 
     [Fact]
+    public async Task SigningIn_SeveralApplicationHandlersOnOneEvent_AreEachAwaitedBeforeThePackages()
+    {
+        // Arrange — two handlers added to the same event; the first only finishes once the gate opens.
+        var order = new List<string>();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var services = SessionTestServices.Build(after: s => s.ConfigureApplicationCookie(options =>
+        {
+            options.Events.OnSigningIn += async _ =>
+            {
+                await gate.Task;
+                order.Add("first");
+            };
+            options.Events.OnSigningIn += _ =>
+            {
+                order.Add("second");
+                return Task.CompletedTask;
+            };
+        }));
+        var options = services.GetCookieOptions();
+        var eligibility = new Mock<ISessionEligibility>();
+        eligibility.Setup(e => e.MayHoldSessionAsync(AccountId)).Callback(() => order.Add("package")).ReturnsAsync(true);
+
+        // Act
+        var signingIn = options.Events.SigningIn(CreateSigningInContext(options, eligibility.Object));
+        gate.SetResult();
+        await signingIn;
+
+        // Assert
+        order.ShouldBe(["first", "second", "package"]);
+    }
+
+    [Fact]
     public async Task SlidingRenewal_AnAccountThatMayNoLongerHoldASession_EndsTheSession()
     {
         // Arrange

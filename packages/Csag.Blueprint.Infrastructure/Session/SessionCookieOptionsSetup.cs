@@ -77,52 +77,41 @@ internal sealed class SessionCookieOptionsSetup : IPostConfigureOptions<CookieAu
             ExceptFrameworkDefault(events.OnRedirectToAccessDenied, FrameworkDefaults.OnRedirectToAccessDenied),
             SessionCookieEvents.RedirectToAccessDeniedAsync);
 
-        events.OnSigningIn = Compose(events.OnSigningIn, SessionCookieEvents.SigningInAsync);
-        events.OnCheckSlidingExpiration = Compose(events.OnCheckSlidingExpiration, SessionCookieEvents.CheckSlidingExpirationAsync);
+        events.OnSigningIn = Compose(Handlers(events.OnSigningIn), SessionCookieEvents.SigningInAsync);
+        events.OnCheckSlidingExpiration = Compose(Handlers(events.OnCheckSlidingExpiration), SessionCookieEvents.CheckSlidingExpirationAsync);
         events.OnValidatePrincipal = Compose(WithoutSecurityStampValidation(events.OnValidatePrincipal), SessionCookieEvents.ValidatePrincipalAsync);
     }
 
-    private static Func<TContext, Task> Compose<TContext>(Func<TContext, Task>? existing, Func<TContext, Task> package)
+    private static Func<TContext, Task> Compose<TContext>(IEnumerable<Func<TContext, Task>> existing, Func<TContext, Task> package)
     {
-        if (existing is null)
+        var handlers = existing.Append(package).ToArray();
+        if (handlers.Length == 1)
         {
             return package;
         }
 
+        // Invoking a multicast delegate hands back only its last handler's task, so each handler is awaited in turn.
         return async context =>
         {
-            await existing(context);
-            await package(context);
+            foreach (var handler in handlers)
+            {
+                await handler(context);
+            }
         };
     }
 
-    private static Func<TContext, Task>? ExceptFrameworkDefault<TContext>(Func<TContext, Task> handler, Func<TContext, Task> frameworkDefault)
-        => handler.Method == frameworkDefault.Method ? null : handler;
+    private static IEnumerable<Func<TContext, Task>> Handlers<TContext>(Func<TContext, Task>? handler)
+        => handler?.GetInvocationList().Cast<Func<TContext, Task>>() ?? [];
 
-    private static Func<CookieValidatePrincipalContext, Task>? WithoutSecurityStampValidation(Func<CookieValidatePrincipalContext, Task> handler)
+    private static IEnumerable<Func<TContext, Task>> ExceptFrameworkDefault<TContext>(Func<TContext, Task> handler, Func<TContext, Task> frameworkDefault)
+        => Handlers(handler).Where(candidate => candidate.Method != frameworkDefault.Method);
+
+    private static IEnumerable<Func<CookieValidatePrincipalContext, Task>> WithoutSecurityStampValidation(Func<CookieValidatePrincipalContext, Task> handler)
     {
         // AddIdentity validates the application cookie's security stamp. The session principal deliberately carries
         // no stamp claim, so the validator would reject every session once its validation interval (30 minutes by
         // default) has passed, whatever the configured lifetime. Sessions are revoked through the session lifecycle
         // instead: removing the cached ticket ends a session on its next request.
-        var kept = handler.GetInvocationList()
-            .Where(candidate => candidate.Method.DeclaringType != typeof(SecurityStampValidator))
-            .Cast<Func<CookieValidatePrincipalContext, Task>>()
-            .ToArray();
-
-        return kept.Length switch
-        {
-            0 => null,
-            1 => kept[0],
-
-            // A multicast delegate would hand back only its last task, so each handler is awaited in turn.
-            _ => async context =>
-            {
-                foreach (var validate in kept)
-                {
-                    await validate(context);
-                }
-            },
-        };
+        return Handlers(handler).Where(candidate => candidate.Method.DeclaringType != typeof(SecurityStampValidator));
     }
 }

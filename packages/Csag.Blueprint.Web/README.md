@@ -24,7 +24,10 @@ Use:
 services.AddBlueprintDefaultValidatedOptions(configuration);
 ```
 
-This registers the package-owned validated options rooted under the `Blueprint` configuration section.
+This registers the package-owned validated options rooted under the `Blueprint` configuration section. It also
+sets the session lifetime of `Csag.Blueprint.Infrastructure` (`BlueprintSessionOptions.Lifetime`) from
+`Blueprint:Security:SessionExpirationHours`, the single setting the session cookie, its ticket and its tracking row
+expire by; see the Infrastructure package's *Cookie sessions*.
 
 ### Builder composition
 
@@ -164,7 +167,9 @@ fault), an RFC 9457 ProblemDetails body carrying the correlation ID, and `Retry-
 limiter reports it.
 
 `TryGetClientPartitionKey(header, out key)` resolves the caller: the named edge-stamped header when
-configured and parseable, else `Connection.RemoteIpAddress`, else nothing. It reports failure rather
+configured and parseable, else `Connection.RemoteIpAddress`, else nothing — the rule of
+`ClientAddressHttpContextExtensions.TryGetClientAddress` in `Csag.Blueprint.Infrastructure`, which session tracking
+records client addresses with too. It reports failure rather
 than inventing a key, and a caller it cannot identify must be routed to
 `RateLimitPartition.GetNoLimiter` — substituting a placeholder key puts every unidentifiable caller
 in one bucket, so the first of them to exceed the limit rejects them all.

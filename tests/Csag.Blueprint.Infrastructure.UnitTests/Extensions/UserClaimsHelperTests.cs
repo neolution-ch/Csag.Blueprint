@@ -5,7 +5,7 @@ using Csag.Blueprint.Infrastructure.Extensions;
 
 /// <summary>
 /// Unit tests for <see cref="UserClaimsHelper"/> covering the set/replace semantics of the profile
-/// claims, the optional preferred-language claim, the missing-email guard, and pinning the claim
+/// claims, the optional preferred-language and email claims, and pinning the claim
 /// types written to the ticket.
 /// </summary>
 public sealed class UserClaimsHelperTests
@@ -71,28 +71,25 @@ public sealed class UserClaimsHelperTests
         identity.FindFirst("PreferredLanguage").ShouldBeNull();
     }
 
-    [Fact]
-    public void SetUserProfileClaims_WithNullEmail_Throws()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void SetUserProfileClaims_WithMissingEmail_WritesTheOtherClaimsAndNoEmailClaim(string? email)
     {
-        // Arrange
+        // Arrange — IUserProfileClaimsSource.Email is nullable: an account may have no address, and its ticket
+        // still needs its identifier, name and preferences. A ticket issued while it had one carries a stale claim.
         var identity = new ClaimsIdentity();
+        identity.AddClaim(new Claim(ClaimTypes.Email, "old@example.com"));
         var user = CreateUser();
-        user.Email = null;
+        user.Email = email;
 
-        // Act & Assert
-        Should.Throw<ArgumentNullException>(() => identity.SetUserProfileClaims(user));
-    }
+        // Act
+        identity.SetUserProfileClaims(user);
 
-    [Fact]
-    public void SetUserProfileClaims_WithEmptyEmail_Throws()
-    {
-        // Arrange
-        var identity = new ClaimsIdentity();
-        var user = CreateUser();
-        user.Email = string.Empty;
-
-        // Act & Assert
-        Should.Throw<ArgumentException>(() => identity.SetUserProfileClaims(user));
+        // Assert
+        identity.FindFirst(ClaimTypes.Email).ShouldBeNull();
+        identity.FindFirst(ClaimTypes.NameIdentifier).ShouldNotBeNull().Value.ShouldBe(UserId.ToString());
+        identity.FindFirst(ClaimTypes.Name).ShouldNotBeNull().Value.ShouldBe("Alice Example");
     }
 
     [Fact]

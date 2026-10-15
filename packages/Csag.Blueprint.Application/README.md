@@ -19,7 +19,10 @@ All service contracts are defined as interfaces for dependency injection and tes
 | Interface                    | Purpose |
 |------------------------------|---------|
 | `ITenantService`             | Reads the current tenant ID from the authenticated user's claims. |
-| `ISessionManager`            | Tracks, revokes, and refreshes authentication sessions. Supports per-user and per-session revocation, cleanup of expired records, and session refresh (role/permission updates). |
+| `ISessionLifecycle`          | The application's entry point into the cookie session lifecycle. Seven intents — credentials changed, access revoked, claims changed, tenant removed, switch my session's tenant, list my sessions, revoke one of my sessions — decide which sessions end and which keep running with rebuilt claims. `RevokeMySessionAsync` returns `false` when the caller's account has no session with that id. No intent takes a `CancellationToken`: call it after the commit, and retry it on failure. |
+| `ISessionRevocationParticipant` | Implemented by the application to end its own credentials (refresh tokens, API keys) whenever a revoking intent ends sessions. Every participant runs; failures are reported together. Each `SessionRevocation` names its `SessionSubject` — a user or a service account. |
+| `ISessionEligibility`        | Implemented by the application to answer "may this account hold a session?", asked at every sign-in and sliding renewal. Without one, every account may. |
+| `ITenantMembershipChecker`   | Answers whether a user is a member of a tenant without the tenant type parameters; the tenant manager implements it. |
 | `IServiceAccountSessionManager` | Tracks, validates, and revokes the server-side sessions behind reference-style service-account JWTs. Validation resolves the account's current tenant, roles, and permissions per request, so revocation, secret rotation, and deactivation take effect immediately. |
 | `IPasswordResetEmailService` | Sends password reset emails containing a reset link. |
 | `IImageStorageService`       | Stores and deletes images with support for multiple backends (database or blob storage). Returns a `StoredImageData` record with binary data or URL depending on the implementation. |

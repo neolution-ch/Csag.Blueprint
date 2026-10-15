@@ -15,6 +15,11 @@ using Microsoft.EntityFrameworkCore;
 [Collection(nameof(AppFixtureCollection))]
 public sealed class ServiceAccountConcurrencyTests(AppFixture app) : ServiceAccountTestBase(app)
 {
+    /// <summary>
+    /// The wrong secrets counted against the new secret by the time a rotation's change is committed.
+    /// </summary>
+    private const int FailuresAfterRotation = 3;
+
     private static readonly TimeSpan BlockTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
@@ -28,7 +33,8 @@ public sealed class ServiceAccountConcurrencyTests(AppFixture app) : ServiceAcco
         LockOut,
 
         /// <summary>
-        /// Replaces the stored secret hash, as a rotation's commit does.
+        /// Replaces the stored secret hash, as a rotation's commit does, and records the wrong secrets counted against
+        /// the new one since.
         /// </summary>
         ReplaceSecretHash,
 
@@ -105,10 +111,30 @@ public sealed class ServiceAccountConcurrencyTests(AppFixture app) : ServiceAcco
             () => this.RunCredentialsAsync(c => c.IssueTokenAsync(credentials.ClientId, credentials.ClientSecret)),
             AccountChange.ReplaceSecretHash);
 
-        // Assert
+        // Assert — refused, and the failures counted against the new secret still stand.
         result.Outcome.ShouldBe(ServiceAccountTokenOutcome.InvalidCredentials);
         result.AccessToken.ShouldBeNull();
         (await this.CountSessionsAsync(id)).ShouldBe(0);
+        (await this.ReadAccountAsync(id)).ShouldNotBeNull().AccessFailedCount.ShouldBe(FailuresAfterRotation);
+    }
+
+    [Fact]
+    public async Task ARotationCommittedDuringIssuance_OfAnInactiveAccount_RefusesThePreviousSecretAsInvalidAsync()
+    {
+        // Arrange — the account is inactive when the issuance reads it.
+        var (id, credentials) = await this.CreateServiceAccountAsync("inactive rotation race");
+        await this.UpdateAccountAsync(id, account => account.IsActive = false);
+
+        // Act — the issuance verified the previous secret; the new hash commits before its first write.
+        var result = await this.WhileTheAccountRowIsHeldAsync(
+            id,
+            () => this.RunCredentialsAsync(c => c.IssueTokenAsync(credentials.ClientId, credentials.ClientSecret)),
+            AccountChange.ReplaceSecretHash);
+
+        // Assert — a secret that is no longer the account's is refused as invalid, whatever the account's state.
+        result.Outcome.ShouldBe(ServiceAccountTokenOutcome.InvalidCredentials);
+        (await this.CountSessionsAsync(id)).ShouldBe(0);
+        (await this.ReadAccountAsync(id)).ShouldNotBeNull().AccessFailedCount.ShouldBe(FailuresAfterRotation);
     }
 
     [Fact]
@@ -178,7 +204,9 @@ public sealed class ServiceAccountConcurrencyTests(AppFixture app) : ServiceAcco
             AccountChange.LockOut => new SqlCommand(
                 "UPDATE BlueprintServiceAccounts SET LockoutEnd = DATEADD(MINUTE, 5, SYSDATETIMEOFFSET()) WHERE Id = @id", connection, transaction),
             AccountChange.ReplaceSecretHash => new SqlCommand(
-                "UPDATE BlueprintServiceAccounts SET ClientSecretHash = 'rotated' WHERE Id = @id", connection, transaction),
+                "UPDATE BlueprintServiceAccounts SET ClientSecretHash = 'rotated', AccessFailedCount = @failures WHERE Id = @id",
+                connection,
+                transaction),
             AccountChange.Deactivate => new SqlCommand(
                 "UPDATE BlueprintServiceAccounts SET IsActive = 0 WHERE Id = @id", connection, transaction),
             _ => throw new ArgumentOutOfRangeException(nameof(change), change, null),
@@ -224,6 +252,7 @@ public sealed class ServiceAccountConcurrencyTests(AppFixture app) : ServiceAcco
         await using (var update = CreateChangeCommand(change, connection, transaction))
         {
             update.Parameters.AddWithValue("@id", serviceAccountId);
+            update.Parameters.AddWithValue("@failures", FailuresAfterRotation);
             (await update.ExecuteNonQueryAsync(ct)).ShouldBe(1);
         }
 

@@ -92,9 +92,11 @@ internal sealed class ServiceAccountCredentials<TContext> : IServiceAccountCrede
             return ServiceAccountTokenResult.Refused(ServiceAccountTokenOutcome.InvalidCredentials);
         }
 
-        // Clearing the failure count is also the atomic re-check of the lockout read above: when failures running
-        // alongside this request have locked the account since, the update matches no row.
-        if (!await TryClearFailedAttemptsAsync(dbContext, account.Id, now))
+        // Clearing the failure count is also the atomic re-check of the read above: when failures running alongside
+        // this request have locked the account since, or a rotation has replaced the secret it verified, the update
+        // matches no row. A replaced secret is refused before the account's state is reported, and the failures
+        // counted against the new secret stand.
+        if (!await TryClearFailedAttemptsAsync(dbContext, account.Id, account.ClientSecretHash, now))
         {
             return ServiceAccountTokenResult.Refused(ServiceAccountTokenOutcome.InvalidCredentials);
         }
@@ -199,14 +201,16 @@ internal sealed class ServiceAccountCredentials<TContext> : IServiceAccountCrede
 
     /// <summary>
     /// Resets the failure count and any expired lockout, in one statement that matches only while the account is not
-    /// locked.
+    /// locked and still stores the secret hash the request was verified against.
     /// </summary>
-    /// <returns><see langword="true"/> when the account exists and is not locked.</returns>
-    private static async Task<bool> TryClearFailedAttemptsAsync(TContext dbContext, Guid serviceAccountId, DateTimeOffset now)
+    /// <returns><see langword="true"/> when the account exists, is not locked, and still has the verified secret.</returns>
+    private static async Task<bool> TryClearFailedAttemptsAsync(TContext dbContext, Guid serviceAccountId, string verifiedSecretHash, DateTimeOffset now)
     {
         var cleared = await dbContext.Set<BlueprintServiceAccount>()
             .IgnoreQueryFilters()
-            .Where(sa => sa.Id == serviceAccountId && (sa.LockoutEnd == null || sa.LockoutEnd <= now))
+            .Where(sa => sa.Id == serviceAccountId
+                && sa.ClientSecretHash == verifiedSecretHash
+                && (sa.LockoutEnd == null || sa.LockoutEnd <= now))
             .ExecuteUpdateAsync(setters => setters
                 .SetProperty(sa => sa.AccessFailedCount, 0)
                 .SetProperty(sa => sa.LockoutEnd, (DateTimeOffset?)null));

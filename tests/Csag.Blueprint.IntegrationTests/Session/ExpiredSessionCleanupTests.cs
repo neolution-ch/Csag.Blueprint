@@ -86,11 +86,16 @@ public sealed class ExpiredSessionCleanupTests(AppFixture app) : IntegrationTest
             // Nothing runs before the first interval has passed.
             (await this.RemainingKeysAsync(userId)).Count.ShouldBe(1);
 
-            // Act
-            clock.Advance(TimeSpan.FromMinutes(10));
-
-            // Assert — the pass runs on the timer's thread, so wait for its effect.
-            await WaitUntilAsync(async () => (await this.RemainingKeysAsync(userId)).Count == 0, ct);
+            // Act & Assert — StartAsync returns before ExecuteAsync has created its timer, and a timer created after
+            // an advance counts its interval from the advanced instant. So the clock moves on one interval at a time
+            // until a pass has run; the pass itself runs on the timer's thread.
+            await WaitUntilAsync(
+                async () =>
+                {
+                    clock.Advance(TimeSpan.FromMinutes(10));
+                    return (await this.RemainingKeysAsync(userId)).Count == 0;
+                },
+                ct);
         }
         finally
         {

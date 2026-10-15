@@ -1,15 +1,16 @@
 namespace Csag.Blueprint.Web.UnitTests.Middleware;
 
 using System.Security.Claims;
+using Csag.Blueprint.Application.Claims;
 using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Web.Middleware;
 using Microsoft.AspNetCore.Http;
 
 /// <summary>
 /// Unit tests for <see cref="CurrentActorMiddleware"/>, covering the actor-resolution branches:
-/// the email-preferred path, the <c>type == "ServiceAccount"</c> gate with its
-/// <c>sub</c> → <see cref="ClaimTypes.NameIdentifier"/> fallback, the not-resolvable / unauthenticated
-/// paths that leave the ambient context null, and the per-request set/clear lifecycle.
+/// the email-preferred path, the <c>type == "ServiceAccount"</c> gate reading the raw <c>sub</c> claim,
+/// the not-resolvable / unauthenticated paths that leave the ambient context null, and the per-request
+/// set/clear lifecycle.
 /// The middleware is driven through its public <see cref="CurrentActorMiddleware.InvokeAsync"/>; the
 /// resolved actor is observed by reading <see cref="CurrentActorContext.Current"/> inside the terminal
 /// delegate (the middleware clears it again in its <c>finally</c>).
@@ -43,8 +44,8 @@ public sealed class CurrentActorMiddlewareTests : IDisposable
     {
         // Arrange
         var context = ContextFor(Authenticated(
-            new Claim("type", "ServiceAccount"),
-            new Claim("sub", "sa-abc123")));
+            new Claim(ServiceAccountClaimTypes.Type, ServiceAccountClaimTypes.ServiceAccountType),
+            new Claim(ServiceAccountClaimTypes.Subject, "sa-abc123")));
 
         // Act
         await this.CreateMiddleware().InvokeAsync(context);
@@ -54,18 +55,19 @@ public sealed class CurrentActorMiddlewareTests : IDisposable
     }
 
     [Fact]
-    public async Task InvokeAsync_ServiceAccountWithoutSub_FallsBackToNameIdentifier()
+    public async Task InvokeAsync_ServiceAccountWithOnlyAMappedNameIdentifier_LeavesActorNull()
     {
-        // Arrange — JWT inbound-claim mapping may have renamed "sub" to NameIdentifier.
+        // Arrange — the package's bearer scheme never maps inbound claims, so a service-account principal whose
+        // client id sits only under the mapped NameIdentifier is not one the package built.
         var context = ContextFor(Authenticated(
-            new Claim("type", "ServiceAccount"),
+            new Claim(ServiceAccountClaimTypes.Type, ServiceAccountClaimTypes.ServiceAccountType),
             new Claim(ClaimTypes.NameIdentifier, "sa-xyz789")));
 
         // Act
         await this.CreateMiddleware().InvokeAsync(context);
 
         // Assert
-        this.actorSeenByNext.ShouldBe("sa-xyz789");
+        this.actorSeenByNext.ShouldBeNull();
     }
 
     [Fact]
@@ -74,8 +76,8 @@ public sealed class CurrentActorMiddlewareTests : IDisposable
         // Arrange — email always wins over the service-account branch.
         var context = ContextFor(Authenticated(
             new Claim(ClaimTypes.Email, "human@example.com"),
-            new Claim("type", "ServiceAccount"),
-            new Claim("sub", "sa-abc123")));
+            new Claim(ServiceAccountClaimTypes.Type, ServiceAccountClaimTypes.ServiceAccountType),
+            new Claim(ServiceAccountClaimTypes.Subject, "sa-abc123")));
 
         // Act
         await this.CreateMiddleware().InvokeAsync(context);
@@ -98,10 +100,10 @@ public sealed class CurrentActorMiddlewareTests : IDisposable
     }
 
     [Fact]
-    public async Task InvokeAsync_ServiceAccountWithoutSubOrNameIdentifier_LeavesActorNull()
+    public async Task InvokeAsync_ServiceAccountWithoutSub_LeavesActorNull()
     {
-        // Arrange — service account whose id claims are both absent resolves to nothing.
-        var context = ContextFor(Authenticated(new Claim("type", "ServiceAccount")));
+        // Arrange — a service account without its client id resolves to nothing.
+        var context = ContextFor(Authenticated(new Claim(ServiceAccountClaimTypes.Type, ServiceAccountClaimTypes.ServiceAccountType)));
 
         // Act
         await this.CreateMiddleware().InvokeAsync(context);

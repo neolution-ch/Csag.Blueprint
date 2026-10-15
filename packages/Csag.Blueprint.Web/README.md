@@ -27,7 +27,10 @@ services.AddBlueprintDefaultValidatedOptions(configuration);
 This registers the package-owned validated options rooted under the `Blueprint` configuration section. It also
 sets the session lifetime of `Csag.Blueprint.Infrastructure` (`BlueprintSessionOptions.Lifetime`) from
 `Blueprint:Security:SessionExpirationHours`, the single setting the session cookie, its ticket and its tracking row
-expire by; see the Infrastructure package's *Cookie sessions*.
+expire by; see the Infrastructure package's *Cookie sessions*. In the same way it sets
+`BlueprintServiceAccountOptions` — signing key, issuer, audience, token lifetime and lockout — from
+`Blueprint:Security:Jwt` and `Blueprint:Security:ServiceAccountLockout`; see the Infrastructure package's
+*Service-account credentials*.
 
 ### Builder composition
 
@@ -55,6 +58,7 @@ app.UseBlueprintMiddleware();
 - HTTP audit logging
 - correlation ID middleware
 - CORS
+- the refusal of a request that carries both a session cookie and a bearer token (400 ProblemDetails)
 - authentication
 - tenant middleware
 - request localization
@@ -67,6 +71,7 @@ Applications may still append app-specific middleware before endpoint mapping.
 | Component | Purpose |
 | --- | --- |
 | `CorrelationIdMiddleware` | Adds/propagates correlation IDs per request. |
+| `SingleCredentialMiddleware` | Refuses a request that carries both the session cookie and a bearer token with a 400 ProblemDetails carrying the correlation ID, before authentication. Each request is authenticated by exactly one scheme. |
 | `TenantMiddleware` | Establishes the ambient tenant context for the request. Delegates *how* the tenant is determined to `ITenantResolver`. |
 | `HttpAuditMiddleware` | Records an audit event for a denied request (401 or 403 by default; configurable). `UseBlueprintMiddleware()` always registers it; `ConfigureBlueprintAuditLogging` turns it on. See [Audit enrichment](#audit-enrichment). |
 | `CorrelationIdDelegatingHandler` | Propagates correlation IDs to outbound HTTP requests. |
@@ -153,6 +158,11 @@ The package owns:
 - FastEndpoints registration helpers
 - conventional endpoint routing/naming helpers
 - Swagger/OpenAPI registration helpers
+
+`UseFastEndpointsWithConventions` gives every authenticated endpoint that declares no scheme of its own exactly one:
+the session cookie (`CookieAuthMode = OptOut`), `Bearer` (`JwtAuthMode = OptOut`), or, with both, `SessionOrBearer`,
+which picks the bearer token when the request carries one and the session cookie otherwise. An endpoint that declares
+its own schemes with `AuthSchemes()` keeps exactly those.
 
 Applications still own their endpoint classes, DTOs, validators, and policies.
 

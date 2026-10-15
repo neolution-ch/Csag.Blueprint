@@ -7,13 +7,15 @@ public enum SessionRevocationReason
 {
     /// <summary>
     /// The account's credentials changed (<see cref="ISessionLifecycle.CredentialsChangedAsync"/>). The caller's own
-    /// session may have been kept.
+    /// session may have been kept. For a service account: its secret was rotated
+    /// (<see cref="IServiceAccountCredentials.RotateSecretAsync"/>).
     /// </summary>
     CredentialsChanged = 0,
 
     /// <summary>
     /// The account lost access, everywhere or in <see cref="SessionRevocation.TenantId"/>
-    /// (<c>ISessionLifecycle.AccessRevokedAsync</c>).
+    /// (<c>ISessionLifecycle.AccessRevokedAsync</c>). For a service account: it was deactivated or deleted
+    /// (<see cref="IServiceAccountSessionLifecycle"/>).
     /// </summary>
     AccessRevoked = 1,
 

@@ -3,6 +3,7 @@ namespace Csag.Blueprint.TestHost.Extensions;
 using Csag.Blueprint.Application.Abstractions.Authorization;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Infrastructure.Authorization;
+using Csag.Blueprint.Infrastructure.ServiceAccounts;
 using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.TestHost.Session;
 using Csag.Blueprint.Tests.Shared.Authorization;
@@ -12,8 +13,9 @@ using Microsoft.AspNetCore.Authentication;
 
 /// <summary>
 /// Registers distributed session authentication the way a consuming application does: the package's session
-/// infrastructure and cookie sessions, plus the host's own hooks — the session eligibility rule, a revocation
-/// participant, and the permission claims transformation driven by <see cref="TestRolePermissionResolver"/>.
+/// infrastructure, cookie sessions and service-account credentials, plus the host's own hooks — the session eligibility
+/// rule, a revocation participant, a service-account claims enricher, and the permission claims transformation driven
+/// by <see cref="TestRolePermissionResolver"/>.
 /// </summary>
 public static class TestHostSessionExtensions
 {
@@ -23,8 +25,8 @@ public static class TestHostSessionExtensions
     public static readonly string ClientIpHeader = "X-Client-IP";
 
     /// <summary>
-    /// Adds the Blueprint session infrastructure and cookie sessions, the host's session hooks, and the
-    /// role-to-permission resolver and claims transformation.
+    /// Adds the Blueprint session infrastructure, cookie sessions and service-account credentials, the host's
+    /// session hooks, and the role-to-permission resolver and claims transformation.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="cookieSecurePolicy">The cookie secure policy for the session cookie.</param>
@@ -38,6 +40,9 @@ public static class TestHostSessionExtensions
             cookie.SecurePolicy = cookieSecurePolicy;
             cookie.SameSite = SameSiteMode.Lax;
         });
+
+        services.AddBlueprintServiceAccountAuthentication<TestDbContext>();
+        services.AddScoped<IServiceAccountClaimsEnricher, TestHostServiceAccountClaimsEnricher>();
 
         services.AddScoped<ISessionEligibility, TestHostSessionEligibility>();
         services.AddSingleton<RecordingRevocationParticipant>();

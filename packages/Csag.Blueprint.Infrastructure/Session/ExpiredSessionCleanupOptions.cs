@@ -14,7 +14,8 @@ public sealed class ExpiredSessionCleanupOptions
 
     /// <summary>
     /// Gets or sets a value indicating whether the job runs. Defaults to <see langword="true"/>. Turn it off only
-    /// when something else deletes expired rows from <c>BlueprintActiveSessions</c>.
+    /// when something else deletes expired rows from <c>BlueprintActiveSessions</c> and
+    /// <c>BlueprintServiceAccountSessions</c>.
     /// </summary>
     public bool Enabled { get; set; } = true;
 

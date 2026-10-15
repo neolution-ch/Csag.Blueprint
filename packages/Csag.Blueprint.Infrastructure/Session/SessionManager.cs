@@ -158,7 +158,7 @@ internal sealed class SessionManager<TUser, TContext>
             foreach (var session in tenantSessions)
             {
                 var ticket = await this.ticketCacheService.GetTicketAsync(session.SessionKey, CancellationToken.None);
-                if (ticket?.Principal.Identity is not ClaimsIdentity identity)
+                if (ticket?.Principal.Identity is not ClaimsIdentity identity || !BelongsTo(ticket, userId))
                 {
                     continue;
                 }
@@ -209,6 +209,11 @@ internal sealed class SessionManager<TUser, TContext>
             return SessionTenantSwitchOutcome.SessionExpired;
         }
 
+        if (!BelongsTo(ticket, userId))
+        {
+            return SessionTenantSwitchOutcome.NoActiveSession;
+        }
+
         var user = await this.userManager.FindByIdAsync(userId.ToString());
         if (user is null)
         {
@@ -249,6 +254,14 @@ internal sealed class SessionManager<TUser, TContext>
         }
 
         return SessionTenantSwitchOutcome.Switched;
+    }
+
+    private static bool BelongsTo(AuthenticationTicket ticket, Guid userId)
+    {
+        // A sign-in over a live session cookie reuses that cookie's key for the signing-in account, and writes the
+        // ticket before the row follows it. A ticket under a key whose row still names this account may therefore
+        // already be another account's session, and this account's claims must never be written into it.
+        return SessionPrincipal.TryGetAccountId(ticket.Principal, out var accountId) && accountId == userId;
     }
 
     private async Task RemoveUntrackedTicketsAsync(List<string> sessionKeys)

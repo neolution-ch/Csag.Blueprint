@@ -195,6 +195,32 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
     }
 
     [Fact]
+    public async Task ClaimsChanged_LeavesATicketUnderTheAccountsKeyThatAuthenticatesAnotherAccountAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — the account's row still names a key whose ticket a sign-in of another account over the same
+        // cookie has already replaced.
+        var user = await this.CreateTestUserAsync("claims_changed_foreign_ticket_test@test.local", SeedData.TenantAId);
+        var other = await this.CreateTestUserAsync("claims_changed_foreign_owner_test@test.local", SeedData.TenantAId);
+        using var userClient = await this.SignInAsync(user.Email!);
+        var userKey = (await this.GetSingleSessionAsync(user.Id)).SessionKey;
+        using var otherClient = await this.SignInAsync(other.Email!);
+        var ticketCache = this.App.Services.GetRequiredService<ITicketCacheService>();
+        var otherTicket = (await ticketCache.GetTicketAsync((await this.GetSingleSessionAsync(other.Id)).SessionKey, ct)).ShouldNotBeNull();
+        await ticketCache.SetTicketAsync(userKey, otherTicket, otherTicket.Properties.ExpiresUtc.ShouldNotBeNull(), ct);
+        await this.SetPreferredLanguageAsync(user.Id, "de");
+
+        // Act
+        await this.RunIntentAsync(lifecycle => lifecycle.ClaimsChangedAsync(user.Id));
+
+        // Assert — the other account's ticket carries none of this account's claims.
+        var ticket = (await ticketCache.GetTicketAsync(userKey, ct)).ShouldNotBeNull();
+        ticket.Principal.FindFirstValue(ClaimTypes.NameIdentifier).ShouldBe(other.Id.ToString());
+        ticket.Principal.FindFirstValue(IdentityClaimTypes.PreferredLanguage).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task TenantRemoved_EndsTheTenantsSessionsOfEveryAccountOnlyAsync()
     {
         var ct = TestContext.Current.CancellationToken;

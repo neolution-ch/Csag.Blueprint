@@ -9,6 +9,7 @@ using Csag.Blueprint.TestHost;
 using Csag.Blueprint.Tests.Shared.Database;
 using Csag.Blueprint.Tests.Shared.Entities;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -79,6 +80,48 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
         participant.Revocations.Count.ShouldBe(2);
     }
 
+    [Fact]
+    public async Task RevokeMySession_TheCallersOwnSessionWhoseTicketCannotBeRemoved_KeepsItUntilARetryEndsItAsync()
+    {
+        // Arrange — the caller ends its own session, and the cache refuses to remove its ticket until it recovers. The
+        // caller's sign-out goes through the ticket store, as the cookie handler's does.
+        var user = await this.CreateTestUserAsync("revoke_my_own_retry_ticket_test@test.local", SeedData.TenantAId);
+        using var callerDevice = await this.SignInAsync(user.Email!);
+        var callerRow = await this.GetSingleSessionAsync(user.Id);
+        var cache = new RemovalRefusingTicketCache(this.App.Services.GetRequiredService<ITicketCacheService>(), callerRow.SessionKey);
+        var participant = new RecordingParticipant();
+        ServiceProvider? lifecycleServices = null;
+        var signOuts = 0;
+        var caller = CallerRequest(user.Id, callerRow.SessionKey, () =>
+        {
+            signOuts++;
+            return lifecycleServices!.GetRequiredService<ITicketStore>().RemoveAsync(callerRow.SessionKey);
+        });
+        await using var services = this.BuildLifecycleServices(cache, participant, caller);
+        lifecycleServices = services;
+
+        // Act — two attempts while the cache keeps refusing.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await Should.ThrowAsync<AggregateException>(() => RunIntentAsync(services, lifecycle => lifecycle.RevokeMySessionAsync(callerRow.Id)));
+        }
+
+        // Assert — the session is still tracked and the caller still signed in...
+        signOuts.ShouldBe(0);
+        (await this.RemainingKeysAsync(user.Id)).ShouldBe([callerRow.SessionKey]);
+        await ShouldAuthenticateAsync(callerDevice, HttpStatusCode.OK);
+
+        // ...so the retry once the cache has recovered ends the session and signs the caller out.
+        cache.Refuse = false;
+        var revoked = false;
+        await RunIntentAsync(services, async lifecycle => revoked = await lifecycle.RevokeMySessionAsync(callerRow.Id));
+        revoked.ShouldBeTrue();
+        signOuts.ShouldBe(1);
+        (await this.RemainingKeysAsync(user.Id)).ShouldBeEmpty();
+        await ShouldAuthenticateAsync(callerDevice, HttpStatusCode.Unauthorized);
+        participant.Revocations.Count.ShouldBe(3);
+    }
+
     private static async Task RunIntentAsync(ServiceProvider services, Func<ISessionLifecycle, Task> intent)
     {
         await using var scope = services.CreateAsyncScope();
@@ -86,9 +129,10 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
     }
 
     /// <summary>
-    /// Creates a request that authenticated with the given session, as the cookie handler would report it.
+    /// Creates a request that authenticated with the given session, as the cookie handler would report it, and whose
+    /// sign-out runs <paramref name="signOut"/>.
     /// </summary>
-    private static DefaultHttpContext CallerRequest(Guid accountId, string sessionKey)
+    private static DefaultHttpContext CallerRequest(Guid accountId, string sessionKey, Func<Task>? signOut = null)
     {
         var properties = new AuthenticationProperties();
         properties.Items[SessionConstants.SessionKeyPropertyName] = sessionKey;
@@ -100,6 +144,9 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
         authentication
             .Setup(a => a.AuthenticateAsync(It.IsAny<HttpContext>(), IdentityConstants.ApplicationScheme))
             .ReturnsAsync(AuthenticateResult.Success(new AuthenticationTicket(principal, properties, IdentityConstants.ApplicationScheme)));
+        authentication
+            .Setup(a => a.SignOutAsync(It.IsAny<HttpContext>(), IdentityConstants.ApplicationScheme, It.IsAny<AuthenticationProperties?>()))
+            .Returns(() => signOut?.Invoke() ?? Task.CompletedTask);
 
         return new DefaultHttpContext
         {

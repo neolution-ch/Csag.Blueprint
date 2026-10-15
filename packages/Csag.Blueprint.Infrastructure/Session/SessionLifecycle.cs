@@ -167,6 +167,7 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
         // Ownership is part of the filter, so an id from another account matches nothing and ends nothing.
         var accountId = caller.AccountId;
         var revokedKeys = await this.RevokeSessionsAsync(s => s.Id == sessionId && s.UserId == accountId, failures);
+        var revocationCompleted = failures.Count == 0;
 
         // Participants hear only about a session that was found among the caller's own: an unknown or foreign id
         // must not reach them as a revocation the caller's account performed. A session that was found but whose
@@ -177,9 +178,11 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
             return false;
         }
 
-        if (revokedKeys.Contains(caller.SessionKey, StringComparer.Ordinal))
+        if (revocationCompleted && revokedKeys.Contains(caller.SessionKey, StringComparer.Ordinal))
         {
-            // The session is already gone; signing out clears its cookie from the browser on this response.
+            // The session is already gone; signing out clears its cookie from the browser on this response. After a
+            // failed revocation the caller stays signed in instead, and the session keeps its row, so retrying the
+            // intent finds it again.
             await this.RunStepAsync(failures, () => httpContext.SignOutAsync(IdentityConstants.ApplicationScheme));
         }
 

@@ -101,7 +101,8 @@ public interface ISessionLifecycle
     /// <summary>
     /// Ends one session of the caller's account, identified by <see cref="ActiveSessionInfo.Id"/>. A session that
     /// does not belong to the caller's account, or no longer exists, is left alone and no participant hears about
-    /// it. Ending the caller's own session signs the caller out, clearing the session cookie on the current response.
+    /// it. Ending the caller's own session signs the caller out, clearing the session cookie on the current response;
+    /// when the session could not be ended, the caller stays signed in and the intent can be retried.
     /// </summary>
     /// <param name="sessionId">The session to end.</param>
     /// <returns><see langword="true"/> once a session of the caller's account with that id is ended and every

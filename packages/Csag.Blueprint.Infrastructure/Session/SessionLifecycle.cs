@@ -89,10 +89,18 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     }
 
     /// <inheritdoc/>
-    public Task ClaimsChangedAsync(Guid accountId) => this.sessions.RefreshAsync(accountId, tenantId: null);
+    public async Task ClaimsChangedAsync(Guid accountId)
+    {
+        await this.MarkCallerSessionRewrittenAsync(accountId);
+        await this.sessions.RefreshAsync(accountId, tenantId: null);
+    }
 
     /// <inheritdoc/>
-    public Task ClaimsChangedAsync(Guid accountId, Guid tenantId) => this.sessions.RefreshAsync(accountId, tenantId);
+    public async Task ClaimsChangedAsync(Guid accountId, Guid tenantId)
+    {
+        await this.MarkCallerSessionRewrittenAsync(accountId);
+        await this.sessions.RefreshAsync(accountId, tenantId);
+    }
 
     /// <inheritdoc/>
     public Task TenantRemovedAsync(Guid tenantId)
@@ -116,6 +124,7 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
             return SessionTenantSwitchOutcome.NotAMember;
         }
 
+        this.httpContextAccessor.HttpContext?.MarkSessionRewritten(caller.SessionKey);
         return await this.sessions.SwitchTenantAsync(caller.SessionKey, caller.AccountId, tenantId);
     }
 
@@ -201,6 +210,18 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     {
         var httpContext = this.httpContextAccessor.HttpContext;
         return httpContext is null ? null : await httpContext.GetCurrentSessionAsync();
+    }
+
+    private async Task MarkCallerSessionRewrittenAsync(Guid accountId)
+    {
+        // The cookie handler may already have queued a sliding renewal of the caller's session with the ticket it
+        // read when it authenticated this request; the mark keeps that renewal from writing the old claims back.
+        var httpContext = this.httpContextAccessor.HttpContext;
+        var caller = httpContext is null ? null : await httpContext.GetCurrentSessionAsync();
+        if (caller is not null && caller.AccountId == accountId)
+        {
+            httpContext!.MarkSessionRewritten(caller.SessionKey);
+        }
     }
 
     private async Task RevokeAndNotifyAsync(Expression<Func<BlueprintActiveSession, bool>> filter, SessionRevocation revocation)

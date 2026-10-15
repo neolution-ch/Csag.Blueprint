@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Identity;
 /// </summary>
 public static class SessionHttpContextExtensions
 {
+    private static readonly object RewrittenSessionKeyKey = new();
+
     /// <summary>
     /// Resolves the session key of the request's current authentication session, if any. The key is the
     /// value stored in the authentication ticket properties by <see cref="DistributedCacheTicketStore"/>.
@@ -48,6 +50,25 @@ public static class SessionHttpContextExtensions
 
         return new CurrentSession(sessionKey, accountId);
     }
+
+    /// <summary>
+    /// Records that the session lifecycle rewrote the cached ticket of the request's own session, so that
+    /// <see cref="DistributedCacheTicketStore"/> keeps the rewrite when the cookie handler renews the session at the
+    /// end of the same request.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="sessionKey">The key of the session that was rewritten.</param>
+    internal static void MarkSessionRewritten(this HttpContext httpContext, string sessionKey)
+        => httpContext.Items[RewrittenSessionKeyKey] = sessionKey;
+
+    /// <summary>
+    /// Answers whether <see cref="MarkSessionRewritten"/> recorded <paramref name="sessionKey"/> on this request.
+    /// </summary>
+    /// <param name="httpContext">The request, if any.</param>
+    /// <param name="sessionKey">The session key to look for.</param>
+    /// <returns><see langword="true"/> when the session lifecycle rewrote that session during the request.</returns>
+    internal static bool WasSessionRewritten(this HttpContext? httpContext, string sessionKey)
+        => httpContext?.Items[RewrittenSessionKeyKey] is string rewritten && string.Equals(rewritten, sessionKey, StringComparison.Ordinal);
 
     private static async Task<string?> GetCurrentSessionKeyCoreAsync(HttpContext httpContext)
     {

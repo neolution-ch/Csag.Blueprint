@@ -5,16 +5,21 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Application.Claims;
+using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Abstractions.Services;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.TestHost.Endpoints.Auth.ChangePassword;
+using Csag.Blueprint.TestHost.Endpoints.Auth.SwitchLanguage;
 using Csag.Blueprint.TestHost.Endpoints.Auth.SwitchTenant;
+using Csag.Blueprint.TestHost.Time;
 using Csag.Blueprint.Testing.Extensions;
 using Csag.Blueprint.Tests.Shared.Entities;
+using Csag.Blueprint.Web.Options.Api.Security;
 using FastEndpoints;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// Integration tests for each <see cref="ISessionLifecycle"/> intent against the real SQL container and the
@@ -165,6 +170,31 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
     }
 
     [Fact]
+    public async Task ClaimsChanged_OnTheCallersRequestThatRenewsItsSession_KeepsTheRebuiltClaimsAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — more than half the lifetime has passed, so the cookie handler queues a sliding renewal of the
+        // ticket it read when it authenticated the request.
+        var user = await this.CreateTestUserAsync("claims_changed_renewal_test@test.local", SeedData.TenantAId);
+        using var caller = await this.SignInAsync(user.Email!);
+        var session = await this.GetSingleSessionAsync(user.Id);
+
+        // Act — the caller changes its own language, which rebuilds its own session's claims.
+        using (this.PinPastRenewalThreshold(session))
+        {
+            var (rsp, _) = await caller.POSTAsync<SwitchLanguageEndpoint, SwitchLanguageRequest, EmptyResponse>(
+                new SwitchLanguageRequest { Language = "de" });
+            await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.NoContent, cancellationToken: ct);
+        }
+
+        // Assert — the session slid, and still carries the rebuilt claims.
+        (await this.GetSingleSessionAsync(user.Id)).ExpiresAt.ShouldBeGreaterThan(session.ExpiresAt, "the request must have renewed the session");
+        var ticket = await this.App.Services.GetRequiredService<ITicketCacheService>().GetTicketAsync(session.SessionKey, ct);
+        ticket.ShouldNotBeNull().Principal.FindFirstValue(IdentityClaimTypes.PreferredLanguage).ShouldBe("de");
+    }
+
+    [Fact]
     public async Task TenantRemoved_EndsTheTenantsSessionsOfEveryAccountOnlyAsync()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -228,6 +258,32 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
         ticket.ShouldNotBeNull().Principal.FindFirstValue(IdentityClaimTypes.TenantId).ShouldBe(SeedData.TenantBId.ToString());
         await ShouldAuthenticateAsync(caller, HttpStatusCode.OK);
         await ShouldAuthenticateAsync(otherDevice, HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task SwitchTenant_OnARequestThatRenewsTheSession_KeepsTheNewTenantAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — more than half the lifetime has passed, so the cookie handler queues a sliding renewal of the
+        // ticket it read, in tenant A, when it authenticated the switch request.
+        var user = await this.CreateTestUserAsync("switch_tenant_renewal_test@test.local", SeedData.TenantAId, SeedData.TenantBId);
+        using var caller = await this.SignInAsync(user.Email!, SeedData.TenantAId);
+        var session = await this.GetSingleSessionAsync(user.Id);
+
+        // Act
+        using (this.PinPastRenewalThreshold(session))
+        {
+            (await SwitchTenantAsync(caller, SeedData.TenantBId)).ShouldBe(SessionTenantSwitchOutcome.Switched);
+        }
+
+        // Assert — the session slid, and its row and ticket stayed in tenant B.
+        var renewed = await this.GetSingleSessionAsync(user.Id);
+        renewed.ExpiresAt.ShouldBeGreaterThan(session.ExpiresAt, "the request must have renewed the session");
+        renewed.CurrentTenantId.ShouldBe(SeedData.TenantBId);
+        var ticket = await this.App.Services.GetRequiredService<ITicketCacheService>().GetTicketAsync(session.SessionKey, ct);
+        ticket.ShouldNotBeNull().Principal.FindFirstValue(IdentityClaimTypes.TenantId).ShouldBe(SeedData.TenantBId.ToString());
+        await ShouldAuthenticateAsync(caller, HttpStatusCode.OK);
     }
 
     [Fact]
@@ -354,6 +410,18 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
             new SwitchTenantRequest { TenantId = tenantId });
         await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK);
         return result.Outcome;
+    }
+
+    /// <summary>
+    /// Pins the host clock past the point where the cookie handler renews <paramref name="session"/>: more than half
+    /// of its lifetime after it was signed in.
+    /// </summary>
+    /// <param name="session">The session's tracking row.</param>
+    /// <returns>A scope that releases the pin when disposed.</returns>
+    private IDisposable PinPastRenewalThreshold(BlueprintActiveSession session)
+    {
+        var lifetime = TimeSpan.FromHours(this.App.Services.GetRequiredService<IOptions<SecuritySettings>>().Value.SessionExpirationHours);
+        return this.App.Services.GetRequiredService<PinnableTimeProvider>().Pin(session.CreatedAt + (lifetime * 0.6));
     }
 
     private async Task SetPreferredLanguageAsync(Guid userId, string language)

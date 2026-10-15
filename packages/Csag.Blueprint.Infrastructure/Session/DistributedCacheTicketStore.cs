@@ -163,7 +163,9 @@ public sealed class DistributedCacheTicketStore : ITicketStore
     /// <summary>
     /// Renews an authentication ticket by updating it in the cache and bringing the tracked session row in line
     /// with it. The cookie handler calls this for a sliding renewal, and for a sign-in on a request that still
-    /// carries a live session cookie, which keeps that cookie's key.
+    /// carries a live session cookie, which keeps that cookie's key. A sliding renewal on a request whose own session
+    /// the session lifecycle rewrote keeps the rewritten ticket and takes only the new lifetime from
+    /// <paramref name="ticket"/>.
     /// </summary>
     /// <param name="key">The session key that identifies the ticket.</param>
     /// <param name="ticket">The updated authentication ticket.</param>
@@ -220,6 +222,22 @@ public sealed class DistributedCacheTicketStore : ITicketStore
 
     private async Task RenewCoreAsync(string key, AuthenticationTicket ticket, HttpContext? httpContext)
     {
+        var signingIn = SessionCookieEvents.IsSigningIn(httpContext);
+        if (!signingIn && httpContext.WasSessionRewritten(key))
+        {
+            // The cookie handler captured the ticket it renews when it authenticated the request, before the session
+            // lifecycle rewrote this session's claims or tenant later in the same request. Writing that ticket would
+            // undo the rewrite, so the renewal carries the cached principal forward with the handler's new lifetime.
+            var current = await this.ticketCacheService.GetTicketAsync(key, CancellationToken.None);
+            if (current is null)
+            {
+                // The session ended during the request; renewing it would bring it back.
+                return;
+            }
+
+            ticket = new AuthenticationTicket(current.Principal, ticket.Properties, ticket.AuthenticationScheme);
+        }
+
         var accountId = ReadAccountId(ticket);
         var expiresUtc = this.EnsureExpiry(ticket);
 
@@ -231,7 +249,7 @@ public sealed class DistributedCacheTicketStore : ITicketStore
 
         var entry = this.CreateEntry(key, accountId, ticket, expiresUtc, httpContext);
 
-        if (SessionCookieEvents.IsSigningIn(httpContext))
+        if (signingIn)
         {
             // A sign-in reuses the key of the session cookie the request still carries, possibly for a different
             // account. The row is attributed to the signing-in account — or created, when a revocation removed it

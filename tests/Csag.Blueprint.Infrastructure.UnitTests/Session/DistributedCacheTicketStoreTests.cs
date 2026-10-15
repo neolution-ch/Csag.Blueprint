@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -270,6 +271,53 @@ public sealed class DistributedCacheTicketStoreTests
     }
 
     [Fact]
+    public async Task RenewAsync_OnARequestThatRewroteItsOwnSession_KeepsTheRewrittenPrincipalWithTheNewLifetime()
+    {
+        // Arrange — the request changed its own account's claims, and the cookie handler then renews the session with
+        // the ticket it read when it authenticated the request.
+        var httpContext = await ChangeOwnClaimsThroughTheLifecycleAsync();
+        var rewritten = CreateTicket(TenantId);
+        var ticketCache = new Mock<ITicketCacheService>();
+        ticketCache.Setup(c => c.GetTicketAsync(SessionKey, It.IsAny<CancellationToken>())).ReturnsAsync(rewritten);
+        var tracker = new Mock<IActiveSessionTracker>();
+        tracker.Setup(t => t.RenewAsync(It.IsAny<SessionTrackingEntry>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        var store = CreateStore(ticketCache, tracker);
+        var stale = CreateTicket();
+
+        // Whole seconds: the properties keep the expiry as an RFC 1123 string.
+        var renewedExpiry = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.AddHours(8).ToUnixTimeSeconds());
+        stale.Properties.ExpiresUtc = renewedExpiry;
+
+        // Act
+        await store.RenewAsync(SessionKey, stale, httpContext, TestContext.Current.CancellationToken);
+
+        // Assert
+        ticketCache.Verify(
+            c => c.SetTicketAsync(SessionKey, It.Is<AuthenticationTicket>(t => t.Principal == rewritten.Principal), renewedExpiry, It.IsAny<CancellationToken>()),
+            Times.Once);
+        tracker.Verify(
+            t => t.RenewAsync(It.Is<SessionTrackingEntry>(e => e.TenantId == TenantId && e.ExpiresAt == renewedExpiry), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task RenewAsync_OnARequestThatRewroteItsOwnSessionWhichThenEnded_WritesNothing()
+    {
+        var httpContext = await ChangeOwnClaimsThroughTheLifecycleAsync();
+        var ticketCache = new Mock<ITicketCacheService>();
+        var tracker = new Mock<IActiveSessionTracker>();
+        var store = CreateStore(ticketCache, tracker);
+
+        await store.RenewAsync(SessionKey, CreateTicket(), httpContext, TestContext.Current.CancellationToken);
+
+        ticketCache.Verify(
+            c => c.SetTicketAsync(It.IsAny<string>(), It.IsAny<AuthenticationTicket>(), It.IsAny<DateTimeOffset>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+        tracker.Verify(t => t.RenewAsync(It.IsAny<SessionTrackingEntry>(), It.IsAny<CancellationToken>()), Times.Never);
+        tracker.Verify(t => t.TrackAsync(It.IsAny<SessionTrackingEntry>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task RemoveAsync_RemovesTicketAndTrackingRow()
     {
         // Untracking lives here rather than in an OnSigningOut handler: the cookie handler hands the session
@@ -368,6 +416,25 @@ public sealed class DistributedCacheTicketStoreTests
         {
             httpContext.Request.Headers[ClientIpHeader] = clientIpHeaderValue;
         }
+
+        return httpContext;
+    }
+
+    private static async Task<HttpContext> ChangeOwnClaimsThroughTheLifecycleAsync()
+    {
+        // The request authenticated with the session under SessionKey, and reports a claims change of its own account.
+        var properties = new AuthenticationProperties();
+        properties.Items[SessionConstants.SessionKeyPropertyName] = SessionKey;
+        var authentication = new Mock<IAuthenticationService>();
+        authentication
+            .Setup(a => a.AuthenticateAsync(It.IsAny<HttpContext>(), IdentityConstants.ApplicationScheme))
+            .ReturnsAsync(AuthenticateResult.Success(
+                new AuthenticationTicket(SessionTestServices.CreatePrincipal(AccountId), properties, IdentityConstants.ApplicationScheme)));
+        var httpContext = SessionTestServices.CreateHttpContext(Mock.Of<ISessionEligibility>(), authentication.Object);
+
+        using var services = SessionTestServices.Build(before: s => s.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = httpContext }));
+        using var scope = services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<ISessionLifecycle>().ClaimsChangedAsync(AccountId);
 
         return httpContext;
     }

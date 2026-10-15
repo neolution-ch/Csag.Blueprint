@@ -334,19 +334,18 @@ public sealed class DistributedCacheTicketStoreTests
 
         ticketCache.Verify(
             c => c.RemoveTicketAsync(SessionKey, It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.AtLeastOnce);
         tracker.Verify(
             t => t.UntrackAsync(SessionKey, It.IsAny<CancellationToken>()),
             Times.Once);
     }
 
     [Fact]
-    public async Task RemoveAsync_RemovesTrackingRowBeforeTicket()
+    public async Task RemoveAsync_RemovesTheTicketBeforeTheRowAndAgainAfterIt()
     {
-        // A concurrent sliding renewal re-writes its ticket unconditionally and only then renews its row.
-        // Removing the ticket first leaves a window in which such a renewal resurrects the ticket AND
-        // renews the still-present row, so the untracking would strip the tracking row off a live session.
-        // Deleting the row first makes that renewal report "no row", and the renewal removes its own ticket.
+        // The row goes only once the ticket is gone, so a sign-out whose removal fails leaves the session tracked.
+        // A concurrent sliding renewal can write its ticket back between the first removal and the row delete; the
+        // second removal ends that session, and a renewal after the delete finds no row and removes its own ticket.
         var calls = new List<string>();
         var ticketCache = new Mock<ITicketCacheService>();
         ticketCache
@@ -362,13 +361,30 @@ public sealed class DistributedCacheTicketStoreTests
 
         await store.RemoveAsync(SessionKey);
 
-        calls.ShouldBe(["row", "ticket"]);
+        calls.ShouldBe(["ticket", "row", "ticket"]);
+    }
+
+    [Fact]
+    public async Task RemoveAsync_TicketRemovalFails_KeepsTheTrackingRowAndThrows()
+    {
+        // A ticket that is still live keeps its row, so revocation can still find the session and the sign-out can be
+        // repeated.
+        var ticketCache = new Mock<ITicketCacheService>();
+        ticketCache
+            .Setup(c => c.RemoveTicketAsync(SessionKey, It.IsAny<CancellationToken>()))
+            .Returns(Task.FromException(new InvalidOperationException("cache unavailable")));
+        var tracker = new Mock<IActiveSessionTracker>();
+        var store = CreateStore(ticketCache, tracker);
+
+        await Should.ThrowAsync<InvalidOperationException>(() => store.RemoveAsync(SessionKey));
+
+        tracker.Verify(t => t.UntrackAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
     public async Task RemoveAsync_UntrackFails_StillRemovesTicketAndDoesNotThrow()
     {
-        // A failed row delete must not fail the sign-out, and must not skip the ticket removal — the cached
+        // A failed row delete must not fail the sign-out, and must not skip the second ticket removal — the cached
         // ticket is what keeps authorizing requests; the stale row is deleted by the expired-session cleanup.
         var ticketCache = new Mock<ITicketCacheService>();
         var tracker = new Mock<IActiveSessionTracker>();
@@ -381,7 +397,7 @@ public sealed class DistributedCacheTicketStoreTests
 
         ticketCache.Verify(
             c => c.RemoveTicketAsync(SessionKey, It.IsAny<CancellationToken>()),
-            Times.Once);
+            Times.Exactly(2));
     }
 
     private static DistributedCacheTicketStore CreateStore(

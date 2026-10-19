@@ -296,16 +296,20 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         nameColumn.FilterOperator.ShouldBe(TableViewFilterOperator.Contains);
         nameColumn.FilterInputHint.ShouldBe(TableViewFilterInputHint.Text);
 
-        // Enum column. Column() auto-derives AllowedValues from the enum member names, and the
-        // fluent Filterable(operator) call keeps them unless a definition passes explicit values,
-        // so the wire metadata serves the selectable member names to the frontend.
+        // Enum column. Column() auto-derives AllowedValues from the enum members, and the fluent
+        // Filterable(operator) call keeps them unless a definition passes explicit values, so the
+        // wire metadata serves the selectable member names to the frontend. Each label is the
+        // humanized member name unless the host's catalog translates the member's convention key
+        // (Enums.TestVehicleKind.{Member}), which it does for Kayak only.
         var kindColumn = res.Columns.First(c => c.Name == "Kind");
         kindColumn.DataType.ShouldBe("enum");
         kindColumn.FilterOperator.ShouldBe(TableViewFilterOperator.Enum);
         kindColumn.FilterInputHint.ShouldBe(TableViewFilterInputHint.Select);
-        kindColumn.AllowedValues.ShouldBe(
+        var kindValues = kindColumn.AllowedValues.ShouldNotBeNull();
+        kindValues.Select(v => v.Value).ShouldBe(
             ["None", "Bicycle", "Scooter", "Kayak"],
             customMessage: "the auto-derived enum member names survive Filterable(operator) without explicit values");
+        kindValues.Select(v => v.Label).ShouldBe(["None", "Bicycle", "Scooter", "Sea kayak"]);
 
         // Range and boolean columns carry the matching input hints.
         res.Columns.First(c => c.Name == "PricePerHour").FilterInputHint.ShouldBe(TableViewFilterInputHint.NumberRange);
@@ -360,10 +364,11 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         worksheet.Cell(1, 5).GetString().ShouldBe("Price Per Hour");
         worksheet.Cell(1, 6).GetString().ShouldBe("Is Active");
 
-        // Data rows honour the requested sort and the enum filter.
+        // Data rows honour the requested sort and the enum filter, which matches on the raw member
+        // name; the enum cells carry the member's localized label.
         worksheet.Cell(2, 2).GetString().ShouldBe("Family Kayak");
         worksheet.Cell(3, 2).GetString().ShouldBe("Lake Kayak");
-        worksheet.Cell(2, 3).GetString().ShouldBe(nameof(TestVehicleKind.Kayak));
-        worksheet.Cell(3, 3).GetString().ShouldBe(nameof(TestVehicleKind.Kayak));
+        worksheet.Cell(2, 3).GetString().ShouldBe("Sea kayak");
+        worksheet.Cell(3, 3).GetString().ShouldBe("Sea kayak");
     }
 }

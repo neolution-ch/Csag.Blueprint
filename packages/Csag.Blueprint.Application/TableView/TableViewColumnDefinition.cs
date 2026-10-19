@@ -1,5 +1,6 @@
 namespace Csag.Blueprint.Application.TableView;
 
+using System.Collections.ObjectModel;
 using System.Linq.Expressions;
 using System.Text.RegularExpressions;
 
@@ -69,9 +70,10 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
     /// Marks the column as filterable with the specified filter operator.
     /// </summary>
     /// <param name="filterOperator">The filter operator.</param>
-    /// <param name="allowedValues">Optional allowed values for enum filters. When omitted, any
-    /// allowed values already present on the column (such as the names auto-derived for enum
-    /// columns) are kept.</param>
+    /// <param name="allowedValues">Optional allowed values for enum filters, each served with
+    /// itself as its label. When omitted, any allowed values already present on the column (such
+    /// as the members auto-derived for enum columns) are kept. To give the values their own labels,
+    /// use <see cref="WithAllowedValues(IEnumerable{TableViewAllowedValue})"/>.</param>
     /// <returns>The column definition for fluent chaining.</returns>
     public TableViewColumnDefinition<TEntity, TDto> Filterable(TableViewFilterOperator filterOperator, IEnumerable<string>? allowedValues = null)
     {
@@ -79,7 +81,7 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
         this.metadata.FilterOperator = filterOperator;
         if (allowedValues != null)
         {
-            this.metadata.AllowedValues = allowedValues;
+            this.metadata.AllowedValues = ToSelfLabeledValues(allowedValues);
         }
 
         this.metadata.FilterInputHint = filterOperator switch
@@ -178,13 +180,72 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
     }
 
     /// <summary>
-    /// Sets the allowed values for enum or In-type filters.
+    /// Sets the allowed values for enum or In-type filters, each served with itself as its label
+    /// and without a translation key. Replaces any allowed values already on the column, including
+    /// the members auto-derived for enum columns.
     /// </summary>
     /// <param name="allowedValues">The allowed values.</param>
     /// <returns>This configuration for chaining.</returns>
     public TableViewColumnDefinition<TEntity, TDto> WithAllowedValues(IEnumerable<string> allowedValues)
     {
-        this.metadata.AllowedValues = allowedValues;
+        ArgumentNullException.ThrowIfNull(allowedValues);
+
+        this.metadata.AllowedValues = ToSelfLabeledValues(allowedValues);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the allowed values for enum or In-type filters with their labels and, optionally, the
+    /// translation keys that localize those labels at request time. Replaces any allowed values
+    /// already on the column, including the members auto-derived for enum columns.
+    /// </summary>
+    /// <param name="allowedValues">The allowed values.</param>
+    /// <returns>This configuration for chaining.</returns>
+    public TableViewColumnDefinition<TEntity, TDto> WithAllowedValues(IEnumerable<TableViewAllowedValue> allowedValues)
+    {
+        ArgumentNullException.ThrowIfNull(allowedValues);
+
+        var values = allowedValues.ToArray();
+        if (Array.Exists(values, value => value is null))
+        {
+            throw new ArgumentException("Allowed values must not contain null entries.", nameof(allowedValues));
+        }
+
+        this.metadata.AllowedValues = Array.AsReadOnly(values);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the translation key of every allowed value currently on the column to
+    /// <c>{prefix}.{Value}</c>, so each label is localized at request time. Records the keys
+    /// only — no localizer or database access — so it is safe to call while the definition is
+    /// constructed during application startup.
+    /// </summary>
+    /// <remarks>
+    /// Enum columns carry keys under the <c>Enums.{EnumTypeName}</c> prefix by default, for which
+    /// a missing translation silently keeps the humanized member name. Keys set here are expected
+    /// to exist: when one cannot be resolved, a warning is logged and the label the definition set
+    /// is served. Only the values present when this method is called receive keys; allowed values
+    /// set afterwards replace them, keys included.
+    /// </remarks>
+    /// <param name="prefix">The dot-separated key prefix, without a trailing dot.</param>
+    /// <returns>This configuration for chaining.</returns>
+    /// <exception cref="InvalidOperationException">The column has no allowed values.</exception>
+    public TableViewColumnDefinition<TEntity, TDto> WithValueLabelKeyPrefix(string prefix)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(prefix);
+
+        var allowedValues = this.metadata.AllowedValues;
+        if (allowedValues is null || allowedValues.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Column '{this.metadata.Name}' has no allowed values to assign label keys to. " +
+                "Set them with Filterable or WithAllowedValues before calling WithValueLabelKeyPrefix.");
+        }
+
+        this.metadata.AllowedValues = Array.AsReadOnly(allowedValues
+            .Select(value => value with { LabelKey = $"{prefix}.{value.Value}", IsLabelKeyOptional = false })
+            .ToArray());
         return this;
     }
 
@@ -197,5 +258,10 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
     {
         this.metadata.FilterInputHint = filterInputHint;
         return this;
+    }
+
+    private static ReadOnlyCollection<TableViewAllowedValue> ToSelfLabeledValues(IEnumerable<string> allowedValues)
+    {
+        return Array.AsReadOnly(allowedValues.Select(value => new TableViewAllowedValue(value, value)).ToArray());
     }
 }

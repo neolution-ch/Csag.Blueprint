@@ -143,6 +143,15 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
     /// <summary>
     /// Configures a column that maps directly from an entity property.
     /// </summary>
+    /// <remarks>
+    /// A column of enum type gets one allowed value per enum member: the member name as the value
+    /// (what filters match on), the humanized member name as the label (<c>CreditCard</c> becomes
+    /// "Credit card"), and <c>Enums.{EnumTypeName}.{MemberName}</c> as an optional translation key
+    /// for the label. Applications translate a label by adding that key to their translation
+    /// catalog; without it the humanized label is served, nothing is logged.
+    /// <see cref="TableViewColumnDefinition{TEntity, TDto}.WithValueLabelKeyPrefix"/> replaces the
+    /// keys, and <c>WithAllowedValues</c> replaces the values.
+    /// </remarks>
     /// <typeparam name="TProperty">The property type.</typeparam>
     /// <param name="dtoPropertySelector">Expression selecting the DTO property.</param>
     /// <param name="entityPropertySelector">Expression selecting the corresponding entity property.</param>
@@ -168,7 +177,7 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         {
             var property = GetProperty(dtoPropertySelector);
             var enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
-            config.WithAllowedValues(Enum.GetNames(enumType));
+            config.WithAllowedValues(CreateEnumAllowedValues(enumType));
         }
 
         this.columnDefinitions.Add(config);
@@ -234,6 +243,16 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         }
 
         return expression.Type;
+    }
+
+    private static IEnumerable<TableViewAllowedValue> CreateEnumAllowedValues(Type enumType)
+    {
+        return Enum.GetNames(enumType).Select(memberName =>
+            new TableViewAllowedValue(memberName, TableViewLabelHumanizer.Humanize(memberName))
+            {
+                LabelKey = $"Enums.{enumType.Name}.{memberName}",
+                IsLabelKeyOptional = true,
+            });
     }
 
     private static string GetPropertyName(LambdaExpression expression)

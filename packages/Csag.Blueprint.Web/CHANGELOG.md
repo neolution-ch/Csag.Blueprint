@@ -1,5 +1,157 @@
 # @neolution-ch/csag-blueprint-web
 
+## 0.5.0
+
+### Minor Changes
+
+- [#57](https://github.com/neolution-ch/Csag.Blueprint/pull/57) [`7a35cac`](https://github.com/neolution-ch/Csag.Blueprint/commit/7a35cac38b84e89df719cd26c29ac7134b9a165b) Thanks [@neotrow](https://github.com/neotrow)! - Own service-account credentials in the packages; applications state intents through `IServiceAccountCredentials` and `IServiceAccountSessionLifecycle`
+  
+  Applications issued service-account tokens themselves (secret verification, lockout, session tracking, minting), generated and hashed secrets, revoked sessions by hand on rotation, deactivation and deletion, and registered and validated the bearer scheme. The packages now own that whole credential lifecycle; the application registers it with one call and keeps thin endpoint shells.
+  
+  **New:** `IServiceAccountCredentials` (Csag.Blueprint.Application), registered by `AddBlueprintServiceAccountAuthentication<TContext>`:
+  
+  | Intent | Effect |
+  | --- | --- |
+  | `IssueTokenAsync(clientId, clientSecret)` | Returns a `ServiceAccountTokenResult`: `Issued` with `AccessToken`, `TokenType` (`Bearer`) and `ExpiresIn` (seconds), or `InvalidCredentials` (unknown client, wrong secret, locked account) or `AccountInactive` (correct secret, deactivated account). |
+  | `CreateCredentialsAsync(serviceAccount)` | Generates the client id and secret, stores the account with the secret's hash, returns `ServiceAccountClientCredentials` (client id and secret) once. |
+  | `RotateSecretAsync(serviceAccountId)` | Generates a new secret and returns it once; the previous secret and every token issued with it stop working at once. Looks the account up within the ambient tenant and returns `null` when there is none. |
+  
+  **New:** `IServiceAccountSessionLifecycle`, next to `ISessionLifecycle`: `AccountDeactivatedAsync(serviceAccountId)` and `AccountDeletedAsync(serviceAccountId)` end the account's sessions. Rotation, deactivation and deletion call every `ISessionRevocationParticipant` with a `SessionSubject` of kind `ServiceAccount`.
+  
+  No intent takes a `CancellationToken`; call the session intents after the change they report is committed. Failures throw, after every step has run.
+  
+  **New:** `IServiceAccountClaimsEnricher` adds the application's claims to a service-account principal on every request. Tokens stay references to their session and carry no claims beyond `ServiceAccountClaimTypes`.
+  
+  **New:** `ServiceAccountClaimTypes` (Csag.Blueprint.Application) names the claims of a service-account token and principal: `Subject` (`sub`), `Name` (`name`), `Type` (`type`, value `ServiceAccountType`) and `SessionId` (`sid`).
+  
+  **New:** `AddBlueprintServiceAccountAuthentication<TContext>(Action<BlueprintServiceAccountOptions>?)` (Csag.Blueprint.Infrastructure) registers the intents, the service-account sessions and three authentication schemes: `BlueprintAuthenticationSchemes.ServiceAccountToken`, which validates service-account tokens; `Bearer`, which forwards each request to the handler of its token kind (`BlueprintBearerOptions.AddTokenKind` adds the application's own kinds); and `SessionOrBearer`, which forwards a request carrying a bearer token to `Bearer` and every other request to the session cookie. The registration needs no signing key, so it runs in OpenAPI generation mode too; a configured key is checked at startup and a missing key fails the first issuance or validation. `Csag.Blueprint.Web`'s `AddBlueprintDefaultValidatedOptions` fills `BlueprintServiceAccountOptions` from `Blueprint:Security:Jwt` and `Blueprint:Security:ServiceAccountLockout`; the settings themselves are unchanged.
+  
+  **New:** `SetClientSecret(this BlueprintServiceAccount, string)` sets a known secret, for data seeds and test fixtures.
+  
+  **Behaviour:** Issuance verifies every secret with the same key derivation, unknown clients included. A wrong secret counts towards the lockout in one statement, so concurrent attempts all count; while locked, an account is refused whatever secret it is given, and further wrong secrets do not count. A correct secret clears the count in one statement that matches only while the account is not locked and still stores that secret; a secret a rotation replaced in the meantime is refused as `InvalidCredentials`, whatever the account's state, and leaves the count as it is. `AccountInactive` is answered only to the correct secret; a wrong secret for a deactivated account is `InvalidCredentials` and counts. Every time — issuance, expiry, lockout — comes from the injected `TimeProvider`.
+  
+  **Behaviour:** The service-account scheme pins HS256, validates issuer, audience and lifetime with no clock skew against the injected `TimeProvider`, signs and validates over the signing key's UTF-8 bytes, does not map inbound claims, and answers a refused token with a bare `WWW-Authenticate: Bearer`. Every request resolves the token's session and builds the principal from the account's current client id, name, tenant, roles and permissions; a token whose subject does not own its session is refused. Tokens issued before the upgrade keep working when the configured key is ASCII.
+  
+  **Behaviour:** Secrets are hashed in ASP.NET Core Identity's `PasswordHasher` format with fixed parameters; hashes written by a default `PasswordHasher` keep verifying. Generated secrets are 256 random bits, base64url-encoded.
+  
+  **Behaviour change:** Each request is authenticated by exactly one scheme. With `CookieAuthMode` and `JwtAuthMode` both `OptOut`, `UseFastEndpointsWithConventions` gives authenticated endpoints the one `SessionOrBearer` scheme instead of the cookie and `Bearer` schemes side by side. An endpoint that declares its own `AuthSchemes()` keeps exactly those, without the default added.
+  
+  **Behaviour change:** `UseBlueprintMiddleware` refuses a request that carries both the session cookie and a bearer token with a 400 ProblemDetails carrying the correlation id, before authentication runs (`SingleCredentialMiddleware`).
+  
+  **Behaviour change:** `ExpiredSessionCleanupService` deletes expired `BlueprintServiceAccountSessions` rows in the same pass as the user session rows.
+  
+  **Behaviour change:** `CurrentActorMiddleware` stamps a service account with its raw `sub` claim only.
+  
+  **Breaking:** `IServiceAccountSessionManager` and `ServiceAccountSessionValidation` are removed from Csag.Blueprint.Application; the package's session manager is internal and registered by `AddBlueprintServiceAccountAuthentication`, not by `AddBlueprintSessionInfrastructure`. Use the intents above.
+  
+  **Breaking:** `IdentityClaimTypes.ServiceAccountSessionId` is removed; use `ServiceAccountClaimTypes.SessionId`.
+  
+  **Breaking:** The package registers the `Bearer` scheme; an application that registers its own `Bearer` scheme fails at startup.
+  
+  Csag.Blueprint.Infrastructure references `Microsoft.AspNetCore.Authentication.JwtBearer`. No EF model change: no migration is needed.
+  
+  Consumer migration (`csag-blueprint-web`):
+  
+  - `Extensions/ServiceCollectionExtensions/ApplicationServicesExtensions.cs`: replace `.AddServiceAccountPasswordHasher()` with `.AddBlueprintServiceAccountAuthentication<ApplicationDbContext>()`, unconditionally (it serves generation mode too), and delete `builder.Services.AddJwtAuthentication(jwtSettings)` from `AddRuntimeServices`. The runtime signing-key presence check there may stay, so a host without a key fails at startup rather than on its first token.
+  - Delete `Extensions/ServiceCollectionExtensions/JwtExtensions.cs`: the hasher registration, the bearer registration and its validation parameters, and the token-validated handler with its `ClaimTypes.Sid` fallback.
+  - Delete any app-side check that refuses requests carrying both a session cookie and a bearer token; `UseBlueprintMiddleware` does it.
+  - Keep `CookieAuthMode` and `JwtAuthMode` `OptOut` in `Program.cs`. The MFA endpoints that declare `AuthSchemes(IdentityConstants.ApplicationScheme, IdentityConstants.TwoFactorUserIdScheme)` keep exactly those two.
+  - Map the endpoints onto the intents, each keeping its route, rate limit, OpenAPI text and validation:
+    - `Auth/Token/TokenEndpoint`: the body becomes `IssueTokenAsync(req.ClientId, req.ClientSecret)`; `Issued` maps to 200 with `{ accessToken, tokenType, expiresIn }` from `AccessToken`, `TokenType` and `ExpiresIn`, `AccountInactive` to 403, `InvalidCredentials` to 401. Delete the dummy hash, the lockout helpers, the session tracking, the hash re-read and the `JwtBearer.CreateToken` call.
+    - `ServiceAccounts/Create`: keep the validator and the tenant check; map the request to a `BlueprintServiceAccount` without client id or hash, then `CreateCredentialsAsync(serviceAccount)` and set `response.ClientSecret` from its result. Delete `GenerateClientId`, `GenerateClientSecret` and the client-id uniqueness check.
+    - `ServiceAccounts/RotateSecret`: `RotateSecretAsync(req.Id)`; `null` maps to 404. Delete the hashing, both revocation passes and the secret generator.
+    - `ServiceAccounts/Update`: after the commit, when the account was deactivated, `AccountDeactivatedAsync(serviceAccount.Id)`.
+    - `ServiceAccounts/Delete`: after the commit, `AccountDeletedAsync(serviceAccount.Id)`.
+  - Replace `IdentityClaimTypes.ServiceAccountSessionId` and the `"sub"`, `"name"`, `"type"`, `"ServiceAccount"` literals with `ServiceAccountClaimTypes`.
+  - `Infrastructure.DataSeeding/Seeds/ServiceAccountSeed.cs`: set the test secret with `account.SetClientSecret(TestClientSecret)` and drop the `IPasswordHasher<BlueprintServiceAccount>` dependency; delete the `IPasswordHasher<BlueprintServiceAccount>` registrations in `Cli.DataSeeding/Startup.cs` and the integration test fixture.
+  - Drop the `FastEndpoints.Security` package reference when nothing else uses it.
+  - Optionally register `IServiceAccountClaimsEnricher`s for per-request claims, and `ISessionRevocationParticipant`s that handle `SessionSubjectKind.ServiceAccount`.
+  - Tests: the package now covers issuance, lockout (including concurrent attempts), rotation, revocation and bearer validation; keep one HTTP test per behaviour the application relies on, such as the token endpoint's status mapping and its rate limit.
+
+- [#56](https://github.com/neolution-ch/Csag.Blueprint/pull/56) [`11189d5`](https://github.com/neolution-ch/Csag.Blueprint/commit/11189d5d69415a20dc9f2cc787656f61ae3d903e) Thanks [@neotrow](https://github.com/neotrow)! - Own the cookie session lifecycle in the packages; applications state intents through `ISessionLifecycle`
+  
+  Applications wired the session cookie by hand (cookie options, 401/403 handlers, a sign-in event that inserted the tracking row, security-stamp suppression) and drove revocation and refresh through low-level `ISessionManager` calls, each call site choosing its own ordering and cancellation. The packages now own that whole lifecycle; the application registers it with two calls and reports what happened through seven intents.
+  
+  **New:** `ISessionLifecycle` (Csag.Blueprint.Application), registered by `AddBlueprintSessionInfrastructure`:
+  
+  | Intent | Effect |
+  | --- | --- |
+  | `CredentialsChangedAsync(accountId)` | Ends the account's sessions except the caller's own, when the caller's session belongs to that account; without one, ends all of them. For password change and reset, and a second factor enabled or disabled. |
+  | `AccessRevokedAsync(accountId)` / `AccessRevokedAsync(accountId, tenantId)` | Ends the account's sessions, everywhere or in one tenant. |
+  | `ClaimsChangedAsync(accountId)` / `ClaimsChangedAsync(accountId, tenantId)` | Rebuilds the cached claims of the account's sessions, all of them or one tenant's. |
+  | `TenantRemovedAsync(tenantId)` | Ends every session scoped to the tenant. |
+  | `SwitchTenantAsync(tenantId)` | Checks membership and moves the caller's session to the tenant; returns `SessionTenantSwitchOutcome` (`Switched`, `NotAMember`, `NoActiveSession`, `SessionExpired`). |
+  | `ListMySessionsAsync()` | Lists the caller's account's sessions with `ActiveSessionInfo.IsCurrent`; never exposes a session key. |
+  | `RevokeMySessionAsync(sessionId)` | Ends one of the caller's account's sessions and returns `true`; returns `false` without ending anything or calling a participant when the caller's account has no session with that id (unknown, already ended, or another account's). Ending the caller's own session signs the caller out; when it could not be ended, the caller stays signed in and the intent can be retried. |
+  
+  No intent takes a `CancellationToken`: once called it runs to completion, so call it after the change it reports is committed. Failures throw; the revoking intents run every step and then throw one `AggregateException` carrying each failure. Every intent is safe to retry: a session whose cached ticket or tracking row could not be removed stays tracked, so the retry ends it and calls the participants again. A retried `RevokeMySessionAsync` whose session already ended (only a participant failed) returns `false` and calls no participant again.
+  
+  **New hooks:**
+  
+  - `ISessionRevocationParticipant`: every revoking intent calls all registered participants with a `SessionRevocation` (reason, `SessionSubject` of kind user or service account, tenant scope, single session id), so the application's own credentials end alongside the sessions. A failing participant does not stop the others.
+  - `ISessionEligibility`: answers "may this account hold a session?". Asked at every sign-in (a "no" makes the sign-in throw before any session exists) and at every sliding renewal (a "no" ends the session and clears the cookie). Without a registration every account may hold a session.
+  - `AddBlueprintCookieSessions(Action<CookieBuilder>)`: turns the Identity application cookie into the session cookie. The callback shapes the cookie (name, `SameSite`, secure policy); the package then applies its fixed behaviour: HTTP-only, the ticket store, the lifetime from `SessionExpirationHours` with sliding expiration, a persistent cookie, 401/403 instead of redirects, and no Identity security-stamp validation. Cookie event handlers the application assigns keep running before the package's; a scheme that sets `EventsType` or overrides those events fails when its options are built.
+  - `AddBlueprintSessionInfrastructure` takes an optional `Action<BlueprintSessionOptions>`: `ClientIpHeader` (the edge-stamped client address header) and `ExpiredSessionCleanup` (`Enabled`, `Interval`).
+  
+  **Behaviour change:** The ticket store tracks every session it stores: it writes the ticket, then creates the tracking row with the account, tenant, expiry, user agent and client address of the signing-in request. A sign-in that cannot record its session fails and leaves no ticket. Renewal brings the row in line with the ticket — expiry and tenant. A sign-in on a request that still carries a live session cookie reuses that cookie's session key; the row is then attributed to the signing-in account, with its sign-in time, user agent and address, so revoking that account ends the session and revoking the previous account does not.
+  
+  **Behaviour change:** The client address recorded for a session follows the rule the package's rate limiting uses (`ClientAddressHttpContextExtensions.TryGetClientAddress`, which `RateLimiterExtensions.TryGetClientPartitionKey` now calls): the configured `ClientIpHeader` when present and parseable, otherwise the connection's remote address.
+  
+  **Behaviour change:** The session lifetime comes from `Blueprint:Security:SessionExpirationHours` alone: `AddBlueprintDefaultValidatedOptions` sets `BlueprintSessionOptions.Lifetime` from it, the cookie's `ExpireTimeSpan` follows, and a ticket that reaches the store without an expiry gets it too. Sign-in code no longer sets `ExpiresUtc` or `IsPersistent`. Startup fails when the lifetime is shorter than one second.
+  
+  **Behaviour change:** A hosted job deletes the tracking rows of expired sessions, by default once an hour. Each pass deletes in batches by the existing `ExpiresAt` index, so every replica can run it without coordination. Switch it off with `ExpiredSessionCleanup.Enabled = false`.
+  
+  **Behaviour change:** Revoking intents keep removing the remaining cached tickets when one removal fails, keep the tracking row of a session whose ticket could not be removed, and still call the participants. A sign-out removes the cached ticket before it deletes the tracking row, and once more after it, so a sign-out whose ticket removal fails leaves the session tracked. A claims refresh that races a revocation removes the tickets it rewrote for sessions whose rows are gone. A claims refresh or tenant switch leaves alone a ticket that by then authenticates another account. A sliding renewal on a request that switched the caller's tenant or changed its own account's claims keeps that change.
+  
+  **Breaking:** `ISessionManager` is removed with all its methods, and `ActiveSessionInfo.SessionKey` with it; the package's `SessionManager<TUser, TContext>` is internal. Use the intents above.
+  
+  **Breaking:** `IActiveSessionTracker.ExtendAsync` is replaced by `RenewAsync(SessionTrackingEntry)`, and `TrackAsync(SessionTrackingEntry)` is added. `ActiveSessionTracker<TContext>` takes a `TimeProvider`; `DistributedCacheTicketStore` takes `IOptions<BlueprintSessionOptions>` and a `TimeProvider`, and refuses a ticket without an account identifier. Both are registered with `TryAdd` under their concrete types too, so an application can wrap them.
+  
+  **Breaking:** `ITenantManager<TUser, TTenant>.IsMemberAsync` moves to the new base interface `ITenantMembershipChecker`, which `AddBlueprintTenantManager` also registers. Callers are unaffected.
+  
+  No EF model change: no migration is needed.
+  
+  Consumer migration (`csag-blueprint-web`):
+  
+  - `Infrastructure/Session/ServiceCollectionExtensions.cs`: replace the body of `AddDistributedSessionAuthentication` with `AddBlueprintSessionInfrastructure<ApplicationUser, ApplicationDbContext>(o => o.ClientIpHeader = <RateLimitingSettings:ClientIpHeader>)` and `AddBlueprintCookieSessions(cookie => { cookie.SecurePolicy = securitySettings.CookieSecurePolicy; cookie.SameSite = SameSiteMode.Lax; })`, keeping the `IRolePermissionResolver` and `PermissionClaimsTransformation` registrations. Delete the `ConfigureApplicationCookie` block (name, `HttpOnly`, `ExpireTimeSpan`, `SlidingExpiration`, the redirect handlers, `OnSignedIn`), `OnSignedInAsync`, `ExtractTenantIdFromClaims`, the security-stamp `PostConfigure`, and the `sessionLifetime` parameter.
+  - `LoginCompletionService.SignInUserAsync`: stop setting `ExpiresUtc` (and `IsPersistent`/`AllowRefresh`).
+  - Replace the session calls, each after its commit and without a `CancellationToken`:
+    - `ChangePasswordEndpoint`, MFA `EnableAuthenticatorEndpoint` and `DisableEndpoint`: the `GetCurrentSessionKeyAsync` + `RevokeOtherUserSessionsAsync`/`RevokeUserSessionsAsync` block becomes `CredentialsChangedAsync(user.Id)`.
+    - `ResetPasswordEndpoint`: `CredentialsChangedAsync(user.Id)`.
+    - `DisableAccountEndpoint`, `UpdateAccountEndpoint` (login change): `AccessRevokedAsync(id)`.
+    - `DeleteUserEndpoint`, `UpdateAccountEndpoint` (membership removals), `RevokeAllSessionsEndpoint`: `AccessRevokedAsync(id, tenantId)`. The intent returns no count, so `RevokeAllSessionsResponse.SessionsRevoked` goes or is computed by the endpoint.
+    - `UpdateUserEndpoint`, `SwitchLanguageEndpoint`, `UpdateAccountEndpoint` (other changes): `ClaimsChangedAsync(id)` or `ClaimsChangedAsync(id, tenantId)`.
+    - `DeleteTenantEndpoint`: `TenantRemovedAsync(id)`.
+    - `SwitchTenantEndpoint`: the membership check, session lookup, ticket-store retrieve/renew and rollback become `SwitchTenantAsync(req.TenantId)`; map `NotAMember` to its 400 and `NoActiveSession`/`SessionExpired` to its 401.
+    - `ListMySessionsEndpoint`: `ListMySessionsAsync()`, using `IsCurrent`.
+    - `RevokeMySessionEndpoint`: the `ActiveSessions` ownership lookup and `RevokeSessionAsync` become `RevokeMySessionAsync(req.SessionId)`; map `false` to its 404 and `true` to its 204, and drop the `ApplicationDbContext` dependency.
+  - Optionally register an `ISessionEligibility` (for example: a disabled or locked-out account may not hold a session) and `ISessionRevocationParticipant`s for the application's own credentials.
+  - Tests: the package now covers what `SessionManagerTests`, `SessionLifetimeConfigurationTests` and `SwitchTenantSessionTargetingTests` checked; keep one HTTP test per behaviour the application relies on.
+
+- [#60](https://github.com/neolution-ch/Csag.Blueprint/pull/60) [`4654e33`](https://github.com/neolution-ch/Csag.Blueprint/commit/4654e333330f260111ca0fdd3e06656af4afab14) Thanks [@neotrow](https://github.com/neotrow)! - Serve table view allowed values with human-readable, localizable labels
+  
+  Enum columns sent their raw member names (`CreditCard`, `FourSeater`) as the only text a frontend had for its filter options, and there was no way to translate them. Each allowed value now carries a label next to the value that filters match on.
+  
+  **Breaking:** `TableViewColumnMetadata.AllowedValues` is now `IReadOnlyList<TableViewAllowedValue>?` instead of `IEnumerable<string>?`. On the wire each entry is `{ "value": "CreditCard", "label": "Credit card" }` rather than a bare string. Filtering is unchanged: `Enum` and `In` filters still match on `value`.
+  
+  **New:** `TableViewAllowedValue` (Csag.Blueprint.Application), an immutable record with `Value`, `Label`, and two members that are never serialized: `LabelKey`, a translation key resolved at request time like `DisplayNameKey`, and `IsLabelKeyOptional`, which marks a key whose missing translation is expected.
+  
+  **Behaviour change:** Enum columns derive one allowed value per member: the member name as `Value`, the humanized member name as `Label` (`CreditCard` → "Credit card", `SMSCode` → "SMS code", `IBAN` → "IBAN", `Top10Items` → "Top 10 items"), and `Enums.{EnumTypeName}.{MemberName}` as an optional `LabelKey`. An application translates a label by adding that key to its translation catalog (for example a nested `Enums.PaymentMethod` class in `TranslationDefaults`); a member without a translation keeps the humanized label, and nothing is logged. Keys use the enum's simple type name, so two enums with the same name share keys.
+  
+  **New:** `TableViewColumnDefinition` gains `WithAllowedValues(IEnumerable<TableViewAllowedValue>)` for full control over values, labels and keys, and `WithValueLabelKeyPrefix(string prefix)`, which sets every current allowed value's key to `{prefix}.{Value}`. Keys set either way are expected to exist: a missing one is logged as a warning and the definition's label is served, as for display names. `WithValueLabelKeyPrefix` throws `InvalidOperationException` on a column without allowed values. `WithAllowedValues(IEnumerable<string>)` and `Filterable(operator, allowedValues)` keep taking plain strings, served with the string itself as the label and no key; `WithAllowedValues(IEnumerable<string>)` now rejects `null`.
+  
+  **Behaviour change:** `StringLocalizerTableViewMetadataLocalizer` resolves allowed-value label keys along with display names and descriptions. A column whose labels change is returned as a copy with a new allowed-values list; the definition's list and values are never modified.
+  
+  **Behaviour change:** `TableViewExcelExporter` writes a text or enum cell whose value matches one of the column's allowed values as that value's label, so exported enum columns show the same (localized) text as the table.
+  
+  Consumer migration: frontends read `allowedValues[i].value` for filter input and `allowedValues[i].label` for display, and regenerate any API client types. Server code that read `AllowedValues` as strings selects `.Value`. To translate enum labels, add `Enums.{EnumType}.{Member}` keys to the translation catalog, or point a column at existing keys with `WithValueLabelKeyPrefix`.
+
+### Patch Changes
+
+- [#56](https://github.com/neolution-ch/Csag.Blueprint/pull/56) [`11189d5`](https://github.com/neolution-ch/Csag.Blueprint/commit/11189d5d69415a20dc9f2cc787656f61ae3d903e) Thanks [@neotrow](https://github.com/neotrow)! - Reject control characters in the return address of a failed OpenID Connect round trip
+  
+  With `OAuth.FrontendBaseUrl` set, a failed provider round trip redirects to the challenge's `AuthenticationProperties.RedirectUri` when it is a local path. That check now uses `RedirectHttpResult.IsLocalUrl` (still requiring a leading `/`), so a return address carrying a control character such as CR or LF is treated as non-local and the user is sent to `FrontendBaseUrl` with `?error=external_auth_failed` instead.
+
 ## 0.4.0
 
 ### Minor Changes

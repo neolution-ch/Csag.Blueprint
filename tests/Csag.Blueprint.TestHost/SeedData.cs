@@ -7,7 +7,8 @@ using System.Globalization;
 /// Well-known identifiers and credentials for the deterministic data the host seeds at startup.
 /// Integration tests reference these constants instead of querying for the seeded rows, so the
 /// seeded world stays a stable, discoverable contract: two tenants, four users with one shared
-/// password, eight vehicles (six in tenant A, two in tenant B), and a handful of translations.
+/// password, one service account, eight vehicles (six in tenant A, two in tenant B), and a handful of
+/// translations.
 /// </summary>
 public static class SeedData
 {
@@ -37,6 +38,21 @@ public static class SeedData
     /// keeps the platform and tenant capability surfaces cleanly separated for authorization tests.
     /// </summary>
     public const string PlatformAdminEmail = "platform@test.local";
+
+    /// <summary>
+    /// Client id of the seeded service account, an active TenantViewer in tenant A.
+    /// </summary>
+    public const string ServiceAccountClientId = "sa-testhost-tenant-a";
+
+    /// <summary>
+    /// The secret of the seeded service account.
+    /// </summary>
+    public const string ServiceAccountSecret = "TestHostServiceAccountSecret1234!";
+
+    /// <summary>
+    /// Display name of the seeded service account.
+    /// </summary>
+    public const string ServiceAccountName = "TestHost service account (tenant A)";
 
     /// <summary>
     /// Number of vehicles seeded into tenant A.
@@ -77,6 +93,11 @@ public static class SeedData
     /// Identifier of the <see cref="PlatformAdminEmail"/> user.
     /// </summary>
     public static readonly Guid PlatformAdminUserId = Guid.Parse("aaaaaaaa-0000-0000-0000-000000000004", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Identifier of the seeded service account.
+    /// </summary>
+    public static readonly Guid ServiceAccountId = Guid.Parse("cccccccc-0000-0000-0000-000000000001", CultureInfo.InvariantCulture);
 
     /// <summary>
     /// Identifier of the "City Bike" vehicle seeded into tenant A, for get-by-id style assertions.

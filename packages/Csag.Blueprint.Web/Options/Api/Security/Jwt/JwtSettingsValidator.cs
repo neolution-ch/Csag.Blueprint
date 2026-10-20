@@ -5,9 +5,10 @@ namespace Csag.Blueprint.Web.Options.Api.Security.Jwt
     /// <summary>
     /// Validator for <see cref="JwtSettings"/> configuration.
     /// Note: SigningKey <b>presence</b> is not enforced here because SecuritySettings validation runs
-    /// unconditionally (including generation mode, where no signing key is configured). Presence is
-    /// asserted by the host when it registers its runtime services, gated behind its generation-mode
-    /// check. A key that is provided must still meet the HS256 minimum length in every mode.
+    /// unconditionally (including generation mode, where no signing key is configured). Service-account
+    /// credentials require the key the first time a token is issued or validated; a host that wants startup
+    /// itself to fail without one asserts presence when it registers its runtime services, gated behind its
+    /// generation-mode check. A key that is provided must still meet the HS256 minimum length in every mode.
     /// </summary>
     public sealed class JwtSettingsValidator : AbstractValidator<JwtSettings>
     {

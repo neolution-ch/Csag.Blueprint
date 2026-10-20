@@ -942,7 +942,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[0.3.0, )",
+          "Csag.Blueprint.Domain": "[0.4.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )"
         }
       },
@@ -955,8 +955,9 @@
       "csag.blueprint.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Application": "[0.3.0, )",
-          "Csag.Blueprint.Domain": "[0.3.0, )",
+          "Csag.Blueprint.Application": "[0.4.0, )",
+          "Csag.Blueprint.Domain": "[0.4.0, )",
+          "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
@@ -970,7 +971,7 @@
           "Audit.NET": "[33.0.0, )",
           "Audit.NET.SqlServer": "[33.0.0, )",
           "ClosedXML": "[0.105.1, )",
-          "Csag.Blueprint.Infrastructure": "[0.3.0, )",
+          "Csag.Blueprint.Infrastructure": "[0.4.0, )",
           "FastEndpoints": "[8.3.0, )",
           "FastEndpoints.Swagger": "[8.3.0, )",
           "FluentValidation": "[12.1.1, )",
@@ -1079,6 +1080,15 @@
         "dependencies": {
           "Microsoft.ApplicationInsights": "2.23.0",
           "NLog": "4.5.11"
+        }
+      },
+      "Microsoft.AspNetCore.Authentication.JwtBearer": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "DeE+Bq2OqB3FikFkZk+7gFBeLOQhkSolejLrbi+a9zpfvXtW1Ff6Nd6DIvHXIm+pc4aM4+52vDy3jnuau0qoUQ==",
+        "dependencies": {
+          "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.19.2"
         }
       },
       "Microsoft.AspNetCore.Authentication.OpenIdConnect": {

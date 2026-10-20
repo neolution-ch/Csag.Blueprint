@@ -13,7 +13,8 @@ namespace Csag.Blueprint.Web.Extensions
 
         /// <summary>
         /// The scheme is applied to all authenticated endpoints by default.
-        /// Individual endpoints can override this by explicitly declaring their own <c>AuthSchemes()</c>.
+        /// Individual endpoints can override this by explicitly declaring their own <c>AuthSchemes()</c>,
+        /// which then replace the default rather than add to it.
         /// </summary>
         OptOut,
     }

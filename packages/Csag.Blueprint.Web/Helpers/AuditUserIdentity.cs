@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Web.Helpers;
 
 using System.Security.Claims;
+using Csag.Blueprint.Application.Claims;
 
 /// <summary>
 /// The identity of the user for an audit event. The values come from the claims on the request.
@@ -28,18 +29,15 @@ internal readonly record struct AuditUserIdentity(string? UserId, string? Email,
             return default;
         }
 
-        // UserClaimsHelper.SetUserProfileClaims sets all three claims for a human user. A service account
-        // gets its claims from the token of the client-credentials endpoint, which has no email address.
-        // That token holds the client ID in a raw "sub" claim and the account name in a raw "name" claim.
-        // These two claims become ClaimTypes.NameIdentifier and ClaimTypes.Name only if JWT inbound claim
-        // mapping is on. Therefore read the raw claims also.
+        // UserClaimsHelper.SetUserProfileClaims sets all three claims for a human user. A service-account
+        // principal has no email address, and carries its client ID and account name under the raw
+        // ServiceAccountClaimTypes names, because the package's bearer scheme does not map inbound claims.
         //
         // Read the mapped claim first. The values of a human user go directly into the mapped claims, and
-        // they must have priority over a claim from an external provider. CurrentActorMiddleware reads
-        // "sub" first, which is the opposite order.
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
+        // they must have priority over a claim from an external provider.
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue(ServiceAccountClaimTypes.Subject);
         var email = user.FindFirstValue(ClaimTypes.Email);
-        var displayName = user.FindFirstValue(ClaimTypes.Name) ?? user.FindFirstValue("name");
+        var displayName = user.FindFirstValue(ClaimTypes.Name) ?? user.FindFirstValue(ServiceAccountClaimTypes.Name);
 
         // Keep the full values. The package writes them only to the JSON data, which has no length
         // limit. If a value becomes a column, cut it to length here, one time. Do not cut it in the

@@ -1,13 +1,12 @@
 namespace Csag.Blueprint.IntegrationTests.Session;
 
 using System.Globalization;
-using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Application.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Enums;
-using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.Tests.Shared.Database;
+using Csag.Blueprint.Tests.Shared.Session;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
@@ -15,7 +14,7 @@ using Moq;
 using Neolution.Extensions.Caching.Abstractions;
 
 /// <summary>
-/// Service-level integration tests for <see cref="IServiceAccountSessionManager"/> session-key handling against
+/// Service-level integration tests for <c>IServiceAccountSessionManager</c> session-key handling against
 /// the real SQL container and the real Neolution cache-key pipeline. The test host substitutes only the inner
 /// byte store (a distributed memory cache), so key encoding and the 250-byte limit on the generated key are
 /// still enforced by the very library the manager's byte budget is derived from — which is what lets these
@@ -34,10 +33,9 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
     private const int MaxSessionKeyBytes = 220;
 
     /// <summary>
-    /// The instant the fake clocks in the expiry and cleanup tests below are parked at. It sits well before any
-    /// session the fixture itself tracks, so the table-wide delete can never reach their rows, and far enough
-    /// from the wall clock that a filter reading <c>DateTimeOffset.UtcNow</c> instead of its injected
-    /// <see cref="TimeProvider"/> is unmistakable rather than a near miss.
+    /// The instant the fake clocks in the expiry tests below are parked at. It sits well before any session the
+    /// fixture itself tracks, and far enough from the wall clock that a filter reading <c>DateTimeOffset.UtcNow</c>
+    /// instead of its injected <see cref="TimeProvider"/> is unmistakable rather than a near miss.
     /// </summary>
     private static readonly DateTimeOffset ClockEpoch = new(2020, 6, 1, 12, 0, 0, TimeSpan.Zero);
 
@@ -55,7 +53,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         // Act
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             await manager.TrackSessionAsync(serviceAccountId, sessionKey, expiresAt, "test-agent", "127.0.0.1", ct);
         }
 
@@ -88,7 +86,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         // would in turn abort revocation for every other session on the account.
         var sessionKey = CreateStandardBase64Key(MaxSessionKeyBytes);
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
 
         // Act & Assert — the cache raises ArgumentException for this key as well, naming its own 'key'
         // parameter, so the parameter name is what shows the key was refused up front rather than on the way
@@ -132,7 +130,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         // would raise ArgumentException inside the authentication pipeline, turning a request that should be
         // rejected into an unhandled server error; the manager reports "no session" instead.
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
 
         (await manager.ValidateSessionAsync(CreateUnreservedKey(MaxSessionKeyBytes + 1), ct)).ShouldBeNull();
         (await manager.ValidateSessionAsync(CreateStandardBase64Key(MaxSessionKeyBytes), ct)).ShouldBeNull();
@@ -169,7 +167,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         try
         {
             using var serviceScope = this.App.Services.CreateScope();
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
 
             // Act & Assert
             // A token with no session-id claim reads as null, which the signature accepts rather than forcing
@@ -197,7 +195,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
         await manager.TrackSessionAsync(
             serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
 
@@ -244,7 +242,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
         await manager.TrackSessionAsync(
             serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
 
@@ -297,7 +295,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
         await manager.TrackSessionAsync(
             serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
 
@@ -354,7 +352,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
         await manager.TrackSessionAsync(
             serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
 
@@ -415,7 +413,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             await seedScope.Context.SaveChangesAsync(ct);
         }
 
-        var manager = new ServiceAccountSessionManager<TestDbContext>(
+        var manager = ServiceAccountSessionManagerAccessor.Create(
             this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>(),
             this.App.Services.GetRequiredService<IDistributedCache<CacheId>>(),
             clock);
@@ -466,7 +464,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             await seedScope.Context.SaveChangesAsync(ct);
         }
 
-        var manager = new ServiceAccountSessionManager<TestDbContext>(
+        var manager = ServiceAccountSessionManagerAccessor.Create(
             this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>(),
             this.App.Services.GetRequiredService<IDistributedCache<CacheId>>(),
             clock);
@@ -491,7 +489,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         var sessionKey = CreateUnreservedKey(MaxSessionKeyBytes);
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             await manager.TrackSessionAsync(
                 serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
         }
@@ -500,7 +498,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         bool revoked;
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             revoked = await manager.RevokeSessionAsync(sessionKey, ct);
         }
 
@@ -536,7 +534,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             await manager.TrackSessionAsync(
                 serviceAccountId, storedKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
         }
@@ -548,7 +546,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         bool revoked;
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             revoked = await manager.RevokeSessionAsync(revokeKey, ct);
         }
 
@@ -567,7 +565,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             }
 
             using var validationScope = this.App.Services.CreateScope();
-            var validator = validationScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var validator = ServiceAccountSessionManagerAccessor.Resolve(validationScope.ServiceProvider);
             (await validator.ValidateSessionAsync(storedKey, ct)).ShouldBeNull();
         }
         finally
@@ -594,7 +592,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         await cache.SetWithOptionsAsync(CacheId.ServiceAccountSession, sharedSlotSentinel, options, ct);
 
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
         await manager.TrackSessionAsync(
             serviceAccountId, trackedKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
 
@@ -641,13 +639,13 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             await manager.TrackSessionAsync(
                 serviceAccountId, sessionKey, DateTimeOffset.UtcNow.AddHours(1), "test-agent", "127.0.0.1", ct);
         }
 
         var interleavingCache = CreateCacheRestoringTheMarkerOnTheFirstSweep(cache, serviceAccountId, sessionKey);
-        var racedManager = new ServiceAccountSessionManager<TestDbContext>(
+        var racedManager = ServiceAccountSessionManagerAccessor.Create(
             this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>(),
             interleavingCache.Object,
             this.App.Services.GetRequiredService<TimeProvider>());
@@ -697,7 +695,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             await manager.TrackSessionAsync(serviceAccountId, firstKey, expiresAt, "test-agent", "127.0.0.1", ct);
             await manager.TrackSessionAsync(serviceAccountId, secondKey, expiresAt, "test-agent", "127.0.0.2", ct);
             await manager.TrackSessionAsync(otherServiceAccountId, otherAccountKey, expiresAt, "test-agent", "127.0.0.3", ct);
@@ -709,7 +707,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             int revoked;
             using (var serviceScope = this.App.Services.CreateScope())
             {
-                var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+                var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
                 revoked = await manager.RevokeServiceAccountSessionsAsync(serviceAccountId, ct);
             }
 
@@ -758,7 +756,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
 
         using (var serviceScope = this.App.Services.CreateScope())
         {
-            var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+            var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
             foreach (var sessionKey in new[] { racedKey, otherKey })
             {
                 await manager.TrackSessionAsync(
@@ -767,7 +765,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         }
 
         var interleavingCache = CreateCacheRestoringTheMarkerOnTheFirstSweep(cache, serviceAccountId, racedKey);
-        var racedManager = new ServiceAccountSessionManager<TestDbContext>(
+        var racedManager = ServiceAccountSessionManagerAccessor.Create(
             this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>(),
             interleavingCache.Object,
             this.App.Services.GetRequiredService<TimeProvider>());
@@ -826,7 +824,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             .Returns(Task.FromException(new ArgumentException("The generated cache key exceeds the maximum length")));
 
         var dbContextFactory = this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>();
-        var manager = new ServiceAccountSessionManager<TestDbContext>(
+        var manager = ServiceAccountSessionManagerAccessor.Create(
             dbContextFactory, refusingCache.Object, this.App.Services.GetRequiredService<TimeProvider>());
 
         // Act — issuance surfaces the cache failure to the caller...
@@ -854,7 +852,7 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
         var cache = this.App.Services.GetRequiredService<IDistributedCache<CacheId>>();
 
         using var serviceScope = this.App.Services.CreateScope();
-        var manager = serviceScope.ServiceProvider.GetRequiredService<IServiceAccountSessionManager>();
+        var manager = ServiceAccountSessionManagerAccessor.Resolve(serviceScope.ServiceProvider);
 
         try
         {
@@ -875,73 +873,6 @@ public sealed class ServiceAccountSessionManagerTests(AppFixture app) : Integrat
             // Cache entries live in the host's memory and outlive the per-test database restore.
             await cache.RemoveAsync(CacheId.ServiceAccountSession, sessionKey, ct);
         }
-    }
-
-    [Fact]
-    public async Task CleanupExpiredSessionsAsync_DeletesUpToAndIncludingTheInjectedClockInstantAsync()
-    {
-        var ct = TestContext.Current.CancellationToken;
-
-        // Arrange — three tracking rows straddling the clock instant by a second either side. They are written
-        // straight through a DbContext rather than through TrackSessionAsync because issuance reaps this
-        // account's rows whose ExpiresAt is at or before its own clock read, on the same write: the expired and
-        // boundary rows would delete themselves on the way in. Every expiry sits in the same far-past epoch, so
-        // the table-wide delete below cannot reach the fixture's own rows and the count is exactly this test's
-        // doing.
-        var serviceAccountId = Guid.NewGuid();
-        var expiredKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        var boundaryKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-        var liveKey = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
-
-        using (var seedScope = this.App.CreateDbContextScope())
-        {
-            foreach (var (sessionKey, expiresAt) in new[]
-            {
-                (expiredKey, ClockEpoch.AddSeconds(-1)),
-                (boundaryKey, ClockEpoch),
-                (liveKey, ClockEpoch.AddSeconds(1)),
-            })
-            {
-                // Id is left unset so the NEWSEQUENTIALID() store default applies, as it does on the manager's
-                // own insert.
-                seedScope.Context.ServiceAccountSessions.Add(new BlueprintServiceAccountSession
-                {
-                    ServiceAccountId = serviceAccountId,
-                    SessionKey = sessionKey,
-                    CreatedAt = ClockEpoch.AddHours(-1),
-                    ExpiresAt = expiresAt,
-                    UserAgent = "test-agent",
-                    IpAddress = "127.0.0.1",
-                });
-            }
-
-            await seedScope.Context.SaveChangesAsync(ct);
-        }
-
-        // The manager runs on the host's real collaborators but with its own clock, so the time seam can be
-        // driven without repointing the shared host's TimeProvider registration for every other test in the
-        // collection. The sweep touches only the tracking table, so no cache entry is written here to outlive
-        // the per-test database restore.
-        var manager = new ServiceAccountSessionManager<TestDbContext>(
-            this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>(),
-            this.App.Services.GetRequiredService<IDistributedCache<CacheId>>(),
-            new FakeTimeProvider(ClockEpoch));
-
-        // Act
-        var deleted = await manager.CleanupExpiredSessionsAsync(ct);
-
-        // Assert — the filter is ExpiresAt <= now, so the row expiring exactly on the instant goes too, which is
-        // what keeps it in step with the opportunistic reap in TrackSessionCoreAsync. Under the wall clock all
-        // three would have been swept, the live one included.
-        deleted.ShouldBe(2);
-
-        using var dbScope = this.App.CreateDbContextScope();
-        var remaining = await dbScope.Context.ServiceAccountSessions
-            .AsNoTracking()
-            .Where(s => s.ServiceAccountId == serviceAccountId)
-            .Select(s => s.SessionKey)
-            .ToListAsync(ct);
-        remaining.ShouldBe([liveKey]);
     }
 
     /// <summary>

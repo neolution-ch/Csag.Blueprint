@@ -26,7 +26,7 @@ public sealed class BlueprintServiceAccountSessionConfiguration : IEntityTypeCon
         builder.Property(s => s.IpAddress).HasMaxLength(50);
 
         // Indexes for lookup-by-key (validation), revocation and cleanup by account, and the table-wide expiry
-        // sweep in IServiceAccountSessionManager.CleanupExpiredSessionsAsync.
+        // sweep in ExpiredSessionCleanupService.
         builder.HasIndex(s => s.ServiceAccountId);
         builder.HasIndex(s => s.SessionKey).IsUnique();
         builder.HasIndex(s => s.ExpiresAt);

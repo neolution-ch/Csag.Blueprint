@@ -3,7 +3,9 @@ namespace Csag.Blueprint.Application.Abstractions.Services;
 /// <summary>
 /// Ends credentials the application issues itself — refresh tokens, API keys, device bindings — whenever the
 /// session lifecycle revokes sessions, so they cannot outlive the sessions they were issued alongside. Register any
-/// number of implementations; every revoking intent of <see cref="ISessionLifecycle"/> calls all of them.
+/// number of implementations; every revoking intent of <see cref="ISessionLifecycle"/> and
+/// <see cref="IServiceAccountSessionLifecycle"/>, and every secret rotation through
+/// <see cref="IServiceAccountCredentials.RotateSecretAsync"/>, calls all of them.
 /// </summary>
 /// <remarks>
 /// <para>

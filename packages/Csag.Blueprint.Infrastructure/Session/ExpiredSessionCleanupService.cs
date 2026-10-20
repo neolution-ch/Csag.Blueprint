@@ -7,10 +7,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Deletes the tracking rows of expired sessions on a fixed interval (see
-/// <see cref="BlueprintSessionOptions.ExpiredSessionCleanup"/>). Their cached tickets expire with them, so the rows
-/// are all that is left of those sessions; listings already ignore them, so this reclaims storage rather than
-/// changing what anyone can do.
+/// Deletes the tracking rows of expired sessions — user sessions (<see cref="BlueprintActiveSession"/>) and
+/// service-account sessions (<see cref="BlueprintServiceAccountSession"/>) alike — on a fixed interval (see
+/// <see cref="BlueprintSessionOptions.ExpiredSessionCleanup"/>). Their cached tickets and markers expire with them, so
+/// the rows are all that is left of those sessions; listings and token validation already ignore them, so this
+/// reclaims storage rather than changing what anyone can do.
 /// </summary>
 /// <remarks>
 /// Every replica of the application runs the job. Each pass is a series of set-based deletes of rows that expired
@@ -51,28 +52,23 @@ public sealed class ExpiredSessionCleanupService<TContext> : BackgroundService
     }
 
     /// <summary>
-    /// Runs one pass: deletes every tracking row whose session expired at or before the current instant.
+    /// Runs one pass: deletes every user and service-account tracking row whose session expired at or before the
+    /// current instant.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of rows deleted.</returns>
+    /// <returns>The number of rows deleted, across both tables.</returns>
     public async Task<int> RemoveExpiredSessionsAsync(CancellationToken cancellationToken)
     {
-        // One cutoff for the whole pass, so the loop ends even while sessions keep expiring underneath it.
+        // One cutoff for the whole pass, so the loops end even while sessions keep expiring underneath them.
         var cutoff = this.timeProvider.GetUtcNow();
-        var removed = 0;
-        int batch;
 
-        do
-        {
-            await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
-            batch = await dbContext.Set<BlueprintActiveSession>()
-                .Where(s => s.ExpiresAt <= cutoff)
-                .OrderBy(s => s.ExpiresAt)
-                .Take(BatchSize)
-                .ExecuteDeleteAsync(cancellationToken);
-            removed += batch;
-        }
-        while (batch == BatchSize);
+        var removed = await this.RemoveInBatchesAsync<BlueprintActiveSession>(
+            sessions => sessions.Where(s => s.ExpiresAt <= cutoff).OrderBy(s => s.ExpiresAt),
+            cancellationToken);
+
+        removed += await this.RemoveInBatchesAsync<BlueprintServiceAccountSession>(
+            sessions => sessions.Where(s => s.ExpiresAt <= cutoff).OrderBy(s => s.ExpiresAt),
+            cancellationToken);
 
         return removed;
     }
@@ -99,6 +95,27 @@ public sealed class ExpiredSessionCleanupService<TContext> : BackgroundService
         {
             // The host is stopping.
         }
+    }
+
+    private async Task<int> RemoveInBatchesAsync<TSession>(
+        Func<IQueryable<TSession>, IQueryable<TSession>> expired,
+        CancellationToken cancellationToken)
+        where TSession : class
+    {
+        var removed = 0;
+        int batch;
+
+        do
+        {
+            await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
+            batch = await expired(dbContext.Set<TSession>())
+                .Take(BatchSize)
+                .ExecuteDeleteAsync(cancellationToken);
+            removed += batch;
+        }
+        while (batch == BatchSize);
+
+        return removed;
     }
 
     private async Task RunPassAsync(CancellationToken stoppingToken)

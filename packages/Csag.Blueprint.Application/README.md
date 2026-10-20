@@ -6,7 +6,8 @@ This package provides **application-layer abstractions** for CSAG Blueprint-base
 
 ## Claims
 
-- **`IdentityClaimTypes`**: Static constants for identity claim types used across the application (`TenantId`, `PreferredLanguage`, `ServiceAccountSessionId`). The first two are stored in the authentication ticket so they are available on every request without a database lookup; `ServiceAccountSessionId` is the opaque session reference carried by a service-account bearer token.
+- **`IdentityClaimTypes`**: Static constants for identity claim types used across the application (`TenantId`, `Permission`, `PreferredLanguage`). They are stored in the authentication ticket so they are available on every request without a database lookup.
+- **`ServiceAccountClaimTypes`**: The claim names a service-account bearer token and its principal carry — `Subject` (`sub`, the client id), `Name` (`name`), `Type` (`type`, always `ServiceAccountType`) and `SessionId` (`sid`, the opaque session reference). The bearer scheme does not map inbound claims, so these raw names are what the principal carries.
 
 ## Tenant Context
 
@@ -23,7 +24,9 @@ All service contracts are defined as interfaces for dependency injection and tes
 | `ISessionRevocationParticipant` | Implemented by the application to end its own credentials (refresh tokens, API keys) whenever a revoking intent ends sessions. Every participant runs; failures are reported together. Each `SessionRevocation` names its `SessionSubject` — a user or a service account. |
 | `ISessionEligibility`        | Implemented by the application to answer "may this account hold a session?", asked at every sign-in and sliding renewal. Without one, every account may. |
 | `ITenantMembershipChecker`   | Answers whether a user is a member of a tenant without the tenant type parameters; the tenant manager implements it. |
-| `IServiceAccountSessionManager` | Tracks, validates, and revokes the server-side sessions behind reference-style service-account JWTs. Validation resolves the account's current tenant, roles, and permissions per request, so revocation, secret rotation, and deactivation take effect immediately. |
+| `IServiceAccountCredentials` | The application's entry point into service-account credentials: `IssueTokenAsync` (client id and secret to a `ServiceAccountTokenResult` — `Issued`, `InvalidCredentials` or `AccountInactive`), `CreateCredentialsAsync` and `RotateSecretAsync` (each returns the secret once as `ServiceAccountClientCredentials`). No `CancellationToken`. |
+| `IServiceAccountSessionLifecycle` | The service-account counterpart of `ISessionLifecycle`: `AccountDeactivatedAsync` and `AccountDeletedAsync` end the account's sessions and tell the revocation participants, with a service-account `SessionSubject`. |
+| `IServiceAccountClaimsEnricher` | Implemented by the application to add its own claims to a service-account principal on every request it authenticates. |
 | `IPasswordResetEmailService` | Sends password reset emails containing a reset link. |
 | `IImageStorageService`       | Stores and deletes images with support for multiple backends (database or blob storage). Returns a `StoredImageData` record with binary data or URL depending on the implementation. |
 

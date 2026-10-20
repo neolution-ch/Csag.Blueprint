@@ -61,7 +61,7 @@ This is the line to hold when extending the packages. If a new type would need t
 | `BlueprintServiceAccountSession` | Tracks the server-side sessions behind reference-style service-account JWTs. |
 | `BlueprintAuditLog` | Persists audit events written by Audit.NET integration. |
 | `BlueprintResourceAccess` | Shared authorization/resource-access persistence model. |
-| `BlueprintServiceAccount` | Represents machine/service credentials for JWT-based authentication. |
+| `BlueprintServiceAccount` | A tenant-owned, non-human account that authenticates with a client id and secret for bearer tokens. Its credentials are managed through `IServiceAccountCredentials` (Csag.Blueprint.Application). |
 | `BlueprintTranslation` | Stores database-backed localization entries. |
 | `BlueprintTableViewPreference<TUser>` | Persists per-user table view preferences. |
 | `BlueprintTenantMembership<TUser, TTenant>` | Join entity linking users to tenants. |

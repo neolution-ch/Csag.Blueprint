@@ -44,7 +44,11 @@ app.UseFastEndpointsWithConventions(o =>
     // The package cannot know this host's namespace, so the [namespace] routing convention
     // requires the endpoint root explicitly.
     o.EndpointsBaseNamespace = "Csag.Blueprint.TestHost.Endpoints";
+
+    // Both opt-out, as in a consuming application: each endpoint lists the one selector scheme that picks the
+    // session cookie or the bearer token per request.
     o.CookieAuthMode = AuthMode.OptOut;
+    o.JwtAuthMode = AuthMode.OptOut;
     o.EnableSwaggerUi = securitySettings.Swagger.Enabled;
 });
 

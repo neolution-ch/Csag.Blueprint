@@ -40,7 +40,8 @@ public static class ServiceCollectionExtensions
 
     /// <summary>
     /// Registers the package's <see cref="TenantManager{TUser, TTenant, TContext}"/> as the
-    /// <see cref="ITenantManager{TUser, TTenant}"/> implementation. Call this after <see cref="AddBlueprintTenancyRuntime"/>.
+    /// <see cref="ITenantManager{TUser, TTenant}"/> implementation, and the tenant manager as the
+    /// <see cref="ITenantMembershipChecker"/>. Call this after <see cref="AddBlueprintTenancyRuntime"/>.
     /// </summary>
     /// <typeparam name="TUser">The concrete user type deriving from <see cref="BlueprintUser"/>.</typeparam>
     /// <typeparam name="TTenant">The concrete tenant type deriving from <see cref="BlueprintTenant"/>.</typeparam>
@@ -53,6 +54,10 @@ public static class ServiceCollectionExtensions
         where TContext : DbContext
     {
         services.AddScoped<ITenantManager<TUser, TTenant>, TenantManager<TUser, TTenant, TContext>>();
+
+        // Resolved through the tenant manager, so an application that replaces ITenantManager answers membership
+        // questions from its own implementation as well.
+        services.AddScoped<ITenantMembershipChecker>(sp => sp.GetRequiredService<ITenantManager<TUser, TTenant>>());
         services.AddScoped<ITenantRoleService, TenantRoleService<TUser, TTenant, TContext>>();
         services.AddScoped<ITenantPermissionService, TenantPermissionService<TUser, TTenant, TContext>>();
         services.AddScoped<ITenantAuthorizationResolver, TenantAuthorizationResolver>();

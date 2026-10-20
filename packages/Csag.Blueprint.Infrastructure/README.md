@@ -61,13 +61,67 @@ before `AddBlueprintTenancyRuntime()` controls the timestamps it writes.
 
 | Component | Purpose |
 | --- | --- |
-| `DistributedCacheTicketStore` | ASP.NET Core `ITicketStore` implementation for server-side session storage. |
+| `DistributedCacheTicketStore` | ASP.NET Core `ITicketStore` implementation for server-side session storage. Owns session tracking: every ticket it stores or renews is mirrored into the session's tracking row. |
+| `ActiveSessionTracker<TContext>` | Writes the tracking rows (`BlueprintActiveSessions`) for the ticket store: create or re-attribute on sign-in, follow the ticket on renewal, delete on removal. |
 | `TicketCacheService` | Serialization/cache wrapper for authentication tickets. |
 | `PostConfigureCookieAuthenticationOptions` | Injects the ticket store into cookie authentication options. |
-| `SessionManager` | Shared session revocation/refresh management. |
+| `ISessionLifecycle` implementation | The intents applications call; registered by `AddBlueprintSessionInfrastructure`. |
+| `ExpiredSessionCleanupService<TContext>` | Hosted job deleting the tracking rows of expired sessions. |
 | `ServiceAccountSessionManager` | Tracks, validates, and revokes service-account sessions (cache marker plus tracking row) for reference-style JWTs. |
 | `PermissionClaimsTransformation` | Expands role claims into permission claims after authentication. |
 | `UserManagerAuthorizationExtensions` | Loads roles and permissions for users. |
+
+### Cookie sessions
+
+The packages own the cookie session lifecycle; the application registers it and states intents.
+
+```csharp
+services.AddBlueprintSessionInfrastructure<ApplicationUser, ApplicationDbContext>(options =>
+    options.ClientIpHeader = "X-Client-IP");
+services.AddBlueprintCookieSessions(cookie =>
+{
+    cookie.SecurePolicy = securitySettings.CookieSecurePolicy;
+    cookie.SameSite = SameSiteMode.Lax;
+});
+```
+
+`AddBlueprintCookieSessions` turns the Identity application cookie into the session cookie, after every other
+`Configure` (including `AddIdentity`'s) in either registration order. The callback shapes the cookie; the package then
+applies what it owns:
+
+- the ticket store, with the session tracked server-side and the cookie carrying only its key;
+- an HTTP-only, persistent cookie whose lifetime is `BlueprintSessionOptions.Lifetime` — set from
+  `Blueprint:Security:SessionExpirationHours` by `Csag.Blueprint.Web` — with sliding expiration, so sign-in code sets
+  no expiry;
+- 401 and 403 instead of login and access-denied redirects;
+- no Identity security-stamp validation: the session principal carries no stamp, and sessions end through the
+  lifecycle instead;
+- `ISessionEligibility` asked at every sign-in and sliding renewal.
+
+Cookie event handlers the application assigns on `CookieAuthenticationOptions.Events` keep running, before the
+package's. A scheme that sets `EventsType`, or whose events object overrides the events the package relies on, fails
+when its options are built.
+
+The tracking row records the client address with the rule the rate limiter uses: `ClientIpHeader` when present and
+parseable, otherwise the connection's remote address. A sign-in on a request that still carries a live session cookie
+reuses that cookie's key; the row is then attributed to the signing-in account.
+
+Applications report what happened through `ISessionLifecycle`, after their database commit:
+
+| Intent | Typical caller |
+| --- | --- |
+| `CredentialsChangedAsync` | password change or reset, second factor enabled or disabled |
+| `AccessRevokedAsync` (optionally per tenant) | account disabled or deleted, sign-in identity changed, membership removed |
+| `ClaimsChangedAsync` (optionally per tenant) | profile, language, roles or permissions changed |
+| `TenantRemovedAsync` | tenant deleted |
+| `SwitchTenantAsync` | the caller switches tenant |
+| `ListMySessionsAsync` / `RevokeMySessionAsync` | the caller's own session management; `RevokeMySessionAsync` returns `false` when the caller's account has no session with that id, for the application to answer 404 |
+
+Hooks the application keeps: `ISessionRevocationParticipant`s for its own credentials, an `ISessionEligibility`, the
+cookie callback, its own cookie event handlers, and decorators around `ITicketStore` or `IActiveSessionTracker`
+(resolve `DistributedCacheTicketStore` or `ActiveSessionTracker<TContext>` as the inner instance). The expired-session
+cleanup runs hourly by default; set `ExpiredSessionCleanup.Interval`, or turn it off with
+`ExpiredSessionCleanup.Enabled = false`.
 
 ### Tenancy and localization infrastructure
 

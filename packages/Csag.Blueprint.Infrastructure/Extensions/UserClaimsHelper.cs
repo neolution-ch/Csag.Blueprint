@@ -14,16 +14,17 @@ public static class UserClaimsHelper
     /// <summary>
     /// Sets (or replaces) all user profile claims on the given identity.
     /// This includes identity claims (NameIdentifier, Email, Name)
-    /// and preference claims (PreferredLanguage).
+    /// and preference claims (PreferredLanguage). An account without an email address carries no email claim.
     /// </summary>
     /// <param name="identity">The claims identity to update.</param>
     /// <param name="user">The user profile source whose data populates the claims.</param>
     public static void SetUserProfileClaims(this ClaimsIdentity identity, IUserProfileClaimsSource user)
     {
-        ArgumentException.ThrowIfNullOrEmpty(user.Email);
+        ArgumentNullException.ThrowIfNull(identity);
+        ArgumentNullException.ThrowIfNull(user);
 
         ReplaceClaim(identity, ClaimTypes.NameIdentifier, user.Id.ToString());
-        ReplaceClaim(identity, ClaimTypes.Email, user.Email);
+        ReplaceOptionalClaim(identity, ClaimTypes.Email, user.Email);
         ReplaceClaim(identity, ClaimTypes.Name, user.DisplayName);
         ReplaceOptionalClaim(identity, IdentityClaimTypes.PreferredLanguage, user.PreferredLanguage);
     }

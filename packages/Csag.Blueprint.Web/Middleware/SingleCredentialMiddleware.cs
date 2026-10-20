@@ -1,6 +1,5 @@
 namespace Csag.Blueprint.Web.Middleware;
 
-using System.Text.Json;
 using Csag.Blueprint.Infrastructure.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
@@ -45,20 +44,14 @@ public class SingleCredentialMiddleware
         {
             this.logger.LogInformation("Refused a request carrying both a session cookie and a bearer token");
 
-            context.Response.StatusCode = StatusCodes.Status400BadRequest;
-
             var correlationId = context.Items[CorrelationIdMiddleware.CorrelationIdKey] as string;
 
-            var problemDetails = new
-            {
-                type = "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-                title = "More than one credential",
-                status = StatusCodes.Status400BadRequest,
-                detail = "The request carries both a session cookie and a bearer token. Send exactly one of them.",
-                correlationId,
-            };
-
-            await context.Response.WriteAsJsonAsync(problemDetails, (JsonSerializerOptions?)null, contentType: "application/problem+json");
+            await TypedResults.Problem(
+                    detail: "The request carries both a session cookie and a bearer token. Send exactly one of them.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "More than one credential",
+                    extensions: new Dictionary<string, object?> { ["correlationId"] = correlationId })
+                .ExecuteAsync(context);
             return;
         }
 

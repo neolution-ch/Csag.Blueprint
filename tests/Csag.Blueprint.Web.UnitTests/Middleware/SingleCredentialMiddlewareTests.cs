@@ -5,6 +5,7 @@ using Csag.Blueprint.Web.Middleware;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -35,8 +36,12 @@ public sealed class SingleCredentialMiddlewareTests
 
         var body = await ReadBodyAsync(context);
         body.GetProperty("status").GetInt32().ShouldBe(400);
+        body.GetProperty("type").GetString().ShouldBe("https://tools.ietf.org/html/rfc9110#section-15.5.1");
         body.GetProperty("correlationId").GetString().ShouldBe("corr-123");
         body.GetProperty("title").GetString().ShouldNotBeNullOrWhiteSpace();
+
+        // Written through IProblemDetailsService, which adds the trace id and runs CustomizeProblemDetails.
+        body.GetProperty("traceId").GetString().ShouldNotBeNullOrWhiteSpace();
     }
 
     [Fact]
@@ -109,7 +114,10 @@ public sealed class SingleCredentialMiddlewareTests
 
     private static DefaultHttpContext CreateContext(string? cookie, string? authorization)
     {
-        var context = new DefaultHttpContext();
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider(),
+        };
         context.Response.Body = new MemoryStream();
         if (cookie is not null)
         {

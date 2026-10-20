@@ -15,5 +15,6 @@ public static class TranslationDefaults
         [TranslationKeys.GreetingHello] = "Hello (code default)",
         [TranslationKeys.GreetingEnglishOnly] = "English-only (code default)",
         [TranslationKeys.GreetingCodeOnly] = "Code-only greeting",
+        [TranslationKeys.VehicleKindKayak] = "Sea kayak",
     };
 }

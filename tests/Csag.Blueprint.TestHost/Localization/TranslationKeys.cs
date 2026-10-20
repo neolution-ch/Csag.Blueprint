@@ -23,4 +23,12 @@ internal static class TranslationKeys
     /// fallback to the code-defined default text.
     /// </summary>
     internal const string GreetingCodeOnly = "Greeting.CodeOnly";
+
+    /// <summary>
+    /// Label of the <c>Kayak</c> member in the vehicles table view's <c>Kind</c> column. The key
+    /// follows the <c>Enums.{EnumTypeName}.{MemberName}</c> convention enum columns derive, so the
+    /// definition resolves it without any configuration; the other members have no key and keep
+    /// their humanized labels.
+    /// </summary>
+    internal const string VehicleKindKayak = "Enums.TestVehicleKind.Kayak";
 }

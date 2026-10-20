@@ -75,6 +75,24 @@ public sealed class UserTableViewDefinition : TableViewDefinition<UserEntity, Us
 | `DateRange` | Date range filter |
 | `Enum`      | Enum value filter with predefined allowed values |
 
+### Allowed values and labels
+
+`Enum` and `In` filters offer a column's `AllowedValues`, each a `TableViewAllowedValue` serialized as `{ "value": "...", "label": "..." }`. Filters match on `value`; `label` is display text.
+
+An enum column derives one entry per member: the member name as the value, the humanized name as the label (`CreditCard` → "Credit card", `SMSCode` → "SMS code"), and `Enums.{EnumTypeName}.{MemberName}` as the label's translation key. The key is optional: add it to the translation catalog to translate the label, otherwise the humanized label is served.
+
+```csharp
+Column(dto => dto.PaymentMethod)
+    .Filterable(TableViewFilterOperator.Enum)
+    .WithValueLabelKeyPrefix("Payments.Methods"); // keys "Payments.Methods.{Value}", warned when missing
+
+Column(dto => dto.Size)
+    .Filterable(TableViewFilterOperator.In)
+    .WithAllowedValues([new("S", "Small"), new("L", "Large") { LabelKey = "Sizes.Large" }]);
+```
+
+`WithAllowedValues(IEnumerable<string>)` and `Filterable(operator, allowedValues)` take plain strings, served with the string itself as the label. Excel exports write matching cells as their label.
+
 ### Request / Result models
 
 - **`TableViewDataRequest`**: Incoming request with filters, sort, page, and page size.

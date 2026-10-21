@@ -66,6 +66,24 @@ public sealed class SwaggerEndpointTests(AppFixture app) : IntegrationTestBase(a
     }
 
     [Fact]
+    public async Task SwaggerJson_DateTimeProperty_IsDescribedAsLocalReadingAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = this.App.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/swagger/v1/swagger.json", UriKind.Relative), ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
+        var acquiredAt = schemas.GetProperty("CreateVehicleRequest").GetProperty("properties").GetProperty("acquiredAt");
+
+        acquiredAt.GetProperty("type").GetString().ShouldBe("string");
+        acquiredAt.GetProperty("format").GetString().ShouldBe("local-date-time");
+        acquiredAt.GetProperty("pattern").GetString().ShouldBe(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$");
+    }
+
+    [Fact]
     public async Task SwaggerUi_IsServed_WhenEnabledAsync()
     {
         var ct = TestContext.Current.CancellationToken;

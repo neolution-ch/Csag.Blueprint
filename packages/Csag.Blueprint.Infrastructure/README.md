@@ -175,6 +175,7 @@ Expired service-account sessions are deleted by the job `AddBlueprintSessionInfr
 | Component | Purpose |
 | --- | --- |
 | `TenantService` / `TenantManager` | Reusable tenant access and membership logic. |
+| `UtcTenantTimeZoneProvider` | The `ITenantTimeZoneProvider` in effect until the application registers its own: every tenant is in UTC. `AddBlueprintTenancyRuntime` and `AddBlueprintTableViewCore` register it with `TryAdd`. |
 | `BlueprintDbStringLocalizer` / `BlueprintDbStringLocalizerFactory` | Database-backed localization infrastructure. |
 | `PassThroughStringLocalizer` | Generation-mode localizer that returns keys as-is. |
 | `TranslationCacheKeys` | Cache key helpers for localization caching. |
@@ -184,7 +185,7 @@ Expired service-account sessions are deleted by the job `AddBlueprintSessionInfr
 
 | Component | Purpose |
 | --- | --- |
-| `TableViewExecutor` | Executes filtering, sorting, counting, pagination, and projection for table-view queries. |
+| `TableViewExecutor` | Executes filtering, sorting, counting, pagination, and projection for table-view queries. Filters on instant columns are evaluated in the request's zone, else in the zone of `ITenantTimeZoneProvider`, which it looks up only when the request has filter values. |
 | `TableViewCatalogService` | Discovers and filters registered table views by permission. |
 | `BlueprintTableViewPreferencesService` | Persists per-user table view preferences. |
 

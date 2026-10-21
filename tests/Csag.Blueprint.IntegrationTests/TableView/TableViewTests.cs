@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using ClosedXML.Excel;
 using Csag.Blueprint.Application.Json;
 using Csag.Blueprint.Application.TableView;
+using Csag.Blueprint.Domain.Time;
 using Csag.Blueprint.TestHost;
 using Csag.Blueprint.TestHost.Endpoints.Vehicles.TableView;
 using Csag.Blueprint.Testing.Extensions;
@@ -316,6 +317,10 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         res.Columns.First(c => c.Name == "IsActive").FilterInputHint.ShouldBe(TableViewFilterInputHint.Select);
         res.Columns.First(c => c.Name == "AcquiredAt").FilterInputHint.ShouldBe(TableViewFilterInputHint.DateRange);
 
+        // Temporal columns report their kind: a DateTime is a local reading, a DateTimeOffset an instant.
+        res.Columns.First(c => c.Name == "AcquiredAt").DataType.ShouldBe("localDateTime");
+        res.Columns.First(c => c.Name == "CreatedAt").DataType.ShouldBe("instant");
+
         // Display names: no translation keys are registered for these columns, so the localizer
         // serves the humanized defaults derived from the column names unchanged.
         res.Columns.First(c => c.Name == "PricePerHour").DisplayName.ShouldBe("Price Per Hour");
@@ -370,5 +375,122 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         worksheet.Cell(3, 2).GetString().ShouldBe("Lake Kayak");
         worksheet.Cell(2, 3).GetString().ShouldBe("Sea kayak");
         worksheet.Cell(3, 3).GetString().ShouldBe("Sea kayak");
+    }
+
+    [Theory]
+    [InlineData("W. Europe Standard Time")]
+    [InlineData("Europe/Atlantis")]
+    public async Task DataEndpoint_TimeZoneNotIana_Returns400Async(string timeZone)
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            new Uri("/api/vehicles/table-view/data", UriKind.Relative),
+            new TableViewDataRequest { TimeZone = timeZone },
+            BlueprintJsonOptions.Default,
+            ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
+        (await response.Content.ReadAsStringAsync(ct)).ShouldContain("TimeZone must be an IANA time zone id");
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_TimeZoneNotIana_Returns400Async()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri,
+            new TableViewExportRequest { TimeZone = "Eastern Standard Time" },
+            BlueprintJsonOptions.Default,
+            ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
+    }
+
+    [Fact]
+    public async Task DataEndpoint_InstantDateRange_SpansDaysOfRequestZoneAsync()
+    {
+        // Kiritimati (+14:00) and Pago Pago (-11:00) are 25 hours apart, so any instant falls on a
+        // different date in each. Filtering on the date it falls on in Kiritimati therefore finds the
+        // vehicle with that zone and misses it with the other, whenever the seed ran.
+        var createdAt = await this.GetCreatedAtAsync("City Bike");
+        var kiritimati = FindZone("Pacific/Kiritimati");
+        var date = DateOnly.FromDateTime(ZonedTime.ToLocalReading(createdAt, kiritimati)).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+        var inKiritimati = await this.QueryNamesAsync("City Bike", date, "Pacific/Kiritimati");
+        var inPagoPago = await this.QueryNamesAsync("City Bike", date, "Pacific/Pago_Pago");
+
+        inKiritimati.ShouldBe(["City Bike"]);
+        inPagoPago.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task DataEndpoint_InstantDateRangeWithoutZone_SpansUtcDaysWhenTenantHasNoZoneAsync()
+    {
+        // The host registers no ITenantTimeZoneProvider, so the package's UTC fallback applies.
+        var createdAt = await this.GetCreatedAtAsync("City Bike");
+        var date = DateOnly.FromDateTime(createdAt.UtcDateTime).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+        (await this.QueryNamesAsync("City Bike", date, timeZone: null)).ShouldBe(["City Bike"]);
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_WritesTemporalValuesAsDateCellsInRequestZoneAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var createdAt = await this.GetCreatedAtAsync("City Bike");
+
+        var exportResponse = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri,
+            new TableViewExportRequest { Filters = new Dictionary<string, string> { ["Name"] = "City Bike" }, TimeZone = "Pacific/Kiritimati" },
+            BlueprintJsonOptions.Default,
+            ct);
+        await exportResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
+
+        using var stream = new MemoryStream(await exportResponse.Content.ReadAsByteArrayAsync(ct));
+        using var workbook = new XLWorkbook(stream);
+        var worksheet = workbook.Worksheet(1);
+
+        // Columns follow the definition: ..., AcquiredAt (local reading), CreatedAt (instant).
+        worksheet.Cell(1, 7).GetString().ShouldBe("Acquired At");
+        worksheet.Cell(2, 7).DataType.ShouldBe(XLDataType.DateTime);
+        worksheet.Cell(2, 7).GetDateTime().ShouldBe(new DateTime(2023, 3, 15, 0, 0, 0, DateTimeKind.Unspecified));
+
+        worksheet.Cell(1, 8).GetString().ShouldBe("Created At");
+        worksheet.Cell(2, 8).DataType.ShouldBe(XLDataType.DateTime);
+        var expected = ZonedTime.ToLocalReading(createdAt, FindZone("Pacific/Kiritimati"));
+        worksheet.Cell(2, 8).GetDateTime().ShouldBe(expected, TimeSpan.FromSeconds(1));
+    }
+
+    private static TimeZoneInfo FindZone(string id)
+    {
+        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+            ? zone
+            : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
+    }
+
+    private async Task<DateTimeOffset> GetCreatedAtAsync(string name)
+    {
+        var (rsp, res) = await this.App.ManagerAClient
+            .POSTAsync<VehicleTableViewDataEndpoint, TableViewDataRequest, TableViewDataResponse<VehicleTableViewDto>>(
+                new TableViewDataRequest { Filters = new Dictionary<string, string> { ["Name"] = name } });
+
+        rsp.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return res.Data.Single(v => v.Name == name).CreatedAt;
+    }
+
+    private async Task<List<string>> QueryNamesAsync(string name, string date, string? timeZone)
+    {
+        var (rsp, res) = await this.App.ManagerAClient
+            .POSTAsync<VehicleTableViewDataEndpoint, TableViewDataRequest, TableViewDataResponse<VehicleTableViewDto>>(
+                new TableViewDataRequest
+                {
+                    Filters = new Dictionary<string, string> { ["Name"] = name, ["CreatedAt"] = $"{date},{date}" },
+                    TimeZone = timeZone,
+                });
+
+        rsp.StatusCode.ShouldBe(HttpStatusCode.OK);
+        return res.Data.Select(v => v.Name).Where(n => n == name).ToList();
     }
 }

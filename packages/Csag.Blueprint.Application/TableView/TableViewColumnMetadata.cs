@@ -27,7 +27,9 @@ public sealed class TableViewColumnMetadata
     public string? DisplayNameKey { get; set; }
 
     /// <summary>
-    /// Gets or sets the data type of the column (e.g., "string", "number", "boolean", "date", "enum").
+    /// Gets or sets the data type of the column, one of the <see cref="TableViewDataTypes"/> values. Temporal
+    /// columns report <c>date</c> (<see cref="DateOnly"/>), <c>localDateTime</c> (<see cref="DateTime"/>, a local
+    /// reading) or <c>instant</c> (<see cref="DateTimeOffset"/>), which clients format differently.
     /// </summary>
     public string DataType { get; set; } = string.Empty;
 

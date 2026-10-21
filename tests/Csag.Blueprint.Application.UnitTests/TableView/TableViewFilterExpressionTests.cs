@@ -2,16 +2,21 @@ namespace Csag.Blueprint.Application.UnitTests.TableView;
 
 using System.Globalization;
 using Csag.Blueprint.Application.TableView;
+using Csag.Blueprint.Domain.Time;
 
 /// <summary>
-/// Pins the edge matrix of <see cref="TableViewDefinition{TEntity, TDto}.GetFilterExpression"/>.
+/// Pins the edge matrix of <see cref="TableViewDefinition{TEntity, TDto}.GetFilterExpression(string, string, TimeZoneInfo)"/>.
 /// Filter values arrive as untrusted request input, so every malformed value must yield a null
-/// expression (i.e. no filter applied) instead of throwing, and range/date bounds must stay
-/// inclusive on both ends.
+/// expression (i.e. no filter applied) instead of throwing. Numeric ranges and date ranges on
+/// <see cref="DateOnly"/> columns are inclusive on both ends; date ranges on local readings and
+/// instants cover whole days, up to the start of the day after the last date. Zones are always
+/// named explicitly, so nothing depends on the machine's own zone.
 /// </summary>
 public sealed class TableViewFilterExpressionTests
 {
     private static readonly VehicleTableViewDefinition Definition = new();
+    private static readonly TimeZoneInfo Zurich = FindZone("Europe/Zurich");
+    private static readonly TimeZoneInfo NewYork = FindZone("America/New_York");
 
     /// <summary>
     /// Enum column type for the test entity; the member order fixes the numeric values the
@@ -49,8 +54,14 @@ public sealed class TableViewFilterExpressionTests
     [InlineData("Kind", "hovercraft")] // bogus enum name
     [InlineData("AcquiredOn", "2024-01-10")] // date range without separator
     [InlineData("AcquiredOn", "foo,bar")] // unparsable date bounds
+    [InlineData("AcquiredOn", "01/10/2024,01/20/2024")] // dates are ISO 8601, never culture-formatted
+    [InlineData("LastServiceAt", "2024-06-01T00:00:00Z,2024-07-01T00:00:00Z")] // range bounds are dates, not instants
+    [InlineData("NextServiceLocal", "2024-06-01T08:00,2024-06-02T08:00")]
     [InlineData("Id", "not-a-guid")]
     [InlineData("CreatedAt", "not-a-date")]
+    [InlineData("CreatedAt", "2024-05-01")] // an instant needs a time
+    [InlineData("PickupLocal", "2024-05-01T10:00:00Z")] // a local reading carries no offset
+    [InlineData("PickupLocal", "2024-05-01T10:00:00+02:00")]
     public void GetFilterExpression_ForInvalidColumnOrValue_ReturnsNull(string columnName, string filterValue)
     {
         Definition.GetFilterExpression(columnName, filterValue).ShouldBeNull();
@@ -91,10 +102,42 @@ public sealed class TableViewFilterExpressionTests
     [Theory]
     [InlineData("2024-05-01T10:00:00+02:00", true)]
     [InlineData("2024-05-01T08:00:00+00:00", true)] // DateTimeOffset equality compares instants, not offsets
+    [InlineData("2024-05-01T08:00:00Z", true)]
+    [InlineData("2024-05-01T08:00:00.0000000Z", true)]
     [InlineData("2024-05-01T09:00:00+02:00", false)]
     public void GetFilterExpression_EqualsOnDateTimeOffsetColumn_ComparesInstants(string filterValue, bool expected)
     {
         Matches("CreatedAt", filterValue, CreateVehicle()).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void GetFilterExpression_EqualsOnDateTimeOffsetColumnWithoutOffset_ReadsValueInZone()
+    {
+        // CreatedAt is 08:00Z, which a clock in Zurich shows as 10:00.
+        Matches("CreatedAt", "2024-05-01T10:00:00", CreateVehicle(), Zurich).ShouldBeTrue();
+        Matches("CreatedAt", "2024-05-01T10:00:00", CreateVehicle(), TimeZoneInfo.Utc).ShouldBeFalse();
+        Matches("CreatedAt", "2024-05-01T08:00", CreateVehicle(), TimeZoneInfo.Utc).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetFilterExpression_EqualsOnDateTimeOffsetColumnWithReadingThatDoesNotExist_ReturnsNull()
+    {
+        Definition.GetFilterExpression("CreatedAt", "2027-03-28T02:30:00", Zurich).ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("2026-10-26T10:00:00", true)]
+    [InlineData("2026-10-26T10:00", true)]
+    [InlineData("2026-10-26T10:01", false)]
+    public void GetFilterExpression_EqualsOnLocalReadingColumn_ComparesReadings(string filterValue, bool expected)
+    {
+        Matches("PickupLocal", filterValue, CreateVehicle()).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void GetFilterExpression_EqualsOnLocalReadingColumn_IgnoresZone()
+    {
+        Matches("PickupLocal", "2026-10-26T10:00", CreateVehicle(), NewYork).ShouldBeTrue();
     }
 
     [Theory]
@@ -271,22 +314,130 @@ public sealed class TableViewFilterExpressionTests
     }
 
     [Fact]
-    public void GetFilterExpression_DateRangeOnDateTimeOffsetColumn_ComparesParsedBounds()
+    public void Metadata_TemporalColumns_ReportTheirKind()
     {
-        var vehicle = CreateVehicle();
+        var dataTypes = Definition.Metadata.ToDictionary(column => column.Name, column => column.DataType);
 
-        vehicle.LastServiceAt = new DateTimeOffset(2024, 6, 15, 8, 30, 0, TimeSpan.Zero);
-        Matches("LastServiceAt", "2024-06-01T00:00:00Z,2024-07-01T00:00:00Z", vehicle).ShouldBeTrue();
-
-        vehicle.LastServiceAt = new DateTimeOffset(2024, 7, 2, 0, 0, 0, TimeSpan.Zero);
-        Matches("LastServiceAt", "2024-06-01T00:00:00Z,2024-07-01T00:00:00Z", vehicle).ShouldBeFalse();
+        dataTypes["AcquiredOn"].ShouldBe("date");
+        dataTypes["NextServiceLocal"].ShouldBe("localDateTime");
+        dataTypes["LastServiceAt"].ShouldBe("instant");
     }
 
-    private static bool Matches(string columnName, string filterValue, Vehicle vehicle)
+    [Theory]
+    [InlineData("2026-10-24T23:59:59", false)]
+    [InlineData("2026-10-25T00:00:00", true)]
+    [InlineData("2026-10-25T23:59:59.9999999", true)]
+    [InlineData("2026-10-26T00:00:00", false)]
+    public void GetFilterExpression_DateRangeOnLocalReadingColumn_CoversWholeDaysOfReadings(string reading, bool expected)
     {
-        var expression = Definition.GetFilterExpression(columnName, filterValue);
+        var vehicle = CreateVehicle();
+        vehicle.NextServiceLocal = DateTime.Parse(reading, CultureInfo.InvariantCulture);
+
+        // A local reading is compared as it reads, so the zone makes no difference.
+        Matches("NextServiceLocal", "2026-10-25,2026-10-25", vehicle, Zurich).ShouldBe(expected);
+        Matches("NextServiceLocal", "2026-10-25,2026-10-25", vehicle, NewYork).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void GetFilterExpression_DateRangeOnLocalReadingColumnWithOpenEnds_FiltersOnOneSide()
+    {
+        var vehicle = CreateVehicle();
+        vehicle.NextServiceLocal = new DateTime(2026, 10, 25, 23, 0, 0, DateTimeKind.Unspecified);
+
+        Matches("NextServiceLocal", ",2026-10-25", vehicle).ShouldBeTrue();
+        Matches("NextServiceLocal", "2026-10-26,", vehicle).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GetFilterExpression_DateRangeOnLocalReadingColumnEndingOnLastDate_HasNoUpperBound()
+    {
+        var vehicle = CreateVehicle();
+        vehicle.NextServiceLocal = DateTime.MaxValue;
+
+        Matches("NextServiceLocal", "2026-01-01,9999-12-31", vehicle).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("2026-10-24T21:59:59Z", false)] // 23:59:59 on the 24th in Zurich
+    [InlineData("2026-10-24T22:00:00Z", true)] // midnight starting the 25th in Zurich (+02:00)
+    [InlineData("2026-10-25T22:59:59Z", true)] // 23:59:59 on the 25th in Zurich (+01:00): a 25-hour day
+    [InlineData("2026-10-25T23:00:00Z", false)] // midnight starting the 26th in Zurich
+    public void GetFilterExpression_DateRangeOnInstantColumn_CoversDaysAsTheyBeginAndEndInZone(string instant, bool expected)
+    {
+        var vehicle = CreateVehicle();
+        vehicle.LastServiceAt = DateTimeOffset.Parse(instant, CultureInfo.InvariantCulture);
+
+        Matches("LastServiceAt", "2026-10-25,2026-10-25", vehicle, Zurich).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("Europe/Zurich", false)] // 03:30 on the 22nd in Zurich
+    [InlineData("America/New_York", true)] // 21:30 on the 21st in New York
+    [InlineData("UTC", false)] // 01:30 on the 22nd in UTC
+    public void GetFilterExpression_DateRangeOnInstantColumn_DependsOnZone(string zoneId, bool expected)
+    {
+        var vehicle = CreateVehicle();
+        vehicle.LastServiceAt = new DateTimeOffset(2026, 10, 22, 1, 30, 0, TimeSpan.Zero);
+
+        Matches("LastServiceAt", "2026-10-21,2026-10-21", vehicle, FindZone(zoneId)).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void GetFilterExpression_WithoutZone_EvaluatesInstantRangesInUtc()
+    {
+        var vehicle = CreateVehicle();
+        vehicle.LastServiceAt = new DateTimeOffset(2026, 10, 21, 23, 30, 0, TimeSpan.Zero);
+
+        var expression = Definition.GetFilterExpression("LastServiceAt", "2026-10-21,2026-10-21");
+
+        expression.ShouldNotBeNull();
+        expression.Compile()(vehicle).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetFilterExpression_DateRangeOnInstantColumnWithOpenEnds_FiltersOnOneSide()
+    {
+        var vehicle = CreateVehicle();
+        vehicle.LastServiceAt = new DateTimeOffset(2026, 10, 25, 22, 30, 0, TimeSpan.Zero);
+
+        Matches("LastServiceAt", ",2026-10-25", vehicle, Zurich).ShouldBeTrue();
+        Matches("LastServiceAt", "2026-10-26,", vehicle, Zurich).ShouldBeFalse();
+        Matches("LastServiceAt", "2026-10-26,", vehicle, NewYork).ShouldBeFalse();
+        Matches("LastServiceAt", ",2026-10-25", vehicle, NewYork).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GetFilterExpression_DateRangeOnInstantColumnStartingOnDayWithoutMidnight_StartsAtTransition()
+    {
+        // Chile springs forward at midnight on 2026-09-06, so that day begins at 01:00 (-03:00), 04:00Z.
+        var santiago = FindZone("America/Santiago");
+        var vehicle = CreateVehicle();
+
+        vehicle.LastServiceAt = new DateTimeOffset(2026, 9, 6, 4, 0, 0, TimeSpan.Zero);
+        Matches("LastServiceAt", "2026-09-06,", vehicle, santiago).ShouldBeTrue();
+
+        vehicle.LastServiceAt = new DateTimeOffset(2026, 9, 6, 3, 59, 59, TimeSpan.Zero);
+        Matches("LastServiceAt", "2026-09-06,", vehicle, santiago).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GetFilterExpression_DateRangeOnFirstRepresentableDateInEasternZone_DoesNotThrow()
+    {
+        Should.NotThrow(() => Definition.GetFilterExpression("LastServiceAt", "0001-01-01,0001-01-01", FindZone("Asia/Tokyo")));
+    }
+
+    private static bool Matches(string columnName, string filterValue, Vehicle vehicle, TimeZoneInfo? timeZone = null)
+    {
+        var expression = Definition.GetFilterExpression(columnName, filterValue, timeZone ?? TimeZoneInfo.Utc);
         expression.ShouldNotBeNull();
         return expression.Compile()(vehicle);
+    }
+
+    private static TimeZoneInfo FindZone(string id)
+    {
+        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+            ? zone
+            : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
     }
 
     private static Vehicle CreateVehicle()
@@ -309,6 +460,8 @@ public sealed class TableViewFilterExpressionTests
             RetiredOn = new DateOnly(2030, 1, 1),
             CreatedAt = new DateTimeOffset(2024, 5, 1, 10, 0, 0, TimeSpan.FromHours(2)),
             LastServiceAt = new DateTimeOffset(2024, 6, 15, 8, 30, 0, TimeSpan.Zero),
+            NextServiceLocal = new DateTime(2026, 10, 25, 9, 0, 0, DateTimeKind.Unspecified),
+            PickupLocal = new DateTime(2026, 10, 26, 10, 0, 0, DateTimeKind.Unspecified),
             Notes = "well maintained",
         };
     }
@@ -346,6 +499,10 @@ public sealed class TableViewFilterExpressionTests
         public DateTimeOffset CreatedAt { get; set; }
 
         public DateTimeOffset LastServiceAt { get; set; }
+
+        public DateTime NextServiceLocal { get; set; }
+
+        public DateTime PickupLocal { get; set; }
 
         public string Notes { get; set; } = string.Empty;
     }
@@ -389,6 +546,10 @@ public sealed class TableViewFilterExpressionTests
 
         public DateTimeOffset LastServiceAt { get; set; } = DateTimeOffset.MaxValue;
 
+        public DateTime NextServiceLocal { get; set; } = DateTime.MaxValue;
+
+        public DateTime PickupLocal { get; set; } = DateTime.MaxValue;
+
         public string Notes { get; set; } = string.Empty;
 
         public string Synthetic { get; set; } = string.Empty;
@@ -414,6 +575,8 @@ public sealed class TableViewFilterExpressionTests
             this.Column(d => d.RetiredOn).Filterable(TableViewFilterOperator.Range);
             this.Column(d => d.CreatedAt).Filterable(TableViewFilterOperator.Equals);
             this.Column(d => d.LastServiceAt).Filterable(TableViewFilterOperator.DateRange);
+            this.Column(d => d.NextServiceLocal).Filterable(TableViewFilterOperator.DateRange);
+            this.Column(d => d.PickupLocal).Filterable(TableViewFilterOperator.Equals);
             this.Column(d => d.Notes);
 
             // The DTO exposes Synthetic but the entity has no such property, so the column ends up

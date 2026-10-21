@@ -386,7 +386,29 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         response.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/problem+json");
 
         var content = await response.Content.ReadAsStringAsync(ct);
-        content.ShouldContain($"matches {SeedData.TenantAVehicleCount} rows", Case.Sensitive);
+        content.ShouldContain($"more than the {SeedData.TenantAVehicleCount - 1} rows", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_UnpaginatedExportOfExactlyTheCap_IsExportedWholeAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Every vehicle but the 25.00 Family Kayak: exactly as many rows as the host's cap. The export reads
+        // one row past the cap to detect more, so a result that fills the cap must still be exported.
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri,
+            new TableViewExportRequest { Filters = new Dictionary<string, string> { ["PricePerHour"] = "0-20" } },
+            BlueprintJsonOptions.Default,
+            ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
+
+        using var stream = new MemoryStream(await response.Content.ReadAsByteArrayAsync(ct));
+        using var workbook = new XLWorkbook(stream);
+
+        // One header row plus one row per vehicle up to the cap.
+        workbook.Worksheet(1).RowsUsed().Count().ShouldBe(SeedData.TenantAVehicleCount - 1 + 1);
     }
 
     [Fact]

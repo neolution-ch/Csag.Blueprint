@@ -78,10 +78,11 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
     /// <inheritdoc/>
     public override async Task HandleAsync(TableViewExportRequest req, CancellationToken ct)
     {
-        // The validator requires Page and PageSize together. Without them the export reads its first
-        // MaxExportRows rows as one page, which bounds the query, and the total count tells whether those
-        // were all of them.
+        // The validator requires Page and PageSize together. Without them the export reads one page of
+        // MaxExportRows rows plus one, which bounds the query. The count and the page are separate reads, so
+        // a row matching between them can be missing from the count; the extra row still reveals it.
         var isPageExport = req.Page.HasValue && req.PageSize.HasValue;
+        var maxExportRows = this.MaxExportRows;
 
         var request = new TableViewQueryRequest<TEntity, TDto>
         {
@@ -90,15 +91,15 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
             Filters = req.Filters,
             SortColumns = req.SortColumns,
             Page = req.Page ?? 1,
-            PageSize = req.PageSize ?? this.MaxExportRows,
+            PageSize = req.PageSize ?? (maxExportRows == int.MaxValue ? maxExportRows : maxExportRows + 1),
         };
 
         var (data, totalCount) = await this.tableViewExecutor.ExecuteAsync(request, ct);
 
-        if (!isPageExport && totalCount > this.MaxExportRows)
+        if (!isPageExport && (totalCount > maxExportRows || data.Count > maxExportRows))
         {
             this.ThrowError(
-                $"The export matches {totalCount} rows, more than the {this.MaxExportRows} an export may hold. Narrow the filters or export one page.");
+                $"The export matches more than the {maxExportRows} rows an export may hold. Narrow the filters or export one page.");
         }
 
         var excelBytes = TableViewExcelExporter.Export(data, this.LocalizedMetadata, this.ExportFileName);

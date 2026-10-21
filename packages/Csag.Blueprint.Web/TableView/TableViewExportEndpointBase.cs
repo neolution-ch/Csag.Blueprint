@@ -58,6 +58,15 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
     protected virtual string ExportFileName => "export";
 
     /// <summary>
+    /// Gets the largest number of rows an export without <see cref="TableViewExportRequest.Page"/> and
+    /// <see cref="TableViewExportRequest.PageSize"/> may hold. Such an export is refused with
+    /// <c>400 Bad Request</c>, not truncated, when more rows match its filters. An export of one page is
+    /// bounded by <see cref="TableViewExportRequestValidator"/> instead.
+    /// Override to customize per entity.
+    /// </summary>
+    protected virtual int MaxExportRows => 10_000;
+
+    /// <summary>
     /// Gets the column metadata with request-time localization applied for the current request culture.
     /// Use this instead of <c>ViewDefinition.Metadata</c> when building responses in overriding endpoints,
     /// so translated column headers stay consistent across all table view endpoints. Each access re-runs
@@ -69,32 +78,27 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
     /// <inheritdoc/>
     public override async Task HandleAsync(TableViewExportRequest req, CancellationToken ct)
     {
-        var query = this.BuildQuery();
+        // The validator requires Page and PageSize together. Without them the export reads its first
+        // MaxExportRows rows as one page, which bounds the query, and the total count tells whether those
+        // were all of them.
+        var isPageExport = req.Page.HasValue && req.PageSize.HasValue;
 
-        IList<TDto> data;
-
-        if (req.Page.HasValue && req.PageSize.HasValue)
+        var request = new TableViewQueryRequest<TEntity, TDto>
         {
-            var request = new TableViewQueryRequest<TEntity, TDto>
-            {
-                Query = query,
-                Definition = this.definition,
-                Filters = req.Filters,
-                SortColumns = req.SortColumns,
-                Page = req.Page.Value,
-                PageSize = req.PageSize.Value,
-            };
+            Query = this.BuildQuery(),
+            Definition = this.definition,
+            Filters = req.Filters,
+            SortColumns = req.SortColumns,
+            Page = req.Page ?? 1,
+            PageSize = req.PageSize ?? this.MaxExportRows,
+        };
 
-            (data, _) = await this.tableViewExecutor.ExecuteAsync(request, ct);
-        }
-        else
+        var (data, totalCount) = await this.tableViewExecutor.ExecuteAsync(request, ct);
+
+        if (!isPageExport && totalCount > this.MaxExportRows)
         {
-            data = await this.tableViewExecutor.ExecuteWithoutPaginationAsync(
-                query,
-                this.definition,
-                req.Filters,
-                req.SortColumns,
-                ct);
+            this.ThrowError(
+                $"The export matches {totalCount} rows, more than the {this.MaxExportRows} an export may hold. Narrow the filters or export one page.");
         }
 
         var excelBytes = TableViewExcelExporter.Export(data, this.LocalizedMetadata, this.ExportFileName);

@@ -31,6 +31,12 @@ public sealed class VehicleTableViewExportEndpoint
     /// <inheritdoc/>
     protected override string ExportFileName => "vehicles";
 
+    /// <summary>
+    /// Gets the export cap, one below the number of vehicles seeded for tenant A, so an unfiltered export
+    /// of tenant A exceeds it and a filtered one does not.
+    /// </summary>
+    protected override int MaxExportRows => SeedData.TenantAVehicleCount - 1;
+
     /// <inheritdoc/>
     public override void Configure()
     {

@@ -90,6 +90,12 @@ The provider writes `UserId`, `TenantId`, and `CorrelationId` to columns. The em
 display name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either
 value requires parsing the JSON data of the row.
 
+Each EF entry records the entity's column values and its changes, not a copy of the entity object.
+A field exclusion — the standard `PasswordHash`, `SecurityStamp`, `ConcurrencyStamp` and
+`ClientSecretHash`, or one added through `BlueprintAuditOptions.EntityFieldConfigurator` — therefore
+keeps the field out of the stored entry entirely. Do not call `IncludeEntityObjects()` in that
+callback: Audit.NET serializes an included entity object whole, excluded fields and all.
+
 `UseBlueprintMiddleware()` always registers `HttpAuditMiddleware`, first, so that it wraps
 everything else in the pipeline: authentication and authorization, and also the exception handler
 and status code pages. The ASP.NET Core authorization middleware does not call the next middleware

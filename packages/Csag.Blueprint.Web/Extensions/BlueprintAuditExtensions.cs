@@ -98,11 +98,13 @@ public static class BlueprintAuditExtensions
     {
         // OptOut mode: all entities are audited by default, except those explicitly ignored.
         // Standard blueprint entity field exclusions prevent sensitive data leakage into the audit log.
+        // Entity objects stay off: Audit.NET applies property ignores to ColumnValues and Changes only and
+        // serializes an included entity object whole, ignored properties and all.
         var contextConfig = Audit.EntityFramework.Configuration.Setup()
             .ForContext<TContext>(config =>
             {
                 config
-                    .IncludeEntityObjects()
+                    .IncludeEntityObjects(false)
                     .AuditEventType("{context}:{database}")
                     .ForEntity<TUser>(entity => entity
                         .Ignore(u => u.PasswordHash)

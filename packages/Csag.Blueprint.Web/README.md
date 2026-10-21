@@ -99,6 +99,13 @@ produced, so it could never audit one. An app does not need to register `HttpAud
 itself. Remove any manual `app.UseMiddleware<HttpAuditMiddleware>()` call; a duplicate registration
 records two events per audited request.
 
+An EF event's `TenantId` is the ambient `TenantContext.Current`, the tenant the actor has active, not
+necessarily the tenant that owns the rows changed. A platform administrator who changes a global row
+while a tenant is active therefore records the change under that tenant. Set
+`BlueprintAuditOptions.EntityChangeTenantResolver` to decide per save: it receives the request (null
+outside one) and the active tenant, and returns the tenant to record, or null for none. HTTP events
+keep the tenant their request resolves to.
+
 `ConfigureBlueprintAuditLogging` configures both audit features, the EF Core events and the HTTP
 request events, from this one call; both are on by default. Its configure callback exposes the same
 `HttpAuditOptions` instance the middleware reads, as `BlueprintAuditOptions.HttpAudit`; set

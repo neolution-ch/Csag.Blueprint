@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Csag.Blueprint.TestHost.Auditing;
 using Csag.Blueprint.TestHost.Extensions;
 using Csag.Blueprint.TestHost.Time;
 using Csag.Blueprint.Tests.Shared.Database;
@@ -18,6 +19,10 @@ builder.Services.AddBlueprintDefaultValidatedOptions(builder.Configuration);
 builder.Services.AddSingleton<PinnableTimeProvider>();
 builder.Services.AddSingleton<TimeProvider>(sp => sp.GetRequiredService<PinnableTimeProvider>());
 
+// Unpinned it records the active tenant, as the package does with no resolver; a test pins it to drive
+// which tenant entity-change audit events are recorded under.
+builder.Services.AddSingleton<PinnableAuditTenantResolver>();
+
 // Package-level services: server options, OIDC, FastEndpoints, Swagger, distributed cache,
 // anti-forgery, and the claims-based tenant resolver.
 builder.AddBlueprintServices();
@@ -30,7 +35,9 @@ var app = builder.Build();
 
 // Audit.NET global settings: SQL Server data provider, EF entity tracking for the host's context,
 // and enrichment from the HTTP context. Must run after Build so the service provider exists.
-app.ConfigureBlueprintAuditLogging<TestDbContext, TestUser, TestRole>();
+var auditTenantResolver = app.Services.GetRequiredService<PinnableAuditTenantResolver>();
+app.ConfigureBlueprintAuditLogging<TestDbContext, TestUser, TestRole>(
+    options => options.EntityChangeTenantResolver = auditTenantResolver.Resolve);
 
 app.UseBlueprintSecurityHeaders();
 app.UseBlueprintMiddleware();

@@ -81,6 +81,7 @@ public sealed class SwaggerEndpointTests(AppFixture app) : IntegrationTestBase(a
         acquiredAt.GetProperty("type").GetString().ShouldBe("string");
         acquiredAt.GetProperty("format").GetString().ShouldBe("local-date-time");
         acquiredAt.GetProperty("pattern").GetString().ShouldBe(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$");
+        acquiredAt.GetProperty("example").GetString().ShouldBe("2025-01-05T09:30:00", "examples are written as local readings too");
     }
 
     [Fact]

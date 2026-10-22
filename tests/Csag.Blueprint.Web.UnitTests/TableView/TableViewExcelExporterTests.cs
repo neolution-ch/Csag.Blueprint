@@ -125,7 +125,41 @@ public sealed class TableViewExcelExporterTests
         worksheet.Cell(2, 3).GetString().ShouldBeEmpty();
     }
 
-    private static IXLWorksheet ExportTemporalRows(IList<TemporalRow> data, TimeZoneInfo? timeZone, CultureInfo culture)
+    [Fact]
+    public void Export_ColumnsWithATime_NameTheirZoneInTheHeader()
+    {
+        var data = new List<TemporalRow> { new() { PurchaseDate = new DateOnly(2026, 10, 21) } };
+
+        var worksheet = ExportTemporalRows(data, FindZone("Europe/London"), CultureInfo.InvariantCulture, FindZone("Europe/Zurich"));
+
+        worksheet.Cell(1, 1).GetString().ShouldBe("Purchase date", "a date means the same in every zone");
+        worksheet.Cell(1, 2).GetString().ShouldBe("Start (Europe/Zurich)", "a local reading names the place zone");
+        worksheet.Cell(1, 3).GetString().ShouldBe("Created (Europe/London)", "an instant names the zone it is shown in");
+    }
+
+    [Fact]
+    public void Export_WithoutZones_NamesUtcForInstantsAndNoZoneForLocalReadings()
+    {
+        var data = new List<TemporalRow> { new() };
+
+        var worksheet = ExportTemporalRows(data, timeZone: null, CultureInfo.InvariantCulture);
+
+        worksheet.Cell(1, 2).GetString().ShouldBe("Start");
+        worksheet.Cell(1, 3).GetString().ShouldBe("Created (UTC)");
+    }
+
+    [Fact]
+    public void Export_NonTemporalColumn_KeepsItsHeader()
+    {
+        IList<TableViewColumnMetadata> metadata = [new() { Name = nameof(Row.Name), DisplayName = "Name", DataType = "string" }];
+
+        var bytes = TableViewExcelExporter.Export(new List<Row> { new() { Name = "Vespa" } }, metadata, timeZone: FindZone("Europe/Zurich"), placeTimeZone: FindZone("Europe/Zurich"));
+
+        using var workbook = new XLWorkbook(new MemoryStream(bytes));
+        workbook.Worksheet(1).Cell(1, 1).GetString().ShouldBe("Name");
+    }
+
+    private static IXLWorksheet ExportTemporalRows(IList<TemporalRow> data, TimeZoneInfo? timeZone, CultureInfo culture, TimeZoneInfo? placeTimeZone = null)
     {
         IList<TableViewColumnMetadata> metadata =
         [
@@ -134,7 +168,7 @@ public sealed class TableViewExcelExporterTests
             new() { Name = nameof(TemporalRow.CreatedAt), DisplayName = "Created", DataType = "instant" },
         ];
 
-        var bytes = TableViewExcelExporter.Export(data, metadata, "Export", timeZone, culture);
+        var bytes = TableViewExcelExporter.Export(data, metadata, "Export", timeZone: timeZone, placeTimeZone: placeTimeZone, culture: culture);
         var workbook = new XLWorkbook(new MemoryStream(bytes));
         return workbook.Worksheet(1);
     }

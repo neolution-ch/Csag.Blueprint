@@ -32,6 +32,16 @@ public sealed class CreateVehicleEndpoint : Endpoint<CreateVehicleRequest, Vehic
         {
             s.Summary = "Create a vehicle in the active tenant";
             s.Response(201, "Vehicle created");
+
+            // A UTC kind on purpose: the OpenAPI example must still show the local reading without an offset.
+            s.ExampleRequest = new CreateVehicleRequest
+            {
+                Name = "Cargo Bike",
+                Kind = TestVehicleKind.Bicycle,
+                Capacity = 2,
+                PricePerHour = 15m,
+                AcquiredAt = new DateTime(2025, 1, 5, 9, 30, 0, DateTimeKind.Utc),
+            };
         });
     }
 

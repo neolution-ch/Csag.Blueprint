@@ -452,12 +452,14 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         using var workbook = new XLWorkbook(stream);
         var worksheet = workbook.Worksheet(1);
 
-        // Columns follow the definition: ..., AcquiredAt (local reading), CreatedAt (instant).
-        worksheet.Cell(1, 7).GetString().ShouldBe("Acquired At");
+        // Columns follow the definition: ..., AcquiredAt (local reading), CreatedAt (instant). Their headers
+        // name their zones: the tenant's for the reading (UTC, as the host registers no provider), the
+        // requested one for the instant.
+        worksheet.Cell(1, 7).GetString().ShouldBe("Acquired At (UTC)");
         worksheet.Cell(2, 7).DataType.ShouldBe(XLDataType.DateTime);
         worksheet.Cell(2, 7).GetDateTime().ShouldBe(new DateTime(2023, 3, 15, 0, 0, 0, DateTimeKind.Unspecified));
 
-        worksheet.Cell(1, 8).GetString().ShouldBe("Created At");
+        worksheet.Cell(1, 8).GetString().ShouldBe("Created At (Pacific/Kiritimati)");
         worksheet.Cell(2, 8).DataType.ShouldBe(XLDataType.DateTime);
         var expected = ZonedTime.ToLocalReading(createdAt, FindZone("Pacific/Kiritimati"));
         worksheet.Cell(2, 8).GetDateTime().ShouldBe(expected, TimeSpan.FromSeconds(1));

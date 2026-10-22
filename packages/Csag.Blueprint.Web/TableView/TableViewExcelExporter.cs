@@ -21,12 +21,22 @@ public static class TableViewExcelExporter
     /// reads, and an instant (<see cref="DateTimeOffset"/>) as the date and time a clock in
     /// <paramref name="timeZone"/> showed at that instant. Their number formats follow the short date and
     /// time patterns of <paramref name="culture"/>; instants also show seconds.
+    /// <para>
+    /// A cell with a time means nothing without its zone, so the headers of those columns name it, as
+    /// the IANA id after the display name: <c>Created at (Europe/London)</c>. An instant column names
+    /// <paramref name="timeZone"/>, a local reading column names <paramref name="placeTimeZone"/>, and a
+    /// date column names none.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TDto">The DTO type.</typeparam>
     /// <param name="data">The data rows to export.</param>
     /// <param name="metadata">The column metadata defining headers, data types, and value labels.</param>
     /// <param name="sheetName">The worksheet name.</param>
     /// <param name="timeZone">The zone instants are shown in; UTC when null.</param>
+    /// <param name="placeTimeZone">
+    /// The zone of the place whose clock the local readings come from, normally the tenant's zone; when null,
+    /// local reading headers name no zone.
+    /// </param>
     /// <param name="culture">The culture whose date and time patterns format the cells; the current culture when null.</param>
     /// <returns>The Excel file as a byte array.</returns>
     public static byte[] Export<TDto>(
@@ -34,6 +44,7 @@ public static class TableViewExcelExporter
         IList<TableViewColumnMetadata> metadata,
         string sheetName = "Export",
         TimeZoneInfo? timeZone = null,
+        TimeZoneInfo? placeTimeZone = null,
         CultureInfo? culture = null)
         where TDto : class
     {
@@ -50,7 +61,7 @@ public static class TableViewExcelExporter
         for (var col = 0; col < metadata.Count; col++)
         {
             var headerCell = worksheet.Cell(1, col + 1);
-            headerCell.Value = metadata[col].DisplayName;
+            headerCell.Value = GetHeader(metadata[col], zone, placeTimeZone);
             headerCell.Style.Font.Bold = true;
         }
 
@@ -75,6 +86,25 @@ public static class TableViewExcelExporter
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
+    }
+
+    private static string GetHeader(TableViewColumnMetadata column, TimeZoneInfo timeZone, TimeZoneInfo? placeTimeZone)
+    {
+        TimeZoneInfo? headerZone = null;
+        if (column.DataType == TableViewDataTypes.Instant)
+        {
+            headerZone = timeZone;
+        }
+        else if (column.DataType == TableViewDataTypes.LocalDateTime)
+        {
+            headerZone = placeTimeZone;
+        }
+        else
+        {
+            // A date column, or one without a time, means the same in every zone.
+        }
+
+        return headerZone is null ? column.DisplayName : $"{column.DisplayName} ({headerZone.Id})";
     }
 
     private static System.Reflection.PropertyInfo? FindProperty(

@@ -11,7 +11,8 @@ using Microsoft.EntityFrameworkCore;
 /// Derived endpoints only need to override <see cref="BuildQuery"/> and Configure for routing/permissions.
 /// The request's <see cref="TableViewExportRequest.TimeZone"/>, else the zone of the registered
 /// <see cref="ITenantTimeZoneProvider"/>, decides both how date filters on instant columns are evaluated and
-/// in which zone the workbook shows instants; dates and times are formatted for the request culture.
+/// in which zone the workbook shows instants; dates and times are formatted for the request culture. The
+/// headers of instant columns name that zone, and the headers of local reading columns name the tenant's.
 /// </summary>
 /// <typeparam name="TContext">The database context type.</typeparam>
 /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -79,7 +80,8 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
             this.ThrowError(r => r.TimeZone, TableViewRequestTimeZone.InvalidMessage);
         }
 
-        var timeZone = requestedTimeZone ?? await this.Resolve<ITenantTimeZoneProvider>().GetTimeZoneAsync(ct);
+        var tenantTimeZone = await this.Resolve<ITenantTimeZoneProvider>().GetTimeZoneAsync(ct);
+        var timeZone = requestedTimeZone ?? tenantTimeZone;
         var query = this.BuildQuery();
 
         IList<TDto> data;
@@ -114,8 +116,9 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
             data,
             this.LocalizedMetadata,
             this.ExportFileName,
-            timeZone,
-            CultureInfo.CurrentCulture);
+            timeZone: timeZone,
+            placeTimeZone: tenantTimeZone,
+            culture: CultureInfo.CurrentCulture);
 
         await this.Send.BytesAsync(
             excelBytes,

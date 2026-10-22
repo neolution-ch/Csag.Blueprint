@@ -193,7 +193,9 @@ asynchronous: FastEndpoints calls `ValidateAsync`, and a synchronous `Validate` 
 by `TableViewDataRequestValidator` and `TableViewExportRequestValidator`) and fall back to `ITenantTimeZoneProvider`.
 `TableViewExcelExporter` writes real date cells: a `DateOnly` as a date, a local reading as it reads, and an instant as
 the reading in the effective zone including its time, with number formats from the request culture's date and time
-patterns.
+patterns. The headers of columns with a time name their zone as an IANA id after the column header: an instant column
+the effective zone (`Created at (Europe/London)`), a local reading column the tenant's zone (`Start (Europe/Zurich)`);
+date columns name none.
 
 ### Rate limiting
 

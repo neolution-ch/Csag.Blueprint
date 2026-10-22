@@ -41,7 +41,7 @@ This is the line to hold when extending the packages. If a new type would need t
 
 | Type | Purpose |
 | --- | --- |
-| `IAuditable` | Marks an entity for automatic timestamp management (`CreatedAt`, `UpdatedAt`) by infrastructure interceptors. |
+| `IAuditable` | Marks an entity for automatic timestamp management (`CreatedAt`, `UpdatedAt`, instants in UTC from the registered `TimeProvider`) by infrastructure interceptors. |
 | `IMustHaveTenant` | Marks an entity as tenant-scoped and requires a `TenantId`. Used by query filters and save interceptors. |
 | `IUserProfileClaimsSource` | Exposes user profile values that should become claims (such as display name, preferred language). |
 
@@ -65,6 +65,20 @@ This is the line to hold when extending the packages. If a new type would need t
 | `BlueprintTranslation` | Stores database-backed localization entries. |
 | `BlueprintTableViewPreference<TUser>` | Persists per-user table view preferences. |
 | `BlueprintTenantMembership<TUser, TTenant>` | Join entity linking users to tenants. |
+
+### Time zones
+
+`ZonedTime` converts between instants (`DateTimeOffset`, always returned in UTC) and the local readings of a place
+(`DateTime`, the clock reading on a wall there) using `TimeZoneInfo` zones with IANA ids. It lives in Domain so
+entities can derive an instant from a local reading themselves.
+
+| Member | Purpose |
+| --- | --- |
+| `TryToInstant(localReading, zone, out instant)` | The instant a reading denotes. `false` when the reading falls in a spring-forward gap; a reading that happens twice (fall-back overlap) resolves to its earlier occurrence. |
+| `ToLocalReading(instant, zone)` | The reading a clock in the zone shows at an instant. |
+| `Today(timeProvider, zone)` | Today's date in the zone, not in UTC. |
+| `DayRange(date, zone)` | The half-open instant range `[Start, End)` a calendar day spans in the zone: 23 or 25 hours on transition days, starting at the transition when local midnight does not exist. |
+| `TryFindIanaTimeZone(id, out zone)` | Finds a zone by its exact IANA id and rejects Windows ids. Needs the host's time zone data (`tzdata` on Linux). |
 
 ## Architectural Role
 

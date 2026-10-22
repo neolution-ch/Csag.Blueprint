@@ -43,6 +43,7 @@ expire by; see the Infrastructure package's *Cookie sessions*. In the same way i
 - Swagger/OpenAPI registration
 - distributed cache registration
 - anti-forgery services
+- the `TimeProvider` and the UTC `ITenantTimeZoneProvider` fallback, each with `TryAdd`
 
 ### Middleware composition
 
@@ -78,6 +79,7 @@ Applications may still append app-specific middleware before endpoint mapping.
 | `SessionClaimRequestCultureProvider` | Resolves request culture from claims and `Accept-Language`. |
 | `CultureNormalizationHelper` | Matches and validates requested cultures/languages. |
 | `StartupCompletedHealthCheck` | Reusable readiness gate used with startup orchestration. |
+| `TimeZoneDataHealthCheck` | Unhealthy when the host cannot resolve a well-known IANA zone (`Europe/Zurich`), i.e. the image has no time zone data. Add it with `services.AddHealthChecks().AddBlueprintTimeZoneDataCheck()`: registered as `time_zone_data_check`, tagged `ready`. |
 
 ### Audit enrichment
 
@@ -165,6 +167,35 @@ which picks the bearer token when the request carries one and the session cookie
 its own schemes with `AuthSchemes()` keeps exactly those.
 
 Applications still own their endpoint classes, DTOs, validators, and policies.
+
+`AddSwaggerDocumentation` registers `TemporalSchemaProcessor`, so the OpenAPI document describes what the API sends:
+a `DateTime` (a local reading, see `LocalDateTimeJsonConverter` in `Csag.Blueprint.Application`) is
+`type: string, format: local-date-time, pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$`, and a `TimeSpan` is a string
+with the pattern of its constant (`c`) format, `[-][d.]hh:mm:ss[.fffffff]`, without `format: duration`.
+
+### Time zone validation
+
+`TimeZoneRuleBuilderExtensions` adds FluentValidation rules next to `WithLocalizedMessage`:
+
+| Rule | Requires |
+| --- | --- |
+| `MustBeIanaTimeZone()` | an IANA zone id this host resolves (`Europe/Zurich`, not `W. Europe Standard Time`); null passes |
+| `MustNotBeAfterToday(timeProvider, timeZone)` | a `DateOnly` not after today in the zone |
+| `MustExistInTimeZone(timeZone)` | a local reading (`DateTime`) that is not in a spring-forward gap of the zone |
+
+FastEndpoints validators are singletons, so the zone-dependent rules take a delegate that resolves the zone on every
+validation, typically `(_, ct) => this.Resolve<ITenantTimeZoneProvider>().GetTimeZoneAsync(ct)`. They are
+asynchronous: FastEndpoints calls `ValidateAsync`, and a synchronous `Validate` throws.
+
+### Table view endpoints
+
+`TableViewDataEndpointBase` and `TableViewExportEndpointBase` read the optional `timeZone` of their request (validated
+by `TableViewDataRequestValidator` and `TableViewExportRequestValidator`) and fall back to `ITenantTimeZoneProvider`.
+`TableViewExcelExporter` writes real date cells: a `DateOnly` as a date, a local reading as it reads, and an instant as
+the reading in the effective zone including its time, with number formats from the request culture's date and time
+patterns. The headers of columns with a time name their zone as an IANA id after the column header: an instant column
+the effective zone (`Created at (Europe/London)`), a local reading column the tenant's zone (`Start (Europe/Zurich)`);
+date columns name none.
 
 ### Rate limiting
 

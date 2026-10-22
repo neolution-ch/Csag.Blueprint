@@ -210,4 +210,37 @@ public sealed class TableViewDataRequestValidatorTests
         // Assert
         result.IsValid.ShouldBeTrue();
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Europe/Zurich")]
+    [InlineData("UTC")]
+    public void Validate_TimeZoneOmittedOrIana_Passes(string? timeZone)
+    {
+        // Arrange
+        var request = new TableViewDataRequest { TimeZone = timeZone };
+
+        // Act
+        var result = this.validator.TestValidate(request);
+
+        // Assert
+        result.ShouldNotHaveValidationErrorFor(x => x.TimeZone);
+    }
+
+    [Theory]
+    [InlineData("W. Europe Standard Time")]
+    [InlineData("Mars/Olympus_Mons")]
+    [InlineData("")]
+    public void Validate_TimeZoneNotIana_Fails(string timeZone)
+    {
+        // Arrange
+        var request = new TableViewDataRequest { TimeZone = timeZone };
+
+        // Act
+        var result = this.validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.TimeZone)
+            .WithErrorMessage("TimeZone must be an IANA time zone id, such as Europe/Zurich.");
+    }
 }

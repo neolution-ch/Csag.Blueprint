@@ -4,7 +4,7 @@ using Csag.Blueprint.Domain.Contracts;
 
 /// <summary>
 /// Soft-deletable entity registered only after <c>base.OnModelCreating</c>, with no <c>DbSet</c> —
-/// the shape that silently missed every blueprint convention.
+/// the shape a convention applied inline in <c>OnModelCreating</c> would miss.
 /// </summary>
 public sealed class LateNote : ISoftDeletable
 {

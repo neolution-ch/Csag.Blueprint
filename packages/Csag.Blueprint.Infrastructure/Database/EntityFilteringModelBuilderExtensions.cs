@@ -4,11 +4,16 @@ using System.Linq.Expressions;
 using Csag.Blueprint.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 /// <summary>
 /// Extension methods for configuring soft deletion and active range filtering in Entity Framework Core models.
 /// These extensions provide automatic global query filters for entities implementing soft deletion
 /// and active range contracts.
+/// <para>
+/// Everything is configured at convention level, so explicit configuration of the same aspect (an
+/// index name, for example) wins whether it runs before or after these methods.
+/// </para>
 /// </summary>
 public static class EntityFilteringModelBuilderExtensions
 {
@@ -22,26 +27,9 @@ public static class EntityFilteringModelBuilderExtensions
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
     public static ModelBuilder ConfigureSoftDeleteFiltering(this ModelBuilder modelBuilder)
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            if (!typeof(ISoftDeletable).IsAssignableFrom(entityType.ClrType))
-            {
-                continue;
-            }
+        ArgumentNullException.ThrowIfNull(modelBuilder);
 
-            // A global query filter is only allowed on the root of an inheritance hierarchy, and a
-            // derived type already inherits the one its root carries. Registering a filter for every
-            // mapped type made model validation fail outright for any consumer using TPH or TPT.
-            if (entityType.BaseType != null)
-            {
-                EnsureContractIsOnTheHierarchyRoot<ISoftDeletable>(entityType, "soft-delete");
-                continue;
-            }
-
-            var filter = BuildSoftDeleteFilter(entityType.ClrType);
-            modelBuilder.Entity(entityType.ClrType).HasQueryFilter(BlueprintQueryFilters.SoftDelete, filter);
-        }
-
+        ConfigureSoftDeleteFiltering(modelBuilder.ConventionBuilder());
         return modelBuilder;
     }
 
@@ -61,10 +49,10 @@ public static class EntityFilteringModelBuilderExtensions
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
     public static ModelBuilder ConfigureEntityFiltering(this ModelBuilder modelBuilder)
     {
-        return modelBuilder
-            .ConfigureSoftDeleteFiltering()
-            .ConfigureSoftDeleteIndexes()
-            .ConfigureActiveRangeIndexes();
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        ConfigureEntityFiltering(modelBuilder.ConventionBuilder());
+        return modelBuilder;
     }
 
     /// <summary>
@@ -75,16 +63,9 @@ public static class EntityFilteringModelBuilderExtensions
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
     public static ModelBuilder ConfigureSoftDeleteIndexes(this ModelBuilder modelBuilder)
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            if (DeclaresContract<ISoftDeletable>(entityType))
-            {
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex(nameof(ISoftDeletable.DeletedAt))
-                    .HasDatabaseName($"IX_{entityType.GetTableName()}_DeletedAt");
-            }
-        }
+        ArgumentNullException.ThrowIfNull(modelBuilder);
 
+        ConfigureSoftDeleteIndexes(modelBuilder.ConventionBuilder());
         return modelBuilder;
     }
 
@@ -97,17 +78,70 @@ public static class EntityFilteringModelBuilderExtensions
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
     public static ModelBuilder ConfigureActiveRangeIndexes(this ModelBuilder modelBuilder)
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        ConfigureActiveRangeIndexes(modelBuilder.ConventionBuilder());
+        return modelBuilder;
+    }
+
+    /// <summary>
+    /// Applies <see cref="ConfigureEntityFiltering(ModelBuilder)"/> through a convention-level builder.
+    /// </summary>
+    /// <param name="modelBuilder">The convention-level builder of the model to configure.</param>
+    internal static void ConfigureEntityFiltering(IConventionModelBuilder modelBuilder)
+    {
+        ConfigureSoftDeleteFiltering(modelBuilder);
+        ConfigureSoftDeleteIndexes(modelBuilder);
+        ConfigureActiveRangeIndexes(modelBuilder);
+    }
+
+    /// <summary>
+    /// Returns the convention-level builder of the model <paramref name="modelBuilder"/> is building.
+    /// Configuring through it records each setting as a convention, ranked below anything the
+    /// application configures explicitly or through data annotations.
+    /// </summary>
+    /// <param name="modelBuilder">The model builder.</param>
+    /// <returns>The convention-level model builder.</returns>
+    internal static IConventionModelBuilder ConventionBuilder(this ModelBuilder modelBuilder)
+        => ((IConventionModel)modelBuilder.Model).Builder;
+
+    /// <summary>
+    /// Names <paramref name="index"/> <c>IX_{table}_{suffix}</c> after the table
+    /// <paramref name="entityType"/> maps to. An entity type with no table of its own, such as an
+    /// abstract table-per-concrete-type root, keeps EF Core's default name, which EF Core derives
+    /// separately for each concrete table the index is created on.
+    /// </summary>
+    /// <param name="index">The index to name, or <see langword="null"/> when it could not be configured.</param>
+    /// <param name="entityType">The entity type the index is declared on.</param>
+    /// <param name="suffix">The part of the name after the table name.</param>
+    internal static void HasTableScopedName(this IConventionIndexBuilder? index, IReadOnlyEntityType entityType, string suffix)
+    {
+        var tableName = entityType.GetTableName();
+        if (tableName != null)
         {
-            if (DeclaresContract<IHasActiveRange>(entityType))
-            {
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex(nameof(IHasActiveRange.ActiveFrom), nameof(IHasActiveRange.ActiveUntil))
-                    .HasDatabaseName($"IX_{entityType.GetTableName()}_ActiveRange");
-            }
+            index?.HasDatabaseName($"IX_{tableName}_{suffix}");
+        }
+    }
+
+    /// <summary>
+    /// Sets the delete behavior of <paramref name="relationship"/> unless the application already chose
+    /// one with the fluent API or a <c>[DeleteBehavior]</c> attribute.
+    /// </summary>
+    /// <remarks>
+    /// The behavior is recorded at data-annotation level rather than as a convention: EF Core's
+    /// cascade-delete convention reacts to a relationship created during model finalization only after
+    /// finalization completes, and would overwrite a convention-level value.
+    /// </remarks>
+    /// <param name="relationship">The relationship to configure, or <see langword="null"/> when it could not be configured.</param>
+    /// <param name="deleteBehavior">The delete behavior to apply.</param>
+    internal static void OnDeleteUnlessConfigured(this IConventionForeignKeyBuilder? relationship, DeleteBehavior deleteBehavior)
+    {
+        if (relationship?.Metadata.GetDeleteBehaviorConfigurationSource() is ConfigurationSource.Explicit or ConfigurationSource.DataAnnotation)
+        {
+            return;
         }
 
-        return modelBuilder;
+        relationship?.OnDelete(deleteBehavior, fromDataAnnotation: true);
     }
 
     /// <summary>
@@ -154,6 +188,49 @@ public static class EntityFilteringModelBuilderExtensions
             $"hierarchy, so the {filterDescription} filter cannot be applied to '{entityType.ClrType.Name}'. " +
             $"Move {typeof(TContract).Name} up to '{root.ClrType.Name}', or map '{entityType.ClrType.Name}' " +
             $"outside this hierarchy.");
+    }
+
+    private static void ConfigureSoftDeleteFiltering(IConventionModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Metadata.GetEntityTypes())
+        {
+            // An owned type cannot carry a query filter; its rows are only reachable through the owner,
+            // whose filter applies.
+            if (entityType.IsOwned() || !typeof(ISoftDeletable).IsAssignableFrom(entityType.ClrType))
+            {
+                continue;
+            }
+
+            // A global query filter is only allowed on the root of an inheritance hierarchy, and a
+            // derived type inherits the one its root carries.
+            if (entityType.BaseType != null)
+            {
+                EnsureContractIsOnTheHierarchyRoot<ISoftDeletable>(entityType, "soft-delete");
+                continue;
+            }
+
+            entityType.Builder.HasQueryFilter(BlueprintQueryFilters.SoftDelete, BuildSoftDeleteFilter(entityType.ClrType));
+        }
+    }
+
+    private static void ConfigureSoftDeleteIndexes(IConventionModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Metadata.GetEntityTypes().Where(DeclaresContract<ISoftDeletable>))
+        {
+            entityType.Builder
+                .HasIndex([nameof(ISoftDeletable.DeletedAt)])
+                .HasTableScopedName(entityType, "DeletedAt");
+        }
+    }
+
+    private static void ConfigureActiveRangeIndexes(IConventionModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Metadata.GetEntityTypes().Where(DeclaresContract<IHasActiveRange>))
+        {
+            entityType.Builder
+                .HasIndex([nameof(IHasActiveRange.ActiveFrom), nameof(IHasActiveRange.ActiveUntil)])
+                .HasTableScopedName(entityType, "ActiveRange");
+        }
     }
 
     private static LambdaExpression BuildSoftDeleteFilter(Type entityType)

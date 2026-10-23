@@ -5,10 +5,9 @@ using Microsoft.EntityFrameworkCore;
 
 /// <summary>
 /// The blueprint conventions run after the whole model is built, so an entity type registered after
-/// <c>base.OnModelCreating</c> is configured exactly like one exposed as a <c>DbSet</c>. Applying them
-/// inline in <c>OnModelCreating</c> skipped such types in silence — for
-/// <see cref="Domain.Contracts.ISoftDeletable"/> that meant no query filter, so soft-deleted rows came
-/// back in every query.
+/// <c>base.OnModelCreating</c> is configured exactly like one exposed as a <c>DbSet</c>. A missed
+/// <see cref="Domain.Contracts.ISoftDeletable"/> type would have no query filter, so its soft-deleted
+/// rows would come back in every query.
 /// </summary>
 public sealed class LateRegistrationConventionTests
 {

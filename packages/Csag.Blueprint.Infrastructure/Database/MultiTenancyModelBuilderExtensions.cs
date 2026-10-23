@@ -1,9 +1,12 @@
 namespace Csag.Blueprint.Infrastructure.Database;
 
 using System.Linq.Expressions;
+using System.Reflection;
 using Csag.Blueprint.Domain.Contracts;
 using Csag.Blueprint.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 /// <summary>
 /// Extension methods for configuring multi-tenancy in Entity Framework Core models.
@@ -18,6 +21,12 @@ public static class MultiTenancyModelBuilderExtensions
     /// foreign key relationships to the tenant table.
     /// The filter fails closed: when no ambient tenant is set, tenant-owned queries return no rows;
     /// use <c>IgnoreQueryFilters()</c> for deliberate cross-tenant access.
+    /// <para>
+    /// Everything is configured at convention level, so explicit configuration of the same aspect wins
+    /// whether it runs before or after this call. An application that maps the tenant relationship
+    /// itself, with a <c>Tenant</c> navigation or its own delete behavior, keeps that relationship;
+    /// otherwise the foreign key is added with <see cref="DeleteBehavior.Restrict"/>.
+    /// </para>
     /// </summary>
     /// <typeparam name="TTenant">The concrete tenant type (must derive from <see cref="BlueprintTenant"/>).</typeparam>
     /// <typeparam name="TContext">The <see cref="DbContext"/> type that exposes <c>CurrentTenantId</c>.</typeparam>
@@ -52,6 +61,29 @@ public static class MultiTenancyModelBuilderExtensions
         where TContext : DbContext
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        ConfigureBlueprintMultiTenancy<TTenant, TContext>(
+            modelBuilder.ConventionBuilder(), context, currentTenantIdPropertyName, addTenantForeignKey);
+    }
+
+    /// <summary>
+    /// Applies <see cref="ConfigureBlueprintMultiTenancy{TTenant, TContext}(ModelBuilder, TContext, string, bool)"/>
+    /// through a convention-level builder.
+    /// </summary>
+    /// <typeparam name="TTenant">The concrete tenant type.</typeparam>
+    /// <typeparam name="TContext">The <see cref="DbContext"/> type that exposes <c>CurrentTenantId</c>.</typeparam>
+    /// <param name="modelBuilder">The convention-level builder of the model to configure.</param>
+    /// <param name="context">The context instance the tenant filter closes over.</param>
+    /// <param name="currentTenantIdPropertyName">The name of the current tenant ID property on <typeparamref name="TContext"/>.</param>
+    /// <param name="addTenantForeignKey">Whether to add a foreign key to the tenant table.</param>
+    internal static void ConfigureBlueprintMultiTenancy<TTenant, TContext>(
+        IConventionModelBuilder modelBuilder,
+        TContext context,
+        string currentTenantIdPropertyName,
+        bool addTenantForeignKey)
+        where TTenant : BlueprintTenant
+        where TContext : DbContext
+    {
         ArgumentNullException.ThrowIfNull(context);
 
         var contextType = typeof(TContext);
@@ -60,45 +92,55 @@ public static class MultiTenancyModelBuilderExtensions
                 $"Property '{currentTenantIdPropertyName}' not found on {contextType.Name}. " +
                 $"Ensure your DbContext exposes a public Guid? instance property for the current tenant ID.");
 
-        var entityTypes = modelBuilder.Model.GetEntityTypes()
-            .Where(e => typeof(IMustHaveTenant).IsAssignableFrom(e.ClrType))
+        // An owned type cannot carry a query filter; its rows are only reachable through the owner,
+        // whose filter applies.
+        var entityTypes = modelBuilder.Metadata.GetEntityTypes()
+            .Where(e => !e.IsOwned() && typeof(IMustHaveTenant).IsAssignableFrom(e.ClrType))
             .ToList();
 
         foreach (var entityType in entityTypes)
         {
             // EF Core allows a global query filter only on the root of an inheritance hierarchy, and a
-            // derived type inherits the root's. Registering one per mapped type made any consumer with a
-            // TPH/TPT hierarchy fail model validation outright.
+            // derived type inherits the root's.
             if (entityType.BaseType != null)
             {
                 EntityFilteringModelBuilderExtensions.EnsureContractIsOnTheHierarchyRoot<IMustHaveTenant>(entityType, "tenant isolation");
                 continue;
             }
 
-            ApplyGlobalQueryFilter(modelBuilder, entityType.ClrType, context, contextType, currentTenantIdProp);
+            // Registered as a named filter so unrelated opt-outs (e.g. soft delete) cannot drop tenant isolation.
+            entityType.Builder.HasQueryFilter(
+                BlueprintQueryFilters.Tenant,
+                BuildTenantFilter(entityType.ClrType, context, contextType, currentTenantIdProp));
         }
+
+        var tenantEntityType = addTenantForeignKey ? modelBuilder.Entity(typeof(TTenant))?.Metadata : null;
 
         foreach (var entityType in entityTypes.Where(EntityFilteringModelBuilderExtensions.DeclaresContract<IMustHaveTenant>))
         {
             // The index and foreign key follow the column, which in a TPH hierarchy exists once on the
             // shared table — so they belong on the topmost type that declares the contract, not on
             // every mapped type in the hierarchy.
-            modelBuilder.Entity(entityType.ClrType)
-                .HasIndex(nameof(IMustHaveTenant.TenantId));
-
-            if (addTenantForeignKey)
+            var tenantId = entityType.FindProperty(nameof(IMustHaveTenant.TenantId));
+            if (tenantId == null)
             {
-                AddTenantForeignKey<TTenant>(modelBuilder, entityType.ClrType);
+                continue;
+            }
+
+            entityType.Builder.HasIndex([tenantId]);
+
+            if (tenantEntityType != null)
+            {
+                AddTenantForeignKey(entityType, tenantId, tenantEntityType);
             }
         }
     }
 
-    private static void ApplyGlobalQueryFilter<TContext>(
-        ModelBuilder modelBuilder,
+    private static LambdaExpression BuildTenantFilter<TContext>(
         Type entityType,
         TContext context,
         Type contextType,
-        System.Reflection.PropertyInfo currentTenantIdProp)
+        PropertyInfo currentTenantIdProp)
         where TContext : DbContext
     {
         var parameter = Expression.Parameter(entityType, "e");
@@ -117,19 +159,21 @@ public static class MultiTenancyModelBuilderExtensions
         // types the way the C# compiler does.
         var liftedTenantId = Expression.Convert(tenantIdProperty, currentTenantIdProp.PropertyType);
         var filterExpression = Expression.Equal(liftedTenantId, currentTenantId);
-        var lambda = Expression.Lambda(filterExpression, parameter);
-
-        // Registered as a named filter so unrelated opt-outs (e.g. soft delete) cannot drop tenant isolation.
-        modelBuilder.Entity(entityType).HasQueryFilter(BlueprintQueryFilters.Tenant, lambda);
+        return Expression.Lambda(filterExpression, parameter);
     }
 
-    private static void AddTenantForeignKey<TTenant>(ModelBuilder modelBuilder, Type entityType)
-        where TTenant : BlueprintTenant
+    private static void AddTenantForeignKey(
+        IConventionEntityType entityType,
+        IConventionProperty tenantId,
+        IConventionEntityType tenantEntityType)
     {
-        modelBuilder.Entity(entityType)
-            .HasOne(typeof(TTenant))
-            .WithMany()
-            .HasForeignKey(nameof(IMustHaveTenant.TenantId))
-            .OnDelete(DeleteBehavior.Restrict);
+        // Reuse a relationship that already runs over TenantId, typically one the application maps
+        // with a Tenant navigation, rather than adding a second, navigation-less one beside it.
+        var relationship = entityType.GetForeignKeys()
+                .FirstOrDefault(fk => fk.PrincipalEntityType == tenantEntityType && fk.Properties.Count == 1 && fk.Properties[0] == tenantId)
+                ?.Builder
+            ?? entityType.Builder.HasRelationship(tenantEntityType, [tenantId]);
+
+        relationship.OnDeleteUnlessConfigured(DeleteBehavior.Restrict);
     }
 }

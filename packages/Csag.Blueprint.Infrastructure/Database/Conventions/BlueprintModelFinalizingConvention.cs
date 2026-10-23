@@ -4,7 +4,6 @@ using System.Diagnostics.CodeAnalysis;
 using Csag.Blueprint.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 
@@ -13,19 +12,17 @@ using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 /// </summary>
 /// <remarks>
 /// <para>
-/// These conventions used to run inline in <c>OnModelCreating</c>, so they only saw the entity types
-/// discovered up to that point. An application registering a type <b>after</b> its
-/// <c>base.OnModelCreating</c> call — the usual shape of <c>ApplyConfigurationsFromAssembly</c>, owned
-/// types and join entities, none of which need a <c>DbSet</c> — silently received none of them. For
-/// <see cref="Domain.Contracts.ISoftDeletable"/> that meant no global query filter at all, so
-/// soft-deleted rows came back in every query.
+/// Running at model finalization means every entity type is covered, however it entered the model:
+/// a <c>DbSet</c>, a configuration applied after <c>base.OnModelCreating</c> (the usual shape of
+/// <c>ApplyConfigurationsFromAssembly</c>), an owned type or a join entity. Every setting is applied at
+/// convention level, so anything the application configured explicitly or through data annotations
+/// still wins even though this runs last.
 /// </para>
 /// <para>
-/// A model convention is used rather than a replaced <see cref="IModelCustomizer"/> because
-/// registering that service requires modifying <c>DbContextOptions</c> from <c>OnConfiguring</c>,
-/// which EF Core forbids outright once <c>DbContext</c> pooling is enabled — the shape
-/// <c>AddPooledDbContextFactory</c> produces:
-/// <c>'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is enabled.</c>
+/// It is a model convention rather than a replaced <see cref="IModelCustomizer"/> because registering
+/// that service requires modifying <c>DbContextOptions</c> from <c>OnConfiguring</c>, which EF Core
+/// forbids once <c>DbContext</c> pooling is enabled — the shape <c>AddPooledDbContextFactory</c>
+/// produces: <c>'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is enabled.</c>
 /// A convention touches no options and no service provider, so it works under pooling.
 /// </para>
 /// </remarks>
@@ -63,27 +60,18 @@ public sealed class BlueprintModelFinalizingConvention<TAppTenant, TAppUser, TAp
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
-        // The conventions are written against the public ModelBuilder surface so applications that do
-        // not derive from BlueprintDbContext can keep calling them directly. Wrapping the model being
-        // finalized is the only way to reach them from here, and that constructor is EF-internal.
-        // The suppression is deliberately this narrow: if EF Core ever removes it the build breaks
-        // loudly rather than the conventions quietly not being applied.
-#pragma warning disable EF1001 // Internal EF Core API usage.
-        var builder = new ModelBuilder((IMutableModel)modelBuilder.Metadata);
-#pragma warning restore EF1001
+        MultiTenancyModelBuilderExtensions.ConfigureBlueprintMultiTenancy<TAppTenant, BlueprintDbContext<TAppTenant, TAppUser, TAppRole>>(
+            modelBuilder, this.context, nameof(this.context.CurrentTenantId), addTenantForeignKey: true);
+        ContractModelBuilderExtensions.ConfigureContractConstraints(modelBuilder);
+        LocalizationModelBuilderExtensions.ConfigureLocalizedTextConventions(modelBuilder);
+        EntityFilteringModelBuilderExtensions.ConfigureEntityFiltering(modelBuilder);
 
-        builder.ConfigureBlueprintMultiTenancy<TAppTenant, BlueprintDbContext<TAppTenant, TAppUser, TAppRole>>(this.context);
-        builder.ConfigureContractConstraints();
-        builder.ConfigureLocalizedTextConventions();
-        builder.ConfigureEntityFiltering();
-
-        // NEWSEQUENTIALID() is a SQL Server function, so this convention only applies there. Applying
-        // it regardless of provider produced a schema that looked fine — SQLite happily accepts the
-        // DDL — and then failed on every insert with a DbUpdateException, because the function does
-        // not exist. Runs last, so entity types introduced by the conventions above are covered too.
+        // NEWSEQUENTIALID() is a SQL Server function, so this convention only applies there: other
+        // providers accept the DDL and then fail every insert. Runs last, so relationships the
+        // conventions above add are in place before key properties are told apart from foreign keys.
         if (this.context.Database.IsSqlServer())
         {
-            builder.ConfigureGuidPrimaryKeyDefaults();
+            KeyConventionModelBuilderExtensions.ConfigureGuidPrimaryKeyDefaults(modelBuilder);
         }
     }
 }

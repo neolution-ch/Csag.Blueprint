@@ -1,6 +1,9 @@
 namespace Csag.Blueprint.Infrastructure.Database;
 
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.ValueGeneration;
 
 /// <summary>
 /// Extension methods for primary key conventions applied across the whole model.
@@ -17,8 +20,14 @@ public static class KeyConventionModelBuilderExtensions
     /// primary keys that do not already declare one, so inserts stay sequential and clustered index
     /// fragmentation stays low.
     /// <para>
-    /// Keys configured explicitly elsewhere are left untouched, and keys assigned in application code
-    /// keep working — the default only applies when no value is provided.
+    /// Keys that already declare a default, and keys declared <c>ValueGeneratedNever()</c>, are left
+    /// untouched. A key that is also a foreign key, such as an owned type's, takes its value from the
+    /// principal and is left alone too.
+    /// </para>
+    /// <para>
+    /// EF Core keeps generating these keys client-side with its <see cref="SequentialGuidValueGenerator"/>,
+    /// which is also ordered for SQL Server, so an added entity has its key before <c>SaveChanges</c>.
+    /// The column default applies to inserts that bypass EF Core, such as raw SQL or seed scripts.
     /// </para>
     /// <para>
     /// <b>SQL Server only.</b> <c>NEWSEQUENTIALID()</c> does not exist on other providers, and they fail
@@ -34,7 +43,17 @@ public static class KeyConventionModelBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(modelBuilder);
 
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        ConfigureGuidPrimaryKeyDefaults(modelBuilder.ConventionBuilder());
+        return modelBuilder;
+    }
+
+    /// <summary>
+    /// Applies <see cref="ConfigureGuidPrimaryKeyDefaults(ModelBuilder)"/> through a convention-level builder.
+    /// </summary>
+    /// <param name="modelBuilder">The convention-level builder of the model to configure.</param>
+    internal static void ConfigureGuidPrimaryKeyDefaults(IConventionModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Metadata.GetEntityTypes())
         {
             var primaryKey = entityType.FindPrimaryKey();
             if (primaryKey == null || primaryKey.Properties.Count != 1)
@@ -43,15 +62,17 @@ public static class KeyConventionModelBuilderExtensions
             }
 
             var keyProperty = primaryKey.Properties[0];
-            if (keyProperty.ClrType != typeof(Guid))
+            if (keyProperty.ClrType != typeof(Guid)
+                || keyProperty.IsForeignKey()
+                || keyProperty.ValueGenerated == ValueGenerated.Never)
             {
                 continue;
             }
 
             // Skip keys that already declare a default, whether as SQL or as a CLR value. EF Core
             // rejects a property carrying both ("'DefaultValue' cannot be set ... at the same time as
-            // 'DefaultValueSql'"), so overwriting a consumer's HasDefaultValue(...) would not just
-            // ignore their configuration — it would throw when the model is built.
+            // 'DefaultValueSql'"), so adding one beside a consumer's HasDefaultValue(...) would make
+            // the model fail to build.
             // TryGetDefaultValue is required here: GetDefaultValue() returns the CLR default
             // (Guid.Empty) for an unconfigured property, so it cannot distinguish "unset" from "set".
             if (keyProperty.GetDefaultValueSql() != null || keyProperty.TryGetDefaultValue(out _))
@@ -59,11 +80,14 @@ public static class KeyConventionModelBuilderExtensions
                 continue;
             }
 
-            modelBuilder.Entity(entityType.ClrType)
-                .Property(keyProperty.Name)
-                .HasDefaultValueSql("NEWSEQUENTIALID()");
-        }
+            keyProperty.Builder.HasDefaultValueSql("NEWSEQUENTIALID()");
 
-        return modelBuilder;
+            // A database default alone makes EF Core treat the key as store-generated: an added entity
+            // carries only a temporary key, and its CLR property reads Guid.Empty until SaveChanges, so
+            // code copying it into a foreign key writes Guid.Empty. Keeping EF Core's client-side
+            // generator assigns the key on Add as before; the column default serves inserts that bypass
+            // EF Core.
+            keyProperty.Builder.HasValueGenerator(typeof(SequentialGuidValueGenerator));
+        }
     }
 }

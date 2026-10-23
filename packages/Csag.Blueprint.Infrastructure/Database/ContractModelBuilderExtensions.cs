@@ -2,10 +2,16 @@ namespace Csag.Blueprint.Infrastructure.Database;
 
 using Csag.Blueprint.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 /// <summary>
 /// Extension methods for configuring string property constraints for domain contracts in Entity Framework Core models.
 /// These extensions provide automatic configuration for entities implementing contracts with string properties.
+/// <para>
+/// Everything is configured at convention level, so explicit configuration of the same aspect (a
+/// different maximum length, for example) wins whether it runs before or after these methods.
+/// </para>
 /// </summary>
 public static class ContractModelBuilderExtensions
 {
@@ -17,27 +23,9 @@ public static class ContractModelBuilderExtensions
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
     public static ModelBuilder ConfigureInternalNameConstraints(this ModelBuilder modelBuilder)
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            // Only the type that declares the contract: in a TPH hierarchy every mapped type reports
-            // the same table, so configuring each of them redefines one index repeatedly.
-            if (EntityFilteringModelBuilderExtensions.DeclaresContract<IHasInternalName>(entityType))
-            {
-                var tableName = entityType.GetTableName();
+        ArgumentNullException.ThrowIfNull(modelBuilder);
 
-                // Configure InternalName property constraints
-                modelBuilder.Entity(entityType.ClrType)
-                    .Property(nameof(IHasInternalName.InternalName))
-                    .HasMaxLength(200)
-                    .IsRequired();
-
-                // Index on InternalName for efficient lookups
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex(nameof(IHasInternalName.InternalName))
-                    .HasDatabaseName($"IX_{tableName}_InternalName");
-            }
-        }
-
+        ConfigureInternalNameConstraints(modelBuilder.ConventionBuilder());
         return modelBuilder;
     }
 
@@ -50,31 +38,9 @@ public static class ContractModelBuilderExtensions
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
     public static ModelBuilder ConfigureLocalizedTextConstraints(this ModelBuilder modelBuilder)
     {
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
-        {
-            if (EntityFilteringModelBuilderExtensions.DeclaresContract<ILocalizedText>(entityType))
-            {
-                var tableName = entityType.GetTableName();
+        ArgumentNullException.ThrowIfNull(modelBuilder);
 
-                // Configure Text property constraints
-                modelBuilder.Entity(entityType.ClrType)
-                    .Property(nameof(ILocalizedText.Text))
-                    .HasMaxLength(2000)
-                    .IsRequired();
-
-                // Configure LanguageCode property constraints
-                modelBuilder.Entity(entityType.ClrType)
-                    .Property(nameof(ILocalizedText.LanguageCode))
-                    .HasMaxLength(10)
-                    .IsRequired();
-
-                // Index on LanguageCode for efficient language filtering
-                modelBuilder.Entity(entityType.ClrType)
-                    .HasIndex(nameof(ILocalizedText.LanguageCode))
-                    .HasDatabaseName($"IX_{tableName}_LanguageCode");
-            }
-        }
-
+        ConfigureLocalizedTextConstraints(modelBuilder.ConventionBuilder());
         return modelBuilder;
     }
 
@@ -86,8 +52,65 @@ public static class ContractModelBuilderExtensions
     /// <returns>The same <see cref="ModelBuilder"/> instance for method chaining.</returns>
     public static ModelBuilder ConfigureContractConstraints(this ModelBuilder modelBuilder)
     {
-        return modelBuilder
-            .ConfigureInternalNameConstraints()
-            .ConfigureLocalizedTextConstraints();
+        ArgumentNullException.ThrowIfNull(modelBuilder);
+
+        ConfigureContractConstraints(modelBuilder.ConventionBuilder());
+        return modelBuilder;
+    }
+
+    /// <summary>
+    /// Applies <see cref="ConfigureContractConstraints(ModelBuilder)"/> through a convention-level builder.
+    /// </summary>
+    /// <param name="modelBuilder">The convention-level builder of the model to configure.</param>
+    internal static void ConfigureContractConstraints(IConventionModelBuilder modelBuilder)
+    {
+        ConfigureInternalNameConstraints(modelBuilder);
+        ConfigureLocalizedTextConstraints(modelBuilder);
+    }
+
+    private static void ConfigureInternalNameConstraints(IConventionModelBuilder modelBuilder)
+    {
+        // Only the type that declares the contract: in a TPH hierarchy every mapped type reports the
+        // same table, so configuring each of them would redefine one index repeatedly.
+        foreach (var entityType in modelBuilder.Metadata.GetEntityTypes().Where(EntityFilteringModelBuilderExtensions.DeclaresContract<IHasInternalName>))
+        {
+            var internalName = ConfigureRequiredString(entityType, nameof(IHasInternalName.InternalName), maxLength: 200);
+            if (internalName != null)
+            {
+                entityType.Builder
+                    .HasIndex([internalName])
+                    .HasTableScopedName(entityType, "InternalName");
+            }
+        }
+    }
+
+    private static void ConfigureLocalizedTextConstraints(IConventionModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Metadata.GetEntityTypes().Where(EntityFilteringModelBuilderExtensions.DeclaresContract<ILocalizedText>))
+        {
+            ConfigureRequiredString(entityType, nameof(ILocalizedText.Text), maxLength: 2000);
+
+            var languageCode = ConfigureRequiredString(entityType, nameof(ILocalizedText.LanguageCode), maxLength: 10);
+            if (languageCode != null)
+            {
+                entityType.Builder
+                    .HasIndex([languageCode])
+                    .HasTableScopedName(entityType, "LanguageCode");
+            }
+        }
+    }
+
+    private static IConventionProperty? ConfigureRequiredString(IConventionEntityType entityType, string propertyName, int maxLength)
+    {
+        // A property the application has ignored is left ignored.
+        var property = entityType.FindProperty(propertyName);
+        if (property == null)
+        {
+            return null;
+        }
+
+        property.Builder.HasMaxLength(maxLength);
+        property.Builder.IsRequired(true);
+        return property;
     }
 }

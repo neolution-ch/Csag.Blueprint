@@ -9,12 +9,11 @@ using Microsoft.Extensions.DependencyInjection;
 /// <c>AddPooledDbContextFactory</c> produces, which the test host and real applications use.
 /// </summary>
 /// <remarks>
-/// Registering the conventions by replacing <see cref="Microsoft.EntityFrameworkCore.Infrastructure.IModelCustomizer"/>
-/// from <c>OnConfiguring</c> looked correct and passed every model-level test, but threw
-/// <c>'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is enabled</c> the
-/// moment a pooled factory was involved. Only the integration suite caught it, because nothing here
-/// built a context the way the application actually does. These tests close that gap: building the
-/// model through a pooled factory needs no database, since no connection is opened.
+/// Anything that registers services from <c>OnConfiguring</c>, such as a replaced
+/// <see cref="Microsoft.EntityFrameworkCore.Infrastructure.IModelCustomizer"/>, throws
+/// <c>'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is enabled</c> as
+/// soon as a pooled factory is involved, yet passes every test that constructs a context directly. These
+/// tests build the model through a pooled factory, which needs no database since no connection is opened.
 /// </remarks>
 public sealed class PooledContextConventionTests
 {

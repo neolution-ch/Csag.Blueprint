@@ -109,9 +109,10 @@ public static class MultiTenancyModelBuilderExtensions
             }
 
             // Registered as a named filter so unrelated opt-outs (e.g. soft delete) cannot drop tenant isolation.
-            entityType.Builder.HasQueryFilter(
+            entityType.HasBlueprintQueryFilter(
                 BlueprintQueryFilters.Tenant,
-                BuildTenantFilter(entityType.ClrType, context, contextType, currentTenantIdProp));
+                BuildTenantFilter(entityType.ClrType, context, contextType, currentTenantIdProp),
+                "tenant isolation");
         }
 
         var tenantEntityType = addTenantForeignKey ? modelBuilder.Entity(typeof(TTenant))?.Metadata : null;

@@ -5,6 +5,7 @@ using Csag.Blueprint.Domain.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Microsoft.EntityFrameworkCore.Query;
 
 /// <summary>
 /// Extension methods for configuring soft deletion and active range filtering in Entity Framework Core models.
@@ -107,9 +108,15 @@ public static class EntityFilteringModelBuilderExtensions
 
     /// <summary>
     /// Names <paramref name="index"/> <c>IX_{table}_{suffix}</c> after the table
-    /// <paramref name="entityType"/> maps to. An entity type with no table of its own, such as an
-    /// abstract table-per-concrete-type root, keeps EF Core's default name, which EF Core derives
-    /// separately for each concrete table the index is created on.
+    /// <paramref name="entityType"/> maps to. Two kinds of entity type keep EF Core's default name,
+    /// which EF Core builds from the actual table and column names:
+    /// <list type="bullet">
+    /// <item>one with no table of its own, such as an abstract table-per-concrete-type root, whose
+    /// index EF Core names separately for each concrete table;</item>
+    /// <item>one that shares another entity type's rows, such as an owned type mapped to its owner's
+    /// table, whose <c>IX_{table}_{suffix}</c> would collide with the owner's index of the same
+    /// contract.</item>
+    /// </list>
     /// </summary>
     /// <param name="index">The index to name, or <see langword="null"/> when it could not be configured.</param>
     /// <param name="entityType">The entity type the index is declared on.</param>
@@ -117,10 +124,44 @@ public static class EntityFilteringModelBuilderExtensions
     internal static void HasTableScopedName(this IConventionIndexBuilder? index, IReadOnlyEntityType entityType, string suffix)
     {
         var tableName = entityType.GetTableName();
-        if (tableName != null)
+        if (tableName == null
+            || entityType.FindRowInternalForeignKeys(StoreObjectIdentifier.Table(tableName, entityType.GetSchema())).Any())
         {
-            index?.HasDatabaseName($"IX_{tableName}_{suffix}");
+            return;
         }
+
+        index?.HasDatabaseName($"IX_{tableName}_{suffix}");
+    }
+
+    /// <summary>
+    /// Registers one of the blueprint's named query filters on <paramref name="entityType"/>, and fails
+    /// if a different filter already holds that name.
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="BlueprintQueryFilters"/> keys are reserved. Whichever of two filters with the same
+    /// key is applied last wins, so an application filter registered under one of them would either
+    /// replace the blueprint's (for tenant isolation, a cross-tenant leak) or be dropped without a trace.
+    /// Configuration source cannot tell the two apart: EF Core's own model-finalizing conventions record
+    /// an application's filters again at convention level before the blueprint conventions run. The
+    /// expression can, because the blueprint's filters are deterministic, so applying the same
+    /// configuration twice is still allowed.
+    /// </remarks>
+    /// <param name="entityType">The root entity type to filter.</param>
+    /// <param name="filterKey">One of the <see cref="BlueprintQueryFilters"/> keys.</param>
+    /// <param name="expression">The filter expression.</param>
+    /// <param name="filterDescription">Human-readable name of the filter, used in the error message.</param>
+    internal static void HasBlueprintQueryFilter(this IConventionEntityType entityType, string filterKey, LambdaExpression expression, string filterDescription)
+    {
+        var existing = entityType.FindDeclaredQueryFilter(filterKey)?.Expression;
+        if (existing != null && !ExpressionEqualityComparer.Instance.Equals(existing, expression))
+        {
+            throw new InvalidOperationException(
+                $"'{entityType.DisplayName()}' already has a query filter named '{filterKey}'. That name is " +
+                $"reserved for the blueprint's {filterDescription} filter. Register your filter under a " +
+                $"different name; filters with different names all apply.");
+        }
+
+        entityType.Builder.HasQueryFilter(filterKey, expression);
     }
 
     /// <summary>
@@ -209,7 +250,7 @@ public static class EntityFilteringModelBuilderExtensions
                 continue;
             }
 
-            entityType.Builder.HasQueryFilter(BlueprintQueryFilters.SoftDelete, BuildSoftDeleteFilter(entityType.ClrType));
+            entityType.HasBlueprintQueryFilter(BlueprintQueryFilters.SoftDelete, BuildSoftDeleteFilter(entityType.ClrType), "soft-delete");
         }
     }
 

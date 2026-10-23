@@ -8,6 +8,11 @@ namespace Csag.Blueprint.Infrastructure.Database;
 /// Use the extension methods in <c>Csag.Blueprint.Infrastructure.Extensions.QueryFilterExtensions</c>
 /// rather than passing these keys around by hand.
 /// </para>
+/// <para>
+/// Both keys are reserved. An application filter registered under one of them would replace the
+/// blueprint's filter or be replaced by it, so the model fails to build instead; register application
+/// filters under names of their own.
+/// </para>
 /// </summary>
 public static class BlueprintQueryFilters
 {

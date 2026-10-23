@@ -85,15 +85,22 @@ public static class LocalizationExtensions
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
     /// <param name="query">The query to extend.</param>
-    /// <param name="languageCode">The language code to filter by (e.g., "en-US", "de-DE").</param>
+    /// <param name="languageCode">The language code to filter by (e.g., "en-US", "de-DE"), matched case-insensitively.</param>
     /// <returns>Query with localized texts included, filtered by the specified language.</returns>
+    [SuppressMessage("SonarQube", "S4056", Justification = "The IFormatProvider overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1304:Specify CultureInfo", Justification = "The CultureInfo overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1311:Specify a culture or use an invariant version", Justification = "The invariant overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1862:Use the StringComparison method overloads", Justification = "StringComparison overloads cannot be translated to SQL by EF Core; ToLower is the translatable way to make the comparison collation-independent.")]
     public static IQueryable<TEntity> IncludeTextsForLanguage<TEntity, TLocalizedText>(
         this IQueryable<TEntity> query,
         string languageCode)
         where TEntity : class, IHasLocalizedTexts<TLocalizedText>
         where TLocalizedText : class, ILocalizedText
     {
-        return query.Include(e => e.LocalizedTexts.Where(t => t.LanguageCode == languageCode));
+        ArgumentNullException.ThrowIfNull(languageCode);
+
+        var normalizedLanguage = Normalize(languageCode);
+        return query.Include(e => e.LocalizedTexts.Where(t => t.LanguageCode.ToLower() == normalizedLanguage));
     }
 
     /// <summary>
@@ -103,15 +110,22 @@ public static class LocalizationExtensions
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
     /// <param name="query">The query to extend.</param>
-    /// <param name="languageCodes">The language codes to include.</param>
+    /// <param name="languageCodes">The language codes to include, matched case-insensitively.</param>
     /// <returns>Query with localized texts included, filtered by the specified languages.</returns>
+    [SuppressMessage("SonarQube", "S4056", Justification = "The IFormatProvider overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1304:Specify CultureInfo", Justification = "The CultureInfo overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1311:Specify a culture or use an invariant version", Justification = "The invariant overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1862:Use the StringComparison method overloads", Justification = "StringComparison overloads cannot be translated to SQL by EF Core; ToLower is the translatable way to make the comparison collation-independent.")]
     public static IQueryable<TEntity> IncludeTextsForLanguages<TEntity, TLocalizedText>(
         this IQueryable<TEntity> query,
         params string[] languageCodes)
         where TEntity : class, IHasLocalizedTexts<TLocalizedText>
         where TLocalizedText : class, ILocalizedText
     {
-        return query.Include(e => e.LocalizedTexts.Where(t => languageCodes.Contains(t.LanguageCode)));
+        ArgumentNullException.ThrowIfNull(languageCodes);
+
+        var normalizedLanguages = languageCodes.Select(Normalize).ToArray();
+        return query.Include(e => e.LocalizedTexts.Where(t => normalizedLanguages.Contains(t.LanguageCode.ToLower())));
     }
 
     /// <summary>
@@ -169,15 +183,22 @@ public static class LocalizationExtensions
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
     /// <param name="query">The query to filter.</param>
-    /// <param name="languageCode">The language code to check for.</param>
+    /// <param name="languageCode">The language code to check for, matched case-insensitively.</param>
     /// <returns>Query filtered to entities with text in the specified language.</returns>
+    [SuppressMessage("SonarQube", "S4056", Justification = "The IFormatProvider overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1304:Specify CultureInfo", Justification = "The CultureInfo overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1311:Specify a culture or use an invariant version", Justification = "The invariant overload of ToLower cannot be translated to SQL by EF Core; the tag is ASCII by definition.")]
+    [SuppressMessage("Globalization", "CA1862:Use the StringComparison method overloads", Justification = "StringComparison overloads cannot be translated to SQL by EF Core; ToLower is the translatable way to make the comparison collation-independent.")]
     public static IQueryable<TEntity> WhereHasTextForLanguage<TEntity, TLocalizedText>(
         this IQueryable<TEntity> query,
         string languageCode)
         where TEntity : class, IHasLocalizedTexts<TLocalizedText>
         where TLocalizedText : class, ILocalizedText
     {
-        return query.Where(e => e.LocalizedTexts.Any(t => t.LanguageCode == languageCode));
+        ArgumentNullException.ThrowIfNull(languageCode);
+
+        var normalizedLanguage = Normalize(languageCode);
+        return query.Where(e => e.LocalizedTexts.Any(t => t.LanguageCode.ToLower() == normalizedLanguage));
     }
 
     /// <summary>
@@ -262,14 +283,14 @@ public static class LocalizationExtensions
     /// </summary>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
     /// <param name="localizedTexts">The collection of localized texts.</param>
-    /// <param name="languageCode">The language code to get text for.</param>
+    /// <param name="languageCode">The language code to get text for, matched case-insensitively.</param>
     /// <returns>The text in the specified language, or null if not available.</returns>
     public static TLocalizedText? GetTextForLanguage<TLocalizedText>(
         this ICollection<TLocalizedText> localizedTexts,
         string languageCode)
         where TLocalizedText : class, ILocalizedText
     {
-        return localizedTexts.FirstOrDefault(t => t.LanguageCode == languageCode);
+        return localizedTexts.FirstOrDefault(t => string.Equals(t.LanguageCode, languageCode, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

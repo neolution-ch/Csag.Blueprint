@@ -66,11 +66,13 @@ var deleted = await context.Pedalos.OnlySoftDeleted().ToListAsync(ct);
 ```
 
 There is deliberately no convenience extension for opting out of the tenant filter: crossing tenants
-must stay an explicit, reviewed `IgnoreQueryFilters(BlueprintQueryFilters.Tenant)` at the call site.
+must stay an explicit, reviewed `IgnoreQueryFilters([BlueprintQueryFilters.Tenant])` at the call site.
 
 EF Core does not allow an unnamed and a named query filter on the same entity. If your application
 adds its own filter to a tenant-owned or soft-deletable entity, register it under a name of its own
-(`HasQueryFilter("Archived", e => !e.Archived)`); an unnamed one makes the model fail to build.
+(`HasQueryFilter("Archived", e => !e.Archived)`); an unnamed one makes the model fail to build. The
+`Tenant` and `SoftDelete` keys are reserved: a filter of yours registered under one of them would
+replace the blueprint's filter or be replaced by it, so that fails the model build too.
 
 ### When the conventions are applied
 

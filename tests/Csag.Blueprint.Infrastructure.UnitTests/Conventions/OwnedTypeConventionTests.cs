@@ -71,6 +71,17 @@ public sealed class OwnedTypeConventionTests
             && i.Properties.Select(p => p.Name).SequenceEqual(new[] { "BrochureId", nameof(BrochureText.LanguageCode) }));
     }
 
+    [Fact]
+    public void OwnerAndOwnedType_SharingATable_GetDistinctIndexNames()
+    {
+        using var context = Build();
+
+        var script = context.Database.GenerateCreateScript();
+
+        script.ShouldContain("[IX_Shipment_InternalName]");
+        script.ShouldContain("[IX_Shipment_Address_InternalName]");
+    }
+
     // SQL Server, because the key convention only applies on that provider. Building a model opens no
     // connection, so the server is never reached.
     private static OwnedTypeDbContext Build()

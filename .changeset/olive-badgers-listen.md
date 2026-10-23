@@ -27,7 +27,8 @@ and so on. Owned types are supported; they carry no filters of their own, as EF 
 - An unnamed query filter of your own on an `IMustHaveTenant` entity now makes the model fail to
   build, because EF Core does not allow unnamed and named filters on the same entity. Register it
   under a name (`HasQueryFilter("Archived", e => !e.Archived)`). Previously such a filter replaced the
-  tenant filter without warning.
+  tenant filter without warning. The `Tenant` and `SoftDelete` names themselves are reserved for
+  the blueprint's filters, so a filter of yours registered under one of them fails the build too.
 - Generate an EF Core migration. Tenant-owned entities registered without a `DbSet` gain their
   `TenantId` index and tenant foreign key. An entity with a `Tenant` navigation now shares the single
   `TenantId` foreign key instead of getting a second, shadow `TenantId1` one, so the migration drops

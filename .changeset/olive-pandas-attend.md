@@ -30,9 +30,9 @@ and query extensions (`WhereNotDeleted`, `WhereActiveNow`, `IncludeCurrentLangua
   `IncludeCurrentLanguageText`, `WhereHasCurrentLanguageText`, `CurrentLanguageTextExpression` and
   `SelectWithCurrentLanguageText` rank texts the same way, inside the EF Core query: exact current
   language, then the same language in another region (including the bare code), then the exact
-  fallback, then the fallback's language. These compare language codes case-insensitively on every
-  provider; the single-language helpers (`IncludeTextsForLanguage`, `WhereHasTextForLanguage`, …)
-  compare as the database collation does.
+  fallback, then the fallback's language. These, and the single-language helpers
+  (`IncludeTextsForLanguage`, `WhereHasTextForLanguage`, …), compare language codes
+  case-insensitively on every provider.
 - **Language providers.** `ICurrentLanguageProvider` supplies the current and fallback language.
   `DefaultLanguageProvider` reads `CultureInfo.CurrentUICulture` and falls back to a configured code
   for the invariant culture; `ExplicitLanguageProvider` covers call sites that already know the

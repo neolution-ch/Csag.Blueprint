@@ -1,5 +1,39 @@
 # @neolution-ch/csag-blueprint-web
 
+## 0.6.0
+
+### Minor Changes
+
+- [#65](https://github.com/neolution-ch/Csag.Blueprint/pull/65) [`57c3c85`](https://github.com/neolution-ch/Csag.Blueprint/commit/57c3c8554bbf10e84bce1c674806c0be214b0f99) Thanks [@neotrow](https://github.com/neotrow)! - Let applications decide which tenant an entity-change audit event is recorded under
+  
+  `ConfigureBlueprintAuditLogging` records every EF audit event under the ambient `TenantContext.Current`, the actor's active tenant. That is not always the tenant the change belongs to: a platform administrator who changes a global row while a tenant is active records the change under that tenant.
+  
+  **New:** `BlueprintAuditOptions.EntityChangeTenantResolver`, an `AuditTenantResolver` delegate `(HttpContext? httpContext, Guid? activeTenantId) => Guid?`. It is called once per `SaveChanges`, with the request the change was saved in (null outside one) and the active tenant, and returns the tenant to write to the `TenantId` column, or null for none. Left unset, the active tenant is recorded, as before. HTTP audit events are not affected.
+  
+  Consumer migration: none.
+
+- [#64](https://github.com/neolution-ch/Csag.Blueprint/pull/64) [`662d1b5`](https://github.com/neolution-ch/Csag.Blueprint/commit/662d1b5f439af6d687898c5b96f3a67a4c764a2e) Thanks [@neotrow](https://github.com/neotrow)! - Table view exports validate pagination and cap unpaginated exports at `MaxExportRows`
+  
+  `TableViewExportEndpointBase` accepted any `Page` and `PageSize`, and an export without them read every row matching its filters into one workbook, however many there were.
+  
+  **New:** `TableViewExportRequestValidator` (Csag.Blueprint.Web) applies to every endpoint taking a `TableViewExportRequest`. `Page` and `PageSize` are set both or neither; when set, `Page` is at least 1 and `PageSize` is between 1 and 100, as for `TableViewDataRequest`. Sort columns follow the same rules as on the data request.
+  
+  **New:** `TableViewExportEndpointBase.MaxExportRows`, a `protected virtual int`, default `10_000`. An export without a page that matches more rows than that is refused with `400 Bad Request` and a ProblemDetails body naming the cap; it is never truncated. Override it per endpoint, like `ExportFileName`.
+  
+  **Behaviour change:** the base endpoint reads an unpaginated export through `ITableViewExecutor.ExecuteAsync` as one page of `MaxExportRows + 1` rows, instead of `ExecuteWithoutPaginationAsync`; the extra row detects a match the separate count read missed. `ExecuteWithoutPaginationAsync` remains on the interface.
+  
+  Consumer migration: a client that sent `Page` without `PageSize` (or the reverse), or a `PageSize` above 100, now gets `400` — send both, within the bounds, or neither. An endpoint whose tables legitimately export more than 10,000 rows overrides `MaxExportRows`. Frontends surface the `400` to the user, for example as a hint to narrow the filters.
+
+### Patch Changes
+
+- [#63](https://github.com/neolution-ch/Csag.Blueprint/pull/63) [`4d7a818`](https://github.com/neolution-ch/Csag.Blueprint/commit/4d7a818b97c31875a7555c4963b616de3e146288) Thanks [@neotrow](https://github.com/neotrow)! - Record audit entries as column values only, so field exclusions apply to the whole entry
+  
+  `ConfigureBlueprintAuditLogging` stored each EF audit entry with a serialized copy of the entity object next to its column values and changes. Audit.NET applies field exclusions (`ForEntity<T>(e => e.Ignore(...))`) to the column values and changes only, so the entity copy still carried the excluded fields, the standard ones (`PasswordHash`, `SecurityStamp`, `ConcurrencyStamp`, `ClientSecretHash`) and any an application adds through `BlueprintAuditOptions.EntityFieldConfigurator` alike. Entity objects are now left out (`IncludeEntityObjects(false)`), and an excluded field appears nowhere in the stored entry.
+  
+  **Behaviour change:** entries in `BlueprintAuditLogs.JsonData` no longer have an `Entity` property under `EntityFrameworkEvent.Entries[]`. `ColumnValues` and `Changes` are unchanged and carry every field that is not excluded.
+  
+  Consumer migration: code or queries that read `Entries[].Entity` read `Entries[].ColumnValues` instead. Rows written before this release still hold the entity copy; an application that wants the excluded fields gone from existing rows removes `Entity` from them in a data migration.
+
 ## 0.5.0
 
 ### Minor Changes

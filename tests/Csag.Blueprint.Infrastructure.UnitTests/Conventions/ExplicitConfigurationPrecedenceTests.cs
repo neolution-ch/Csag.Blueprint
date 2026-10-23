@@ -64,6 +64,21 @@ public sealed class ExplicitConfigurationPrecedenceTests
             .DeleteBehavior.ShouldBe(DeleteBehavior.Cascade);
     }
 
+    [Theory]
+    [InlineData(typeof(StringKeyedRecord))]
+    [InlineData(typeof(ConverterKeyedRecord))]
+    [InlineData(typeof(BinaryKeyedRecord))]
+    public void KeyStoredThroughAValueConverter_GetsNoSequentialDefault(Type entityType)
+    {
+        using var context = Build();
+
+        // NEWSEQUENTIALID() is only valid as the default of a uniqueidentifier column.
+        context.Model.FindEntityType(entityType)!
+            .FindProperty("Id")!
+            .GetDefaultValueSql()
+            .ShouldBeNull();
+    }
+
     [Fact]
     public void KeyDeclaredValueGeneratedNever_GetsNoSequentialDefault()
     {

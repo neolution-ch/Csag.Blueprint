@@ -3,6 +3,7 @@ namespace Csag.Blueprint.Infrastructure.UnitTests.TestModel;
 using Csag.Blueprint.Infrastructure.Database;
 using Csag.Blueprint.Tests.Shared.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 /// <summary>
 /// Application-shaped context that configures an entity type explicitly after the base call,
@@ -36,5 +37,10 @@ public sealed class ExplicitConfigurationDbContext : BlueprintDbContext<TestTena
 
         builder.Entity<ImportedRecord>().Property(r => r.Id).ValueGeneratedNever();
         builder.Entity<Voucher>();
+
+        // The three ways to store a Guid key as something other than uniqueidentifier.
+        builder.Entity<StringKeyedRecord>().Property(r => r.Id).HasConversion<string>();
+        builder.Entity<ConverterKeyedRecord>().Property(r => r.Id).HasConversion(new GuidToStringConverter());
+        builder.Entity<BinaryKeyedRecord>().Property(r => r.Id).HasConversion<GuidToBytesConverter>();
     }
 }

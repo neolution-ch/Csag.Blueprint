@@ -20,8 +20,8 @@ public static class KeyConventionModelBuilderExtensions
     /// primary keys that do not already declare one, so inserts stay sequential and clustered index
     /// fragmentation stays low.
     /// <para>
-    /// Keys that already declare a default, and keys declared <c>ValueGeneratedNever()</c>, are left
-    /// untouched. A key that is also a foreign key, such as an owned type's, takes its value from the
+    /// Keys that already declare a default, keys declared <c>ValueGeneratedNever()</c>, and keys stored
+    /// through a value conversion as something other than a <c>uniqueidentifier</c> are left untouched. A key that is also a foreign key, such as an owned type's, takes its value from the
     /// principal and is left alone too.
     /// </para>
     /// <para>
@@ -63,6 +63,7 @@ public static class KeyConventionModelBuilderExtensions
 
             var keyProperty = primaryKey.Properties[0];
             if (keyProperty.ClrType != typeof(Guid)
+                || !IsStoredAsGuid(keyProperty)
                 || keyProperty.IsForeignKey()
                 || keyProperty.ValueGenerated == ValueGenerated.Never)
             {
@@ -89,5 +90,24 @@ public static class KeyConventionModelBuilderExtensions
             // EF Core.
             keyProperty.Builder.HasValueGenerator(typeof(SequentialGuidValueGenerator));
         }
+    }
+
+    /// <summary>
+    /// Determines whether <paramref name="property"/> is stored as a <see cref="Guid"/>, which on SQL
+    /// Server is a <c>uniqueidentifier</c> column — the only column type <c>NEWSEQUENTIALID()</c> is
+    /// valid for. A value conversion can store a <see cref="Guid"/> as a string or as bytes instead.
+    /// </summary>
+    /// <remarks>
+    /// A conversion can be configured as a provider type, a converter instance or a converter type.
+    /// The last is only resolved into the property's type mapping, which EF Core assigns during model
+    /// finalization; called earlier, such a conversion is not seen.
+    /// </remarks>
+    /// <param name="property">The key property.</param>
+    /// <returns><see langword="true"/> when the store type is a <see cref="Guid"/>.</returns>
+    private static bool IsStoredAsGuid(IConventionProperty property)
+    {
+        var converter = property.GetValueConverter() ?? property.FindTypeMapping()?.Converter;
+        var providerType = converter?.ProviderClrType ?? property.GetProviderClrType() ?? property.ClrType;
+        return providerType == typeof(Guid);
     }
 }

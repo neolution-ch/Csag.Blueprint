@@ -18,7 +18,7 @@ It contains the reusable EF Core persistence backbone, session/auth infrastructu
 | `EntityFilteringModelBuilderExtensions` | Registers the named soft-delete query filter and creates the supporting `IX_{table}_DeletedAt` and composite `IX_{table}_ActiveRange` indexes for `ISoftDeletable` / `IHasActiveRange`. |
 | `LocalizationModelBuilderExtensions` | Wires `IHasLocalizedTexts` entities to their `ILocalizedText` side, with the per-language unique constraint and indexes. |
 | `ContractModelBuilderExtensions` | Applies the model conventions the domain contracts imply (`IHasInternalName` constraints, localized text constraints). |
-| `KeyConventionModelBuilderExtensions` | Gives every single-column `Guid` primary key a `NEWSEQUENTIALID()` default. This applies to **all** entities, not only contract adopters. |
+| `KeyConventionModelBuilderExtensions` | On SQL Server, gives every single-column `Guid` primary key a `NEWSEQUENTIALID()` column default. This applies to **all** entities, not only contract adopters. EF Core still assigns the key client-side on `Add`; the default serves inserts that bypass EF Core. |
 
 ### Data isolation topology
 
@@ -68,18 +68,31 @@ var deleted = await context.Pedalos.OnlySoftDeleted().ToListAsync(ct);
 There is deliberately no convenience extension for opting out of the tenant filter: crossing tenants
 must stay an explicit, reviewed `IgnoreQueryFilters(BlueprintQueryFilters.Tenant)` at the call site.
 
+EF Core does not allow an unnamed and a named query filter on the same entity. If your application
+adds its own filter to a tenant-owned or soft-deletable entity, register it under a name of its own
+(`HasQueryFilter("Archived", e => !e.Archived)`); an unnamed one makes the model fail to build.
+
 ### When the conventions are applied
 
 `BlueprintDbContext` does **not** apply the contract-driven conventions inside `OnModelCreating`. It
 registers `BlueprintModelFinalizingConvention` in `ConfigureConventions`, which applies them once EF
 Core has finished building the model.
 
-That ordering matters. Applied inline, the conventions would only see the entity types discovered up
-to that point, so anything your context registers *after* its `base.OnModelCreating(builder)` call —
-the usual shape of `ApplyConfigurationsFromAssembly`, owned types and join entities, none of which
-need a `DbSet` — would silently receive none of them. For `ISoftDeletable` that means no global query
-filter at all, and soft-deleted rows coming back in every query. Running at finalization removes the
-ordering requirement entirely: register entity types wherever you like.
+That covers every entity type however it entered the model: a `DbSet`, a configuration applied after
+your `base.OnModelCreating(builder)` call (the usual shape of `ApplyConfigurationsFromAssembly`), or
+an owned type. Applied inline instead, the conventions would only see the entity types discovered up
+to that point, and a type registered later would silently get none of them — for `IMustHaveTenant`
+no tenant filter, for `ISoftDeletable` no soft-delete filter.
+
+**Your own configuration wins.** Every setting is applied at EF Core's convention level, so anything
+you configure explicitly — fluent API or data annotations — takes precedence, even though the
+blueprint conventions run last. Map the tenant relationship yourself (with a `Tenant` navigation or
+a different delete behavior), give `InternalName` another length or an index another name, and your
+mapping is kept; the conventions only fill in what you left unconfigured.
+
+Owned types carry no query filters of their own (EF Core does not allow it); their rows are only
+reachable through the owner, whose filters apply. A primary key that is also a foreign key, such as an
+owned type's, gets no `NEWSEQUENTIALID()` default.
 
 A model convention is used rather than a replaced `IModelCustomizer` because registering that service
 means modifying `DbContextOptions` from `OnConfiguring`, which EF Core forbids once `DbContext`
@@ -97,9 +110,10 @@ If you override `ConfigureConventions`, **call `base.ConfigureConventions`** —
 convention is registered, and without it none of the blueprint conventions, tenant isolation and
 soft-delete filtering included, are applied.
 
-Applications that do not derive from `BlueprintDbContext` can keep calling the `Configure*` extension
-methods directly from their own `OnModelCreating` — they are unchanged, and remain the supported
-entry point for that case. Call them last.
+Applications that do not derive from `BlueprintDbContext` can call the `Configure*` extension methods
+directly from their own `OnModelCreating`. They configure at convention level too, so explicit
+configuration wins whether it comes before or after the call, but they only see the entity types
+registered so far — call them last.
 
 ### Query extensions for the domain contracts
 

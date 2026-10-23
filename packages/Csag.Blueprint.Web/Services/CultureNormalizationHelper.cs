@@ -125,7 +125,7 @@ public static class CultureNormalizationHelper
     /// <summary>
     /// Determines whether falling back from <paramref name="requestedTag"/> to
     /// <paramref name="supportedTag"/> would substitute a different region or script — "fr-FR" for
-    /// "fr-CH", or Simplified Chinese for Traditional.
+    /// "fr-CH", or "zh-Hant-TW" for "zh-Hans-TW".
     /// </summary>
     /// <remarks>
     /// Only same-language pairs reach this check, so it compares the subtags that remain. Each is
@@ -134,6 +134,10 @@ public static class CultureNormalizationHelper
     /// leaves the subtag unspecified. Comparing whole tags instead would reject both of those, and
     /// would also reject "zh-Hans-CN" against "zh-Hant-CN" as a region swap when the regions are in
     /// fact identical and it is the script that differs.
+    /// <para>
+    /// A script is compared only when it is written out. One implied by a region is not inferred, so a
+    /// requested "zh-Hans" still falls back to a supported "zh-TW", which is written in Traditional script.
+    /// </para>
     /// </remarks>
     /// <param name="requestedTag">The normalized requested culture tag.</param>
     /// <param name="supportedTag">The candidate supported culture tag.</param>

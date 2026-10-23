@@ -2,33 +2,33 @@
 "@neolution-ch/csag-blueprint-infrastructure": minor
 ---
 
-Apply the blueprint model conventions after the model is complete
+Apply the blueprint model conventions once the model is complete, below the application's own configuration
 
-`BlueprintDbContext` applied its contract-driven conventions (multi-tenancy, contract constraints,
-localized texts, soft-delete filtering, sequential `Guid` keys) inline in `OnModelCreating`, so they
-only saw the entity types discovered up to that point. An application registering a type **after**
-its `base.OnModelCreating` call — the usual shape of `ApplyConfigurationsFromAssembly`, owned types
-and join entities, none of which need a `DbSet` — silently received none of them. For
-`ISoftDeletable` that meant no global query filter at all, so soft-deleted rows came back in every
-query.
+`BlueprintDbContext` used to apply multi-tenancy inline in `OnModelCreating`, so it only reached the
+entity types discovered at that point. An `IMustHaveTenant` entity your context registered *after*
+its `base.OnModelCreating` call without a `DbSet`, as `ApplyConfigurationsFromAssembly` often does,
+got no tenant filter at all, and its rows were visible to every tenant.
 
-The conventions now run from `BlueprintModelFinalizingConvention`, registered in
-`ConfigureConventions`, which applies them once EF Core has finished building the model.
-Registration order no longer matters.
+All blueprint conventions (multi-tenancy, contract constraints, localized texts, soft-delete
+filtering, sequential `Guid` keys) now run from `BlueprintModelFinalizingConvention`, registered in
+`ConfigureConventions`, once EF Core has finished building the model. Every entity type is covered,
+however it entered the model.
 
-The `Configure*` extension methods are unchanged and remain the entry point for contexts that do not
-derive from `BlueprintDbContext`.
+The conventions are applied at EF Core's convention level, so your own configuration wins even
+though they run last. That applies to explicit fluent configuration and data annotations, and to
+the `Configure*` extension methods when you call them directly. A tenant relationship you map yourself
+keeps its navigation and delete behavior, a different `InternalName` length or index name is kept,
+and so on. Owned types are supported; they carry no filters of their own, as EF Core requires.
 
-**When upgrading:** a context overriding `ConfigureConventions` must call
-`base.ConfigureConventions`, or no conventions are applied. Entity types that were previously missed
-now gain a soft-delete filter, a `DeletedAt` index and a `NEWSEQUENTIALID()` key default, which
-produces a migration.
+**When upgrading:**
 
-`ConfigureGuidPrimaryKeyDefaults` is applied only when the context runs on SQL Server.
-`NEWSEQUENTIALID()` does not exist elsewhere, and other providers fail late rather than loudly:
-SQLite accepts the generated DDL and then rejects every insert with a `DbUpdateException`.
-
-The localized-text queries compare language codes case-insensitively on every provider. SQL equality
-follows the database collation, so under a case-sensitive one — SQLite's default, and a valid SQL
-Server choice — a stored `DE` resolved through the in-memory helper but to `null` in SQL. Language
-tags are case-insensitive by definition, so the query side was the one that was wrong.
+- A context overriding `ConfigureConventions` must call `base.ConfigureConventions`, or no blueprint
+  conventions are applied, tenant isolation included.
+- An unnamed query filter of your own on an `IMustHaveTenant` entity now makes the model fail to
+  build, because EF Core does not allow unnamed and named filters on the same entity. Register it
+  under a name (`HasQueryFilter("Archived", e => !e.Archived)`). Previously such a filter replaced the
+  tenant filter without warning.
+- Generate an EF Core migration. Tenant-owned entities registered without a `DbSet` gain their
+  `TenantId` index and tenant foreign key. An entity with a `Tenant` navigation now shares the single
+  `TenantId` foreign key instead of getting a second, shadow `TenantId1` one, so the migration drops
+  the `TenantId1` column.

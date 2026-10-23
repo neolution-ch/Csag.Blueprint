@@ -8,56 +8,42 @@ Add entity contracts for soft deletion, active ranges, internal names and locali
 New `Csag.Blueprint.Domain` contracts: `ISoftDeletable`, `IHasActiveRange`, `IHasInternalName`,
 `ILocalizedText` and `IHasLocalizedTexts<T>`.
 
-`Csag.Blueprint.Infrastructure` gains the matching model conventions
-(`ConfigureEntityFiltering`, `ConfigureLocalizedTextConventions`, `ConfigureContractConstraints`,
-`ConfigureGuidPrimaryKeyDefaults`) and query extensions (`WhereNotDeleted`, `WhereActiveNow`,
-`IncludeCurrentLanguageText`, …). `BlueprintDbContext` applies all of them automatically.
+`Csag.Blueprint.Infrastructure` gains the matching model conventions (`ConfigureEntityFiltering`,
+`ConfigureLocalizedTextConventions`, `ConfigureContractConstraints`, `ConfigureGuidPrimaryKeyDefaults`)
+and query extensions (`WhereNotDeleted`, `WhereActiveNow`, `IncludeCurrentLanguageText`,
+`SelectWithCurrentLanguageText`, …). `BlueprintDbContext` applies the conventions automatically.
 
-Both blueprint-owned global query filters are now **named** (`BlueprintQueryFilters.Tenant` and
-`BlueprintQueryFilters.SoftDelete`), so a query can opt out of one without losing the other. Use
-`IgnoreSoftDeleteFilter()` / `OnlySoftDeleted()` to reach soft-deleted rows instead of the
-parameterless `IgnoreQueryFilters()`, which also disables tenant isolation.
+- **Named query filters.** Both blueprint-owned global query filters are registered under a name
+  (`BlueprintQueryFilters.Tenant` and `BlueprintQueryFilters.SoftDelete`), so a query can opt out of
+  one without losing the other. Use `IgnoreSoftDeleteFilter()` / `OnlySoftDeleted()` to reach
+  soft-deleted rows; the parameterless `IgnoreQueryFilters()` also disables tenant isolation.
+- **Soft deletion and active ranges.** `ISoftDeletable` entities get the soft-delete filter and an
+  `IX_{table}_DeletedAt` index. `IHasActiveRange` deliberately gets no filter, only a composite
+  `IX_{table}_ActiveRange` index: the point in time an active range is evaluated against is the
+  caller's choice, so use `WhereActiveNow()` / `WhereActiveAt()` / `WhereActiveInRange()`.
+- **Inheritance.** The filters are registered on the root of an inheritance hierarchy, which is the
+  only place EF Core allows them, and derived types inherit them. A hierarchy that adopts
+  `ISoftDeletable` or `IMustHaveTenant` *below* its root cannot be filtered by EF Core and fails at
+  model build with an explanatory message.
+- **Localized texts.** `ConfigureLocalizedTextConventions` cascades deletes from an entity to its
+  texts and adds a per-language unique index, using whatever foreign key the relationship has.
+  `IncludeCurrentLanguageText`, `WhereHasCurrentLanguageText`, `CurrentLanguageTextExpression` and
+  `SelectWithCurrentLanguageText` rank texts the same way, inside the EF Core query: exact current
+  language, then the same language in another region (including the bare code), then the exact
+  fallback, then the fallback's language. These compare language codes case-insensitively on every
+  provider; the single-language helpers (`IncludeTextsForLanguage`, `WhereHasTextForLanguage`, …)
+  compare as the database collation does.
+- **Language providers.** `ICurrentLanguageProvider` supplies the current and fallback language.
+  `DefaultLanguageProvider` reads `CultureInfo.CurrentUICulture` and falls back to a configured code
+  for the invariant culture; `ExplicitLanguageProvider` covers call sites that already know the
+  language, such as an endpoint taking it as a parameter.
+- **Sequential keys on SQL Server.** `ConfigureGuidPrimaryKeyDefaults` gives every single-column
+  `Guid` primary key a `NEWSEQUENTIALID()` column default, for inserts that bypass EF Core. EF Core
+  keeps assigning keys client-side on `Add`, so an added entity's key is usable before `SaveChanges`.
+  Keys that declare a default or `ValueGeneratedNever()`, and keys that are also foreign keys (such as
+  an owned type's), are left alone. `BlueprintDbContext` applies it only on SQL Server, where the
+  function exists.
 
-`SelectWithCurrentLanguageText()` and `CurrentLanguageTextExpression()` resolve the localized text
-fallback **inside** an EF Core query, so applications no longer have to hand-write the ranking
-inline to keep it translatable. The ranking is now restricted to the four supported tiers (exact
-current language → same language in another region, including the bare language code → exact
-fallback → same language as the fallback): an entity that only has texts in an unrelated language
-now yields `null` instead of an arbitrary translation. `WhereHasCurrentLanguageText()` follows the
-same language matching and no longer requires an exact language-code match, so a `de` text now
-satisfies a current language of `de-CH`.
-
-`DefaultLanguageProvider` now actually reads `CultureInfo.CurrentUICulture`, as its documentation
-always claimed, and falls back to a configured language code for the invariant culture. Its
-two-argument constructor is replaced by a single fallback code. The new `ExplicitLanguageProvider`
-covers call sites that already know the language, such as an endpoint taking it as a parameter.
-
-**Removed:** `StaticLocalizationExtensions` (ambient service-locator state; register an
-`ICurrentLanguageProvider` in DI instead) and `QueryStringExtensions.StartsWithQuery` (a custom
-method EF Core could not translate). `ConfigureLocalizedTextIndexes` is gone — its index duplicated
-one already created by `ConfigureLocalizedTextConventions`.
-
-`ConfigureLocalizedTextConventions` resolves the localized-text foreign key from the relationship
-EF Core has discovered (or the application configured) instead of assuming it is named
-`<Owner>Id`. Entities whose foreign key is named otherwise were previously skipped in silence, so
-they got no cascade delete and no per-language unique index. If no relationship and no
-conventionally named property can be found, it now throws instead of skipping.
-
-`ConfigureGuidPrimaryKeyDefaults` also leaves keys that declare an explicit `HasDefaultValue(...)`
-untouched, as its documentation always promised. Previously only `HasDefaultValueSql(...)` was
-honoured, and adding `NEWSEQUENTIALID()` on top of a CLR default made EF Core throw when the model
-was built.
-
-Both blueprint-owned global query filters are now registered on the **root** of an inheritance
-hierarchy rather than on every mapped type. EF Core only permits a query filter on the root, so a
-consumer whose TPH or TPT hierarchy adopted `ISoftDeletable` or `IMustHaveTenant` previously could
-not build their context at all ("A filter may only be applied to the root entity type"). Derived
-types inherit the root's filter. A hierarchy that adopts one of these contracts *below* its root
-cannot be filtered by EF Core at all, and now fails at model build with an explanatory message
-instead of silently going unfiltered. The contract indexes are likewise defined once, on the
-topmost type declaring the contract, instead of once per mapped type.
-
-Consuming applications need their own EF Core migration: the new contracts add columns to entities
-that adopt them, `ConfigureEntityFiltering` now also creates `IX_{table}_DeletedAt` and the
-composite `IX_{table}_ActiveRange`, and every single-column `Guid` primary key in the model gets a
-`NEWSEQUENTIALID()` default.
+**When upgrading:** generate an EF Core migration. On SQL Server, every single-column `Guid` primary
+key gains the `NEWSEQUENTIALID()` default, and entities adopting the new contracts gain their columns
+and indexes.

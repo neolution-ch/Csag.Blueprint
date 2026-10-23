@@ -15,6 +15,10 @@ It contains the reusable EF Core persistence backbone, session/auth infrastructu
 | `BlueprintDbContext<TAppTenant, TAppUser, TAppRole>` | Shared EF Core base context that owns the blueprint persistence model. |
 | `Blueprint*Configuration` classes | EF Core mappings for blueprint-owned entities and inheritance roots. |
 | `MultiTenancyModelBuilderExtensions` | Applies tenant filters/indexing/model conventions for tenant-scoped entities. See [Data isolation topology](#data-isolation-topology) for the database-per-tenant option. |
+| `EntityFilteringModelBuilderExtensions` | Registers the named soft-delete query filter and creates the supporting `IX_{table}_DeletedAt` and composite `IX_{table}_ActiveRange` indexes for `ISoftDeletable` / `IHasActiveRange`. |
+| `LocalizationModelBuilderExtensions` | Wires `IHasLocalizedTexts` entities to their `ILocalizedText` side, with the per-language unique constraint and indexes. |
+| `ContractModelBuilderExtensions` | Applies the model conventions the domain contracts imply (`IHasInternalName` constraints, localized text constraints). |
+| `KeyConventionModelBuilderExtensions` | On SQL Server, gives every single-column `Guid` primary key a `NEWSEQUENTIALID()` column default. This applies to **all** entities, not only contract adopters. EF Core still assigns the key client-side on `Add`; the default serves inserts that bypass EF Core. |
 
 ### Data isolation topology
 
@@ -43,6 +47,124 @@ modelBuilder.ConfigureBlueprintMultiTenancy<ApplicationTenant, BusinessDbContext
 Note that `IMustHaveTenant` is **not** a synonym for "shardable". Some tenant-owned entities are
 identity concerns — a service account is tenant-scoped but authentication needs it, so it must stay in
 the central database. Classify each entity by plane before splitting anything.
+
+### Named global query filters
+
+Both blueprint-owned global filters are registered under a name (`BlueprintQueryFilters.Tenant` and
+`BlueprintQueryFilters.SoftDelete`) so a query can drop one without dropping the other. Parameterless
+`IgnoreQueryFilters()` disables *every* filter on the entity, which would silently remove tenant
+isolation — never use it to reach soft-deleted rows.
+
+```csharp
+// Reads deleted rows, still scoped to the current tenant.
+var pedalo = await context.Pedalos
+    .IgnoreSoftDeleteFilter()
+    .FirstOrDefaultAsync(p => p.PedaloId == id, ct);
+
+// Same, but restricted to the deleted rows only.
+var deleted = await context.Pedalos.OnlySoftDeleted().ToListAsync(ct);
+```
+
+There is deliberately no convenience extension for opting out of the tenant filter: crossing tenants
+must stay an explicit, reviewed `IgnoreQueryFilters([BlueprintQueryFilters.Tenant])` at the call site.
+
+EF Core does not allow an unnamed and a named query filter on the same entity. If your application
+adds its own filter to a tenant-owned or soft-deletable entity, register it under a name of its own
+(`HasQueryFilter("Archived", e => !e.Archived)`); an unnamed one makes the model fail to build. The
+`Tenant` and `SoftDelete` keys are reserved: a filter of yours registered under one of them would
+replace the blueprint's filter or be replaced by it, so that fails the model build too.
+
+### When the conventions are applied
+
+`BlueprintDbContext` does **not** apply the contract-driven conventions inside `OnModelCreating`. It
+registers `BlueprintModelFinalizingConvention` in `ConfigureConventions`, which applies them once EF
+Core has finished building the model.
+
+That covers every entity type however it entered the model: a `DbSet`, a configuration applied after
+your `base.OnModelCreating(builder)` call (the usual shape of `ApplyConfigurationsFromAssembly`), or
+an owned type. Applied inline instead, the conventions would only see the entity types discovered up
+to that point, and a type registered later would silently get none of them — for `IMustHaveTenant`
+no tenant filter, for `ISoftDeletable` no soft-delete filter.
+
+**Your own configuration wins.** Every setting is applied at EF Core's convention level, so anything
+you configure explicitly — fluent API or data annotations — takes precedence, even though the
+blueprint conventions run last. Map the tenant relationship yourself (with a `Tenant` navigation or
+a different delete behavior), give `InternalName` another length or an index another name, and your
+mapping is kept; the conventions only fill in what you left unconfigured.
+
+Owned types carry no query filters of their own (EF Core does not allow it); their rows are only
+reachable through the owner, whose filters apply. A primary key that is also a foreign key, such as an
+owned type's, gets no `NEWSEQUENTIALID()` default.
+
+A model convention is used rather than a replaced `IModelCustomizer` because registering that service
+means modifying `DbContextOptions` from `OnConfiguring`, which EF Core forbids once `DbContext`
+pooling is enabled:
+
+```
+'OnConfiguring' cannot be used to modify DbContextOptions when DbContext pooling is enabled.
+```
+
+Since `AddPooledDbContextFactory` is a normal way to register a context, that approach is not
+available to a library. A convention touches neither options nor the service provider, so it works
+under pooling.
+
+If you override `ConfigureConventions`, **call `base.ConfigureConventions`** — that is where the
+convention is registered, and without it none of the blueprint conventions, tenant isolation and
+soft-delete filtering included, are applied.
+
+Applications that do not derive from `BlueprintDbContext` can call the model-wide `Configure*`
+extension methods (`ConfigureBlueprintMultiTenancy`, `ConfigureEntityFiltering`,
+`ConfigureContractConstraints`, `ConfigureLocalizedTextConventions`, `ConfigureGuidPrimaryKeyDefaults`
+and their parts) directly from their own `OnModelCreating`. They configure at convention level too, so
+explicit configuration wins whether it comes before or after the call, but they only see the entity
+types registered so far — call them last. The per-entity helpers you call with type arguments
+(`ConfigureLocalizedTextRelationship`, `ConfigureLocalizedTextUniqueConstraint`, `ConfigureLocalization`)
+are explicit configuration of those types, like any fluent call: the last configuration of an aspect
+wins.
+
+### Query extensions for the domain contracts
+
+`EntityFilteringExtensions` and `LocalizationExtensions` provide the query-side counterparts to
+the `Csag.Blueprint.Domain` contracts:
+
+| Contract | Extensions |
+| --- | --- |
+| `ISoftDeletable` | `WhereNotDeleted()`, `WhereDeleted()`, `WhereDeletedBefore()` |
+| `IHasActiveRange` | `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveToday()`, `WhereActiveInRange()`, `WhereInactiveNow()`, `WhereActiveAndNotDeleted()` |
+| `IHasLocalizedTexts` / `ILocalizedText` | `SelectWithCurrentLanguageText()`, `CurrentLanguageTextExpression()`, `IncludeCurrentLanguageText()`, `WhereHasCurrentLanguageText()`, `GetCurrentLanguageText()`, `GetCurrentLanguageTextValue()` |
+
+`WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveInRange()` and `WhereInactiveNow()` compare against
+an instant. `WhereActiveToday()` deliberately compares against **midnight of the current UTC day**, so
+an entity whose range starts later today does **not** yet count as active — use `WhereActiveNow()` when
+you need instant precision.
+
+**`IHasActiveRange` is deliberately not a global query filter.** An active range is evaluated against
+a point in time chosen by the caller, and "now" is only one of them — availability searches look at a
+future window, and administrators legitimately need to see entities that are not active yet or no
+longer active. Pick the point in time explicitly with the `WhereActive*` extensions.
+
+Language resolution goes through `ICurrentLanguageProvider`; `DefaultLanguageProvider` reads
+`CultureInfo.CurrentUICulture` (set per request by the ASP.NET Core request localization middleware)
+and falls back to a configured language code when the culture is invariant. Use
+`ExplicitLanguageProvider` where the language comes from the call itself (an endpoint parameter,
+a user profile, a tenant setting), or register your own implementation in DI.
+
+The fallback ranking is exact current language → same language in another region (including the bare
+language code, so `de` matches a current language of `de-CH`) → exact fallback → same language as the
+fallback, compared case-insensitively. A language that matches none of these four tiers is **never**
+returned; the projection yields `null` instead of an arbitrary translation.
+
+`SelectWithCurrentLanguageText()` applies that ranking inside a single EF Core query, so the
+translation is resolved by the database rather than in memory:
+
+```csharp
+var cards = await context.Pedalos
+    .WhereActiveNow()
+    .SelectWithCurrentLanguageText<Pedalo, PedaloText, PedaloCard>(
+        languageProvider,
+        (pedalo, name) => new PedaloCard(pedalo.PedaloId, name ?? pedalo.InternalName))
+    .ToListAsync(ct);
+```
 
 ### Interceptors
 

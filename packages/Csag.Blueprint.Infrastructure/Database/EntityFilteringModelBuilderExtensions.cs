@@ -107,9 +107,24 @@ public static class EntityFilteringModelBuilderExtensions
         => ((IConventionModel)modelBuilder.Model).Builder;
 
     /// <summary>
-    /// Names <paramref name="index"/> <c>IX_{table}_{suffix}</c> after the table
-    /// <paramref name="entityType"/> maps to. Two kinds of entity type keep EF Core's default name,
-    /// which EF Core builds from the actual table and column names:
+    /// Names <paramref name="index"/> as <see cref="TableScopedIndexName"/> describes.
+    /// </summary>
+    /// <param name="index">The index to name, or <see langword="null"/> when it could not be configured.</param>
+    /// <param name="entityType">The entity type the index is declared on.</param>
+    /// <param name="suffix">The part of the name after the table name.</param>
+    internal static void HasTableScopedName(this IConventionIndexBuilder? index, IReadOnlyEntityType entityType, string suffix)
+    {
+        var name = TableScopedIndexName(entityType, suffix);
+        if (name != null)
+        {
+            index?.HasDatabaseName(name);
+        }
+    }
+
+    /// <summary>
+    /// Returns <c>IX_{table}_{suffix}</c> for an index on the table <paramref name="entityType"/> maps
+    /// to. Returns <see langword="null"/> for two kinds of entity type, whose index keeps EF Core's
+    /// default name, built from the actual table and column names:
     /// <list type="bullet">
     /// <item>one with no table of its own, such as an abstract table-per-concrete-type root, whose
     /// index EF Core names separately for each concrete table;</item>
@@ -118,19 +133,19 @@ public static class EntityFilteringModelBuilderExtensions
     /// contract.</item>
     /// </list>
     /// </summary>
-    /// <param name="index">The index to name, or <see langword="null"/> when it could not be configured.</param>
     /// <param name="entityType">The entity type the index is declared on.</param>
     /// <param name="suffix">The part of the name after the table name.</param>
-    internal static void HasTableScopedName(this IConventionIndexBuilder? index, IReadOnlyEntityType entityType, string suffix)
+    /// <returns>The index name, or <see langword="null"/> to keep EF Core's default.</returns>
+    internal static string? TableScopedIndexName(IReadOnlyEntityType entityType, string suffix)
     {
         var tableName = entityType.GetTableName();
         if (tableName == null
             || entityType.FindRowInternalForeignKeys(StoreObjectIdentifier.Table(tableName, entityType.GetSchema())).Any())
         {
-            return;
+            return null;
         }
 
-        index?.HasDatabaseName($"IX_{tableName}_{suffix}");
+        return $"IX_{tableName}_{suffix}";
     }
 
     /// <summary>

@@ -85,12 +85,18 @@ public static class LocalizationModelBuilderExtensions
         string foreignKeyPropertyName)
         where TLocalizedText : class, ILocalizedText
     {
-        var tableName = modelBuilder.Entity<TLocalizedText>().Metadata.GetTableName();
+        ArgumentNullException.ThrowIfNull(modelBuilder);
 
-        modelBuilder.Entity<TLocalizedText>()
+        var index = modelBuilder.Entity<TLocalizedText>()
             .HasIndex(foreignKeyPropertyName, nameof(ILocalizedText.LanguageCode))
-            .IsUnique()
-            .HasDatabaseName($"IX_{tableName}_{foreignKeyPropertyName}_LanguageCode_Unique");
+            .IsUnique();
+
+        var name = EntityFilteringModelBuilderExtensions.TableScopedIndexName(
+            index.Metadata.DeclaringEntityType, $"{foreignKeyPropertyName}_LanguageCode_Unique");
+        if (name != null)
+        {
+            index.HasDatabaseName(name);
+        }
 
         return modelBuilder;
     }

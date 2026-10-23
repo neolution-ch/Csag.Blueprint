@@ -26,6 +26,20 @@ public sealed class TpcConventionTests
         CreateScript().ShouldNotContain("IX__");
     }
 
+    [Fact]
+    public void LocalizedTextUniqueConstraintHelper_NamesTheIndexAfterEachConcreteTable()
+    {
+        using var context = new TpcCaptionDbContext(new DbContextOptionsBuilder<TpcCaptionDbContext>()
+            .UseSqlServer("Server=nowhere;Database=tpc-captions;Trusted_Connection=True;")
+            .Options);
+
+        var script = context.Database.GenerateCreateScript();
+
+        script.ShouldContain("[IX_ImageCaption_OwnerId_LanguageCode]");
+        script.ShouldContain("[IX_VideoCaption_OwnerId_LanguageCode]");
+        script.ShouldNotContain("IX__");
+    }
+
     // Generating the script opens no connection, so the server is never reached.
     private static string CreateScript()
     {

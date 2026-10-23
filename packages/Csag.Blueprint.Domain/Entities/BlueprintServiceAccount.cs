@@ -3,7 +3,8 @@ namespace Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Domain.Contracts;
 
 /// <summary>
-/// Represents a service account that can authenticate via JWT tokens.
+/// Represents a service account: a tenant-owned, non-human account that authenticates with a client id and secret
+/// for bearer tokens.
 /// </summary>
 public sealed class BlueprintServiceAccount : IMustHaveTenant, IAuditable
 {
@@ -28,7 +29,8 @@ public sealed class BlueprintServiceAccount : IMustHaveTenant, IAuditable
     public string ClientId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the hashed client secret (bcrypt).
+    /// Gets or sets the hash of the client secret, in ASP.NET Core Identity's <c>PasswordHasher</c> format. Written by
+    /// the package's credential intents, or by <c>SetClientSecret</c> in a data seed.
     /// </summary>
     public string ClientSecretHash { get; set; } = string.Empty;
 

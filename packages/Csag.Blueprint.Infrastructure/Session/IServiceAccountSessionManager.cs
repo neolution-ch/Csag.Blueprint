@@ -1,4 +1,4 @@
-namespace Csag.Blueprint.Application.Abstractions.Services;
+namespace Csag.Blueprint.Infrastructure.Session;
 
 /// <summary>
 /// Manages the lifecycle of server-side service-account sessions that back reference-style JWTs.
@@ -6,7 +6,12 @@ namespace Csag.Blueprint.Application.Abstractions.Services;
 /// server-side; deactivation, secret rotation, and explicit revocation drop the session so outstanding
 /// tokens stop working immediately instead of remaining valid until they expire.
 /// </summary>
-public interface IServiceAccountSessionManager
+/// <remarks>
+/// Applications reach these sessions only through the service-account intents
+/// (<c>IServiceAccountCredentials</c> and <c>IServiceAccountSessionLifecycle</c>), which decide when a session is
+/// tracked or revoked; the expired rows are deleted by <see cref="ExpiredSessionCleanupService{TContext}"/>.
+/// </remarks>
+internal interface IServiceAccountSessionManager
 {
     /// <summary>
     /// Tracks a new service-account session. Persists a tracking row and primes the fast-path
@@ -34,10 +39,10 @@ public interface IServiceAccountSessionManager
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Resolves a session key to the service account's CURRENT authorization state, or <see langword="null"/>
-    /// when the session is missing/revoked/expired or the account is missing or inactive. The returned roles,
-    /// permissions, and tenant are read from the database (never trusted from the token) so role/permission
-    /// changes and deactivation take effect per request.
+    /// Resolves a session key to the service account's CURRENT state, or <see langword="null"/> when the session is
+    /// missing/revoked/expired or the account is missing or inactive. The returned identity, roles, permissions, and
+    /// tenant are read from the database (never trusted from the token) so renames, role/permission changes and
+    /// deactivation take effect per request.
     /// </summary>
     /// <param name="sessionKey">
     /// The opaque session key from the token's session-id claim, in the form the claim is read: a token carrying
@@ -45,7 +50,7 @@ public interface IServiceAccountSessionManager
     /// is reported as "no session" rather than as an error, since no such session can have been tracked.
     /// </param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The resolved session authorization, or <see langword="null"/> if the request must be rejected.</returns>
+    /// <returns>The resolved session, or <see langword="null"/> if the request must be rejected.</returns>
     Task<ServiceAccountSessionValidation?> ValidateSessionAsync(string? sessionKey, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -68,40 +73,4 @@ public interface IServiceAccountSessionManager
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of sessions revoked.</returns>
     Task<int> RevokeServiceAccountSessionsAsync(Guid serviceAccountId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Removes expired service-account session tracking rows. The distributed-cache markers expire on their
-    /// own; this only cleans up the tracking table.
-    /// </summary>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The number of session rows removed.</returns>
-    Task<int> CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// The server-side authorization resolved for a valid service-account session. All values reflect the
-/// account's current database state at request time, not what was baked into the token at issuance.
-/// </summary>
-public sealed class ServiceAccountSessionValidation
-{
-    /// <summary>
-    /// Gets the service account the session belongs to.
-    /// </summary>
-    public required Guid ServiceAccountId { get; init; }
-
-    /// <summary>
-    /// Gets the tenant the service account is scoped to.
-    /// </summary>
-    public required Guid TenantId { get; init; }
-
-    /// <summary>
-    /// Gets the account's current role assignments.
-    /// </summary>
-    public required IReadOnlyList<string> Roles { get; init; }
-
-    /// <summary>
-    /// Gets the account's current explicit permission grants (role-derived permissions are added separately
-    /// by the permission claims transformation).
-    /// </summary>
-    public required IReadOnlyList<string> Permissions { get; init; }
 }

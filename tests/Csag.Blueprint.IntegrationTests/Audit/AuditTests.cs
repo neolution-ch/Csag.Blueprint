@@ -111,6 +111,71 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
     }
 
     [Fact]
+    public async Task SaveChanges_StoresNoExcludedUserFieldAnywhereInTheEntryAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange - each excluded field carries a value found nowhere else, so a copy of it anywhere in the
+        // stored event, not only in the column values, fails the assertion.
+        var email = $"audit-exclusions-{Guid.NewGuid():N}@example.com";
+        var excludedValues = new[] { $"hash-{Guid.NewGuid():N}", $"stamp-{Guid.NewGuid():N}", $"concurrency-{Guid.NewGuid():N}" };
+
+        using var scope = this.App.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+
+        context.Users.Add(new TestUser
+        {
+            Email = email,
+            UserName = email,
+            PasswordHash = excludedValues[0],
+            SecurityStamp = excludedValues[1],
+            ConcurrencyStamp = excludedValues[2],
+        });
+
+        // Act
+        await context.SaveChangesAsync(ct);
+
+        // Assert
+        var jsonData = await ReadSingleEntityAuditJsonAsync(context, email, ct);
+
+        ReadColumnValue(jsonData, "Email").ShouldBe(email, "The entry should still record the fields that are not excluded");
+        ShouldContainNone(jsonData, ["PasswordHash", "SecurityStamp", "ConcurrencyStamp", .. excludedValues]);
+    }
+
+    [Fact]
+    public async Task SaveChanges_StoresNoServiceAccountSecretHashAnywhereInTheEntryAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange
+        var name = $"Audit exclusions probe {Guid.NewGuid():N}";
+        var secretHash = $"secret-hash-{Guid.NewGuid():N}";
+
+        using var scope = this.App.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+        TenantContext.SetTenant(SeedData.TenantAId);
+
+        context.ServiceAccounts.Add(new BlueprintServiceAccount
+        {
+            Id = Guid.NewGuid(),
+            TenantId = SeedData.TenantAId,
+            Name = name,
+            ClientId = $"sa-audit-{Guid.NewGuid():N}",
+            ClientSecretHash = secretHash,
+            IsActive = true,
+        });
+
+        // Act
+        await context.SaveChangesAsync(ct);
+
+        // Assert
+        var jsonData = await ReadSingleEntityAuditJsonAsync(context, name, ct);
+
+        ReadColumnValue(jsonData, "Name").ShouldBe(name, "The entry should still record the fields that are not excluded");
+        ShouldContainNone(jsonData, ["ClientSecretHash", secretHash]);
+    }
+
+    [Fact]
     public async Task ForbiddenRequest_AuditLogIncludesUserIdAsync()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -278,6 +343,45 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
             .ShouldBeTrue($"Audit event JSON should carry '{fieldName}' at its root");
 
         return value.ValueKind == JsonValueKind.Null ? null : value.GetString();
+    }
+
+    /// <summary>
+    /// Reads the JSON of the one EF audit event whose JSON contains <paramref name="marker"/>.
+    /// </summary>
+    private static async Task<string> ReadSingleEntityAuditJsonAsync(TestDbContext context, string marker, CancellationToken ct)
+    {
+        var auditLogs = await context.AuditLogs
+            .Where(a => a.JsonData.Contains(marker) && a.EventType.StartsWith("TestDbContext"))
+            .Select(a => a.JsonData)
+            .ToListAsync(ct);
+
+        return auditLogs.ShouldHaveSingleItem("The save should write exactly one EF audit event");
+    }
+
+    /// <summary>
+    /// Reads one column value of the single entry of a stored EF audit event.
+    /// </summary>
+    private static string? ReadColumnValue(string jsonData, string columnName)
+    {
+        using var json = JsonDocument.Parse(jsonData);
+
+        var entry = json.RootElement.GetProperty("EntityFrameworkEvent").GetProperty("Entries").EnumerateArray().ShouldHaveSingleItem();
+        entry.GetProperty("ColumnValues").TryGetProperty(columnName, out var value)
+            .ShouldBeTrue($"The entry's column values should carry '{columnName}'");
+
+        return value.ValueKind == JsonValueKind.Null ? null : value.GetString();
+    }
+
+    /// <summary>
+    /// Asserts that none of <paramref name="forbidden"/> occurs anywhere in a stored audit event, neither as a
+    /// property name nor as a value.
+    /// </summary>
+    private static void ShouldContainNone(string jsonData, string[] forbidden)
+    {
+        foreach (var text in forbidden)
+        {
+            jsonData.ShouldNotContain(text, Case.Sensitive, $"The stored audit event should not contain '{text}' anywhere");
+        }
     }
 
     /// <summary>

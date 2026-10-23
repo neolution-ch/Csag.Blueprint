@@ -57,9 +57,10 @@ public sealed class TableViewColumnMetadata
     public TableViewFilterOperator? FilterOperator { get; set; }
 
     /// <summary>
-    /// Gets or sets the allowed values for enum or In-type filters.
+    /// Gets or sets the allowed values for enum or In-type filters, each with the label shown for it.
+    /// Filters match on <see cref="TableViewAllowedValue.Value"/>; labels are display text only.
     /// </summary>
-    public IEnumerable<string>? AllowedValues { get; set; }
+    public IReadOnlyList<TableViewAllowedValue>? AllowedValues { get; set; }
 
     /// <summary>
     /// Gets or sets the hint for the frontend about what kind of input control to render.
@@ -80,7 +81,9 @@ public sealed class TableViewColumnMetadata
     /// <summary>
     /// Creates a shallow copy of this column metadata.
     /// Used by request-time localization to produce per-request localized metadata without
-    /// mutating the instances owned by the (scoped) table view definition.
+    /// mutating the instances owned by the (scoped) table view definition. The copy shares the
+    /// <see cref="AllowedValues"/> list, whose <see cref="TableViewAllowedValue"/> items are
+    /// immutable; localization that changes their labels assigns the copy a new list.
     /// </summary>
     /// <returns>A new <see cref="TableViewColumnMetadata"/> with the same property values.</returns>
     public TableViewColumnMetadata Clone() => (TableViewColumnMetadata)this.MemberwiseClone();

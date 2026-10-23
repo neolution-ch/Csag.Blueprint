@@ -32,6 +32,8 @@ This is the line to hold when extending the packages. If a new type would need t
 | Tenant resolution | `ITenantResolver` *(in `Csag.Blueprint.Web`)* | how a request declares which tenant it belongs to — session claim, subdomain, path, header |
 | Authorization composition | `ITenantAuthorizationResolver`, `IRolePermissionResolver` | how roles map to permissions, and how scopes merge — including adding a hierarchy level |
 | Tenant data isolation | `IMustHaveTenant` + `ConfigureBlueprintMultiTenancy` | how rows are isolated. Pass `addTenantForeignKey: false` when tenant-owned data lives in a different database from the tenant table |
+| Session revocation | `ISessionRevocationParticipant` *(in `Csag.Blueprint.Application`)* | which of the application's own credentials end when sessions are revoked |
+| Session eligibility | `ISessionEligibility` *(in `Csag.Blueprint.Application`)* | which accounts may hold a session at all — asked at sign-in and at every sliding renewal |
 
 ## What this package owns
 
@@ -64,7 +66,7 @@ This is the line to hold when extending the packages. If a new type would need t
 | `BlueprintServiceAccountSession` | Tracks the server-side sessions behind reference-style service-account JWTs. |
 | `BlueprintAuditLog` | Persists audit events written by Audit.NET integration. |
 | `BlueprintResourceAccess` | Shared authorization/resource-access persistence model. |
-| `BlueprintServiceAccount` | Represents machine/service credentials for JWT-based authentication. |
+| `BlueprintServiceAccount` | A tenant-owned, non-human account that authenticates with a client id and secret for bearer tokens. Its credentials are managed through `IServiceAccountCredentials` (Csag.Blueprint.Application). |
 | `BlueprintTranslation` | Stores database-backed localization entries. |
 | `BlueprintTableViewPreference<TUser>` | Persists per-user table view preferences. |
 | `BlueprintTenantMembership<TUser, TTenant>` | Join entity linking users to tenants. |

@@ -22,9 +22,13 @@ namespace Csag.Blueprint.Web.Extensions
         public AuthMode CookieAuthMode { get; set; } = AuthMode.OptIn;
 
         /// <summary>
-        /// Gets or sets the auth mode for JWT Bearer authentication.
-        /// When <see cref="AuthMode.OptOut"/>, all authenticated endpoints accept JWT auth by default.
+        /// Gets or sets the auth mode for bearer token authentication (the <c>Bearer</c> selector scheme that
+        /// <c>AddBlueprintServiceAccountAuthentication</c> registers).
+        /// When <see cref="AuthMode.OptOut"/>, all authenticated endpoints accept bearer tokens by default.
         /// When <see cref="AuthMode.OptIn"/> (default), endpoints must explicitly declare it.
+        /// With both modes <see cref="AuthMode.OptOut"/>, endpoints list the one <c>SessionOrBearer</c> selector
+        /// scheme, which authenticates each request with the bearer token when it carries one and with the
+        /// session cookie otherwise.
         /// </summary>
         public AuthMode JwtAuthMode { get; set; } = AuthMode.OptIn;
 

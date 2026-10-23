@@ -23,14 +23,20 @@ public sealed class TableViewDataRequestValidator : Validator<TableViewDataReque
             .WithMessage("PageSize must be between 1 and 100");
 
         this.RuleForEach(x => x.SortColumns)
-            .ChildRules(s =>
-            {
-                s.RuleFor(c => c.ColumnName)
-                    .NotEmpty().WithMessage("Sort column name is required")
-                    .MaximumLength(100).WithMessage("Sort column name cannot exceed 100 characters");
+            .ChildRules(AddSortColumnRules);
+    }
 
-                s.RuleFor(c => c.Direction)
-                    .IsInEnum().WithMessage("Sort direction must be a valid value");
-            });
+    /// <summary>
+    /// Adds the rules every sort column of a table view request must satisfy.
+    /// </summary>
+    /// <param name="sortColumn">The validator of one sort column.</param>
+    internal static void AddSortColumnRules(InlineValidator<SortColumn> sortColumn)
+    {
+        sortColumn.RuleFor(c => c.ColumnName)
+            .NotEmpty().WithMessage("Sort column name is required")
+            .MaximumLength(100).WithMessage("Sort column name cannot exceed 100 characters");
+
+        sortColumn.RuleFor(c => c.Direction)
+            .IsInEnum().WithMessage("Sort direction must be a valid value");
     }
 }

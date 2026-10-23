@@ -33,9 +33,7 @@ public static class TestHostServicesExtensions
         builder.Services
             .AddTestHostPersistence(builder.Configuration)
             .AddTestHostIdentity(securitySettings)
-            .AddTestHostSessionAuthentication(
-                securitySettings.CookieSecurePolicy,
-                TimeSpan.FromHours(securitySettings.SessionExpirationHours))
+            .AddTestHostSessionAuthentication(securitySettings.CookieSecurePolicy)
             .AddTestHostAuthorizationPolicies()
             .AddTestHostHealthChecks()
             .AddBlueprintTableView(typeof(TestHostServicesExtensions).Assembly)

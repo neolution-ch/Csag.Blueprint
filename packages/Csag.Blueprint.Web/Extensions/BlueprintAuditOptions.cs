@@ -34,6 +34,11 @@ public sealed class BlueprintAuditOptions<TContext>
     /// Called within the <c>ForContext</c> configurator after standard blueprint field
     /// exclusions (PasswordHash, SecurityStamp, etc.) are applied.
     /// </summary>
+    /// <remarks>
+    /// Field exclusions cover the column values and changes, which are all an entry records. Do not call
+    /// <c>IncludeEntityObjects()</c> here: Audit.NET serializes an included entity object whole, so every
+    /// excluded field, the standard ones included, would be stored with it.
+    /// </remarks>
     /// <example>
     /// <code>
     /// options.EntityFieldConfigurator = config => config

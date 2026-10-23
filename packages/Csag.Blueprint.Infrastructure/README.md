@@ -112,10 +112,15 @@ If you override `ConfigureConventions`, **call `base.ConfigureConventions`** —
 convention is registered, and without it none of the blueprint conventions, tenant isolation and
 soft-delete filtering included, are applied.
 
-Applications that do not derive from `BlueprintDbContext` can call the `Configure*` extension methods
-directly from their own `OnModelCreating`. They configure at convention level too, so explicit
-configuration wins whether it comes before or after the call, but they only see the entity types
-registered so far — call them last.
+Applications that do not derive from `BlueprintDbContext` can call the model-wide `Configure*`
+extension methods (`ConfigureBlueprintMultiTenancy`, `ConfigureEntityFiltering`,
+`ConfigureContractConstraints`, `ConfigureLocalizedTextConventions`, `ConfigureGuidPrimaryKeyDefaults`
+and their parts) directly from their own `OnModelCreating`. They configure at convention level too, so
+explicit configuration wins whether it comes before or after the call, but they only see the entity
+types registered so far — call them last. The per-entity helpers you call with type arguments
+(`ConfigureLocalizedTextRelationship`, `ConfigureLocalizedTextUniqueConstraint`, `ConfigureLocalization`)
+are explicit configuration of those types, like any fluent call: the last configuration of an aspect
+wins.
 
 ### Query extensions for the domain contracts
 

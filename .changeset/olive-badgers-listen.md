@@ -16,7 +16,7 @@ however it entered the model.
 
 The conventions are applied at EF Core's convention level, so your own configuration wins even
 though they run last. That applies to explicit fluent configuration and data annotations, and to
-the `Configure*` extension methods when you call them directly. A tenant relationship you map yourself
+the model-wide `Configure*` extension methods when you call them directly. A tenant relationship you map yourself
 keeps its navigation and delete behavior, a different `InternalName` length or index name is kept,
 and so on. Owned types are supported; they carry no filters of their own, as EF Core requires.
 

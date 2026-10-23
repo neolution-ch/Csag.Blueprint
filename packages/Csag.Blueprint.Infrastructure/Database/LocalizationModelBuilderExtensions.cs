@@ -34,6 +34,11 @@ public static class LocalizationModelBuilderExtensions
     /// <summary>
     /// Configures relationships for entities implementing <see cref="IHasLocalizedTexts{TLocalizedText}"/>.
     /// Sets up the one-to-many relationship between entities and their localized texts.
+    /// <para>
+    /// Unlike the model-wide conventions, this is explicit configuration of the types you name, like any
+    /// fluent call: it overrides earlier configuration of the same aspects, and later configuration
+    /// overrides it.
+    /// </para>
     /// </summary>
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
@@ -75,6 +80,11 @@ public static class LocalizationModelBuilderExtensions
     /// <summary>
     /// Configures a composite unique constraint on the foreign key and language code
     /// to ensure only one text entry per language per entity.
+    /// <para>
+    /// Unlike the model-wide conventions, this is explicit configuration of the types you name, like any
+    /// fluent call: it overrides earlier configuration of the same aspects, and later configuration
+    /// overrides it.
+    /// </para>
     /// </summary>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>
     /// <param name="modelBuilder">The model builder to configure.</param>
@@ -104,6 +114,11 @@ public static class LocalizationModelBuilderExtensions
     /// <summary>
     /// Comprehensive configuration for localized text relationships including constraints, indexes and relationships.
     /// This is a convenience method that applies standard configuration for localization.
+    /// <para>
+    /// The relationship and unique constraint are explicit configuration of the types you name (see
+    /// <see cref="ConfigureLocalizedTextRelationship{TEntity, TLocalizedText}"/>); the text constraints
+    /// are applied model-wide at convention level.
+    /// </para>
     /// </summary>
     /// <typeparam name="TEntity">The entity type that has localized texts.</typeparam>
     /// <typeparam name="TLocalizedText">The localized text entity type.</typeparam>

@@ -24,11 +24,5 @@ public sealed class TestDbContext : BlueprintDbContext<TestTenant, TestUser, Tes
     /// <summary>
     /// Gets the tenant-owned sample vehicles.
     /// </summary>
-    /// <remarks>
-    /// The DbSet is required so the entity type is discovered by convention before
-    /// <see cref="BlueprintDbContext{TAppTenant, TAppUser, TAppRole}.OnModelCreating"/>
-    /// applies the multi-tenancy query filter to all
-    /// <see cref="Csag.Blueprint.Domain.Contracts.IMustHaveTenant"/> entities.
-    /// </remarks>
     public DbSet<TestVehicle> Vehicles => this.Set<TestVehicle>();
 }

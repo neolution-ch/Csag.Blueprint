@@ -41,6 +41,12 @@ dotnet pack -c Release -o ./nupkgs
 
 Requires the .NET SDK pinned in [global.json](global.json). Restore uses NuGet lockfiles (`packages.lock.json`); CI restores with `--locked-mode`, so run `dotnet restore` after changing dependencies to refresh the lockfiles.
 
+### Transitive pins
+
+To raise a package that only arrives through another dependency, usually for a security advisory, add a `PackageVersion` for it to `Directory.Packages.props`. Transitive pinning is enabled, so the version applies without a direct reference. Pack writes the pin into the nuspec of every package that resolves it, so consumers get the raised version too.
+
+Nobody has to remember to remove a pin. Once a month the **Refresh lockfiles** workflow tries each pin without it and opens a PR removing the pins whose absence leaves nothing vulnerable ([scripts/prune-transitive-pins.mjs](scripts/prune-transitive-pins.mjs)). Mark a pin held for another reason with `KeepPin="true"`. NuGet ignores metadata it does not know, so `Reason` and `RemoveWhen` can record why the pin exists for reviewers.
+
 ## Release process
 
 This repository follows the [neolution-ch release playbook](https://github.com/neolution-ch/release-playbook) (Changesets, NuGet variant):

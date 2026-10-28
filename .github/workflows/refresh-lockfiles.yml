@@ -20,6 +20,9 @@ name: Refresh lockfiles
 #         Directory.Packages.props is an exact pin, so re-evaluation normally
 #         reproduces an identical graph. It is kept for the narrow case where a
 #         locked version has been unlisted from the feed and has to re-resolve.
+#
+# A second job, prune-transitive-pins, removes the NuGet transitive pins that are
+# no longer needed and opens its own PR. See the comment above that job.
 
 on:
   # First day of every month at 08:00 UTC. Running monthly (rather than weekly)
@@ -180,3 +183,77 @@ jobs:
             > Note on release age: Dependabot enforces a 14-day cooldown on its
             > own PRs, and pnpm's `minimumReleaseAge` gates what this job can
             > resolve.
+
+  # ---------------------------------------------------------------------------
+  # Transitive pins
+  #
+  # A transitive pin is a <PackageVersion> for a package that no project
+  # references directly. It raises a version that a dependency pulls in, usually
+  # to clear a security advisory. NuGet resolves the lowest version a dependency
+  # allows, so the pin stays necessary until the parent package itself requires
+  # a fixed version, and nothing notices when that happens. Dependabot keeps
+  # bumping the pin instead.
+  #
+  # This job deletes each pin in turn, re-resolves the lock files and runs the
+  # NuGet vulnerability scan. A deletion is kept when the scan reports nothing
+  # new. A pin marked KeepPin="true" is left alone. The details are in
+  # scripts/prune-transitive-pins.mjs.
+  #
+  # It opens its own PR rather than adding to the refresh PR. Pack writes
+  # transitive pins into the nuspec of every package that resolves them, so
+  # removing one changes the published packages and needs a release. A
+  # reviewer can also turn a removal down without holding up the refresh.
+  # ---------------------------------------------------------------------------
+  prune-transitive-pins:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # One restore and one vulnerability scan per pin, about a minute each.
+      - name: Prune transitive pins
+        run: node scripts/prune-transitive-pins.mjs "$RUNNER_TEMP/prune-report.md"
+
+      # Same rules as the changeset step of the refresh job above.
+      - name: Add changeset
+        env:
+          PR_TITLE: "chore: remove transitive pins that are no longer needed"
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No pin was removed, so no changeset is needed"
+            exit 0
+          fi
+          if [ -n "$(git status --porcelain -- 'packages/*/packages.lock.json')" ]; then
+            export WORKSPACE_PACKAGES_CHANGED=true
+          fi
+          node scripts/generate-dependabot-changeset.mjs
+
+      - name: Generate App Token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.CHANGESETS_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGESETS_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # With no pin removed there is no diff, and the action opens no PR.
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: chore/prune-transitive-pins
+          delete-branch: true
+          commit-message: "chore: remove transitive pins that are no longer needed"
+          title: "chore: remove transitive pins that are no longer needed"
+          body-path: ${{ runner.temp }}/prune-report.md

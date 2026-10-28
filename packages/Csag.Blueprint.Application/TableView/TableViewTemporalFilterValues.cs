@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Application.TableView;
 
 using System.Globalization;
+using Csag.Blueprint.Application.Json;
 using Csag.Blueprint.Domain.Time;
 
 /// <summary>
@@ -14,8 +15,6 @@ using Csag.Blueprint.Domain.Time;
 internal static class TableViewTemporalFilterValues
 {
     private const string DateFormat = "yyyy-MM-dd";
-
-    private static readonly string[] LocalReadingFormats = ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm"];
 
     private static readonly string[] OffsetFormats =
     [
@@ -52,18 +51,23 @@ internal static class TableViewTemporalFilterValues
     /// <param name="targetType">The column's type, nullable or not.</param>
     /// <param name="timeZone">The zone an instant given without an offset is read in.</param>
     /// <param name="result">The parsed value, of the column's underlying type.</param>
+    /// <param name="namesNoInstant">
+    /// Whether the value is a well-formed local reading for an instant column that does not exist in
+    /// <paramref name="timeZone"/> (it falls in a spring-forward gap), so no instant can equal it.
+    /// </param>
     /// <returns><see langword="true"/> when the value parses for the column's type.</returns>
-    public static bool TryParseValue(string value, Type targetType, TimeZoneInfo timeZone, out object? result)
+    public static bool TryParseValue(string value, Type targetType, TimeZoneInfo timeZone, out object? result, out bool namesNoInstant)
     {
         var type = Nullable.GetUnderlyingType(targetType) ?? targetType;
         var text = value.Trim();
         result = null;
+        namesNoInstant = false;
 
         if (type == typeof(DateOnly) && TryParseDate(text, out var date))
         {
             result = date;
         }
-        else if (type == typeof(DateTime) && TryParseLocalReading(text, out var reading))
+        else if (type == typeof(DateTime) && LocalDateTimeFormat.TryParse(text, out var reading))
         {
             result = reading;
         }
@@ -73,6 +77,7 @@ internal static class TableViewTemporalFilterValues
         }
         else
         {
+            namesNoInstant = type == typeof(DateTimeOffset) && LocalDateTimeFormat.TryParse(text, out _);
             return false;
         }
 
@@ -125,17 +130,6 @@ internal static class TableViewTemporalFilterValues
         return true;
     }
 
-    private static bool TryParseLocalReading(string text, out DateTime reading)
-    {
-        if (DateTime.TryParseExact(text, LocalReadingFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out reading))
-        {
-            reading = DateTime.SpecifyKind(reading, DateTimeKind.Unspecified);
-            return true;
-        }
-
-        return false;
-    }
-
     private static bool TryParseInstant(string text, TimeZoneInfo timeZone, out DateTimeOffset instant)
     {
         if (DateTimeOffset.TryParseExact(text, OffsetFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out instant)
@@ -145,7 +139,7 @@ internal static class TableViewTemporalFilterValues
             return true;
         }
 
-        return TryParseLocalReading(text, out var reading) && ZonedTime.TryToInstant(reading, timeZone, out instant);
+        return LocalDateTimeFormat.TryParse(text, out var reading) && ZonedTime.TryToInstant(reading, timeZone, out instant);
     }
 }
 

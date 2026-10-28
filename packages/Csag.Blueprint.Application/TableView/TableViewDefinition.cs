@@ -396,7 +396,7 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
             ?? throw new InvalidOperationException("Failed to rewrite lambda expression body.");
     }
 
-    private static BinaryExpression? BuildEqualsExpression(Expression propertyAccess, string filterValue, string dataType, TimeZoneInfo timeZone)
+    private static Expression? BuildEqualsExpression(Expression propertyAccess, string filterValue, string dataType, TimeZoneInfo timeZone)
     {
         object? value = null;
         var parsed = false;
@@ -416,7 +416,14 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         }
         else if (dataType == TableViewDataTypes.Date || dataType == TableViewDataTypes.LocalDateTime || dataType == TableViewDataTypes.Instant)
         {
-            parsed = TableViewTemporalFilterValues.TryParseValue(filterValue, propertyAccess.Type, timeZone, out value);
+            parsed = TableViewTemporalFilterValues.TryParseValue(filterValue, propertyAccess.Type, timeZone, out value, out var namesNoInstant);
+
+            // A reading in a spring-forward gap is well-formed but no instant equals it: match nothing,
+            // rather than dropping the filter and matching every row.
+            if (namesNoInstant)
+            {
+                return Expression.Constant(false);
+            }
         }
         else if (dataType == TableViewDataTypes.Guid)
         {

@@ -46,8 +46,9 @@ public static class TimeZoneRuleBuilderExtensions
 
     /// <summary>
     /// Requires an IANA time zone id this host can resolve, such as <c>Europe/Zurich</c>, and rejects Windows
-    /// ids such as <c>W. Europe Standard Time</c> (see <see cref="ZonedTime.TryFindIanaTimeZone"/>). A null
-    /// value passes, so the rule fits optional fields; add <c>NotEmpty</c> to require one.
+    /// ids such as <c>W. Europe Standard Time</c> (see <see cref="ZonedTime.TryFindIanaTimeZone"/>). Meant for
+    /// zones that are stored, such as a tenant's or a venue's. A null value passes, so the rule fits optional
+    /// fields; add <c>NotEmpty</c> to require one.
     /// </summary>
     /// <typeparam name="T">The type being validated.</typeparam>
     /// <param name="rule">The rule builder for the zone id property.</param>
@@ -58,6 +59,26 @@ public static class TimeZoneRuleBuilderExtensions
 
         return rule
             .Must(id => id is null || ZonedTime.TryFindIanaTimeZone(id, out _))
+            .WithMessage("'{PropertyName}' must be an IANA time zone id, such as Europe/Zurich.");
+    }
+
+    /// <summary>
+    /// Requires a value with the form of an IANA zone id (see <see cref="ZonedTime.IsWellFormedIanaTimeZoneId"/>),
+    /// whether or not this host's time zone data knows it. Meant for a zone a request names for the request
+    /// alone, such as the viewer's browser zone: browsers can know zones the server's data does not yet, so
+    /// the server falls back to another zone for an unknown id instead of refusing the request. A zone that
+    /// is stored (a tenant's or a venue's) must resolve: use <see cref="MustBeIanaTimeZone{T}"/> for those. A
+    /// null value passes.
+    /// </summary>
+    /// <typeparam name="T">The type being validated.</typeparam>
+    /// <param name="rule">The rule builder for the zone id property.</param>
+    /// <returns>The rule builder options for continued chaining.</returns>
+    public static IRuleBuilderOptions<T, string?> MustBeWellFormedIanaTimeZone<T>(this IRuleBuilder<T, string?> rule)
+    {
+        ArgumentNullException.ThrowIfNull(rule);
+
+        return rule
+            .Must(id => id is null || ZonedTime.IsWellFormedIanaTimeZoneId(id))
             .WithMessage("'{PropertyName}' must be an IANA time zone id, such as Europe/Zurich.");
     }
 

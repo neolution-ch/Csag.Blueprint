@@ -34,6 +34,7 @@ public sealed class TimeZoneRuleBuilderExtensionsTests
     [Theory]
     [InlineData("W. Europe Standard Time")]
     [InlineData("Europe/Atlantis")]
+    [InlineData("Europe//Zurich")]
     [InlineData("")]
     [InlineData("+02:00")]
     public void MustBeIanaTimeZone_WindowsIdOrUnknownId_Fails(string timeZone)
@@ -44,6 +45,40 @@ public sealed class TimeZoneRuleBuilderExtensionsTests
         validator.TestValidate(new Model { TimeZone = timeZone })
             .ShouldHaveValidationErrorFor(x => x.TimeZone)
             .WithErrorMessage("'Time Zone' must be an IANA time zone id, such as Europe/Zurich.");
+    }
+
+    [Theory]
+    [InlineData("Europe/Zurich")]
+    [InlineData("Mars/Olympus_Mons")] // no tz database knows it, but it has the form of an id
+    [InlineData(null)]
+    public void MustBeWellFormedIanaTimeZone_IdOfTheIanaFormOrNull_Passes(string? timeZone)
+    {
+        var validator = new InlineValidator<Model>();
+        validator.RuleFor(x => x.TimeZone).MustBeWellFormedIanaTimeZone();
+
+        validator.TestValidate(new Model { TimeZone = timeZone }).ShouldNotHaveValidationErrorFor(x => x.TimeZone);
+    }
+
+    [Theory]
+    [InlineData("W. Europe Standard Time")]
+    [InlineData("Europe//Zurich")]
+    [InlineData("right/UTC")]
+    [InlineData("")]
+    public void MustBeWellFormedIanaTimeZone_ValueOfAnotherForm_Fails(string timeZone)
+    {
+        var validator = new InlineValidator<Model>();
+        validator.RuleFor(x => x.TimeZone).MustBeWellFormedIanaTimeZone();
+
+        validator.TestValidate(new Model { TimeZone = timeZone }).ShouldHaveValidationErrorFor(x => x.TimeZone);
+    }
+
+    [Fact]
+    public void MustBeIanaTimeZone_WellFormedButUnknownId_Fails()
+    {
+        var validator = new InlineValidator<Model>();
+        validator.RuleFor(x => x.TimeZone).MustBeIanaTimeZone();
+
+        validator.TestValidate(new Model { TimeZone = "Mars/Olympus_Mons" }).ShouldHaveValidationErrorFor(x => x.TimeZone);
     }
 
     [Theory]

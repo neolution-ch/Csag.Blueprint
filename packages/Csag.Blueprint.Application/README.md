@@ -6,7 +6,7 @@ This package provides **application-layer abstractions** for CSAG Blueprint-base
 
 ## JSON
 
-`BlueprintJsonOptions` holds the shared System.Text.Json conventions: camelCase names, string enums, and `LocalDateTimeJsonConverter`, which writes a `DateTime` as a local reading `yyyy-MM-ddTHH:mm:ss` (no fraction, no offset) and reads `yyyy-MM-ddTHH:mm[:ss]`. A value with a UTC offset or `Z` is refused with a `JsonException`, which the API answers with 400. `DateTimeOffset` is unaffected.
+`BlueprintJsonOptions` holds the shared System.Text.Json conventions: camelCase names, string enums, and `LocalDateTimeJsonConverter`, which writes a `DateTime` as a local reading `yyyy-MM-ddTHH:mm:ss` (no fraction, no offset) and reads `yyyy-MM-ddTHH:mm[:ss]`. A value with a UTC offset or `Z` is refused with a `JsonException`, which the API answers with 400. `DateTimeOffset` is unaffected. `LocalDateTimeFormat` holds that text form (`Format`, `TryParse`, `GetInvalidMessage`), so query binding and table view filters accept exactly the same values.
 
 ## Claims
 
@@ -117,7 +117,7 @@ A `DateRange` filter value is `from,to` in `yyyy-MM-dd`, either side optional. I
 - `localDateTime`: `value >= from 00:00` and `value < (to + 1 day) 00:00`, on the reading as stored; no zone is involved.
 - `instant`: `value >= start of from` and `value < start of (to + 1 day)`, with the days as they begin in the effective zone (`ZonedTime.DayRange`), so a day can span 23 or 25 hours.
 
-The effective zone is `TableViewQueryRequest.TimeZone`; when it is null, the executor asks `ITenantTimeZoneProvider`, which answers UTC unless the application registers its own. `TableViewDataRequest` and `TableViewExportRequest` carry it as an optional `timeZone` field (an IANA id, normally the viewer's browser zone); an id that is not IANA is a 400 validation error. An `Equals` filter on an instant column reads a value without an offset in the same zone.
+The effective zone is `TableViewQueryRequest.TimeZone`; when it is null, the executor asks `ITenantTimeZoneProvider`, which answers UTC unless the application registers its own. `TableViewDataRequest` and `TableViewExportRequest` carry it as an optional `timeZone` field (an IANA id, normally the viewer's browser zone); a value without the IANA form is a 400 validation error, while a well-formed id this host's time zone data does not know (browsers can be ahead of the server) falls back to the tenant zone with a warning logged. An `Equals` or `In` filter on an instant column reads a value without an offset in the same zone; a reading that does not exist there (a spring-forward gap) matches no row.
 
 `ITableViewDefinition.GetFilterExpression` takes the zone. `TableViewDefinition` keeps a two-argument overload, for tests and other zone-free callers, that evaluates instant filters in UTC.
 

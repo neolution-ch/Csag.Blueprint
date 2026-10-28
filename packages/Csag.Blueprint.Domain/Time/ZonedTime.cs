@@ -24,6 +24,18 @@ using System.Diagnostics.CodeAnalysis;
 public static class ZonedTime
 {
     /// <summary>
+    /// Files in a tz database directory that are not zones: the host's own zone, the template for POSIX
+    /// TZ strings, and the placeholder zone of the distribution build.
+    /// </summary>
+    private static readonly string[] NonZoneIds = ["localtime", "posixrules", "Factory"];
+
+    /// <summary>
+    /// Directories in some tz database installations that repeat every zone with other semantics: POSIX
+    /// time without leap seconds, and time with them.
+    /// </summary>
+    private static readonly string[] NonZonePrefixes = ["posix/", "right/"];
+
+    /// <summary>
     /// Converts a local reading in a zone to the instant it denotes.
     /// </summary>
     /// <param name="localReading">The clock reading at the place. Its <see cref="DateTime.Kind"/> is ignored.</param>
@@ -50,7 +62,16 @@ public static class ZonedTime
             ? zone.GetAmbiguousTimeOffsets(reading).Max()
             : zone.GetUtcOffset(reading);
 
-        return TryCreateUtcInstant(reading.Ticks - offset.Ticks, out instant);
+        // On Linux, IsInvalidTime and GetUtcOffset miss past gaps in zones whose current rules have no
+        // daylight saving time (America/Chihuahua before 2022), while converting an instant back to a
+        // reading uses every recorded transition. A reading only exists when its instant reads back as it.
+        if (!TryCreateUtcInstant(reading.Ticks - offset.Ticks, out instant) || ToLocalReading(instant, zone) != reading)
+        {
+            instant = default;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -104,14 +125,49 @@ public static class ZonedTime
     }
 
     /// <summary>
+    /// Determines whether an id has the form of an IANA zone id, whether or not this host's time zone data
+    /// knows it: one or more names of ASCII letters, digits, <c>_</c>, <c>+</c> and <c>-</c>, separated by
+    /// single slashes, such as <c>Europe/Zurich</c>, <c>America/Argentina/Buenos_Aires</c>, <c>Etc/GMT+5</c>
+    /// or <c>UTC</c>. The tz database's files that are not zones (<c>localtime</c>, <c>posixrules</c>,
+    /// <c>Factory</c>, and the <c>posix/</c> and <c>right/</c> trees) are not ids.
+    /// </summary>
+    /// <remarks>
+    /// Use it to tell an id this host cannot resolve, which newer time zone data elsewhere (a browser) may know,
+    /// from a value that is no id at all.
+    /// </remarks>
+    /// <param name="id">The candidate id.</param>
+    /// <returns><see langword="true"/> when <paramref name="id"/> has the form of an IANA zone id.</returns>
+    public static bool IsWellFormedIanaTimeZoneId([NotNullWhen(true)] string? id)
+    {
+        if (string.IsNullOrEmpty(id) || id[0] == '/' || id[^1] == '/')
+        {
+            return false;
+        }
+
+        for (var index = 0; index < id.Length; index++)
+        {
+            var character = id[index];
+            var isNameCharacter = char.IsAsciiLetterOrDigit(character) || character is '_' or '+' or '-';
+            var isSeparator = character == '/' && id[index - 1] != '/';
+            if (!isNameCharacter && !isSeparator)
+            {
+                return false;
+            }
+        }
+
+        return !Array.Exists(NonZoneIds, nonZone => string.Equals(id, nonZone, StringComparison.OrdinalIgnoreCase))
+            && !Array.Exists(NonZonePrefixes, prefix => id.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// Finds a time zone by its IANA id, rejecting Windows ids such as <c>W. Europe Standard Time</c> that
     /// <see cref="TimeZoneInfo.FindSystemTimeZoneById"/> also accepts.
     /// </summary>
     /// <remarks>
-    /// The id must match the zone's id exactly, including case, so one zone is never stored or compared
-    /// under two spellings. Backward links such as <c>UTC</c> and <c>Asia/Calcutta</c>, which browsers may
-    /// report, are accepted. Resolution needs the host's time zone data (the <c>tzdata</c> package on Linux,
-    /// ICU on Windows); without it every id is rejected.
+    /// The id must be well-formed (<see cref="IsWellFormedIanaTimeZoneId"/>) and match the zone's id exactly,
+    /// including case, so one zone is never stored or compared under two spellings. Backward links such as
+    /// <c>UTC</c> and <c>Asia/Calcutta</c>, which browsers may report, are accepted. Resolution needs the host's
+    /// time zone data (the <c>tzdata</c> package on Linux, ICU on Windows); without it every id is rejected.
     /// </remarks>
     /// <param name="id">The IANA zone id, for example <c>Europe/Zurich</c>.</param>
     /// <param name="zone">The zone when this method returns <see langword="true"/>.</param>
@@ -119,7 +175,10 @@ public static class ZonedTime
     public static bool TryFindIanaTimeZone(string? id, [NotNullWhen(true)] out TimeZoneInfo? zone)
     {
         zone = null;
-        if (string.IsNullOrWhiteSpace(id))
+
+        // On Linux the lookup reads the id as a path under the zoneinfo directory, so it also resolves
+        // spellings no browser accepts, such as Europe//Zurich, localtime or right/UTC.
+        if (!IsWellFormedIanaTimeZoneId(id))
         {
             return false;
         }
@@ -140,11 +199,15 @@ public static class ZonedTime
     private static DateTimeOffset StartOfDay(DateOnly date, TimeZoneInfo zone)
     {
         var midnight = date.ToDateTime(TimeOnly.MinValue);
-        if (!zone.IsInvalidTime(midnight))
+        if (TryToInstant(midnight, zone, out var instant))
         {
-            return TryToInstant(midnight, zone, out var instant)
-                ? instant
-                : ClampToRange(midnight.Ticks - zone.GetUtcOffset(midnight).Ticks);
+            return instant;
+        }
+
+        var estimate = midnight.Ticks - zone.GetUtcOffset(midnight).Ticks;
+        if (estimate < DateTime.MinValue.Ticks || estimate > DateTime.MaxValue.Ticks)
+        {
+            return ClampToRange(estimate);
         }
 
         // Midnight falls in a spring-forward gap, so the day starts at the transition: the first instant

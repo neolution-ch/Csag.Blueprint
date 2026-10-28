@@ -140,6 +140,7 @@ public sealed class TableViewExportRequestValidatorTests
     [Theory]
     [InlineData(null)]
     [InlineData("America/New_York")]
+    [InlineData("America/Coyhaique")] // newer than some hosts' time zone data; well-formed, so it passes
     public void Validate_TimeZoneOmittedOrIana_Passes(string? timeZone)
     {
         // Arrange

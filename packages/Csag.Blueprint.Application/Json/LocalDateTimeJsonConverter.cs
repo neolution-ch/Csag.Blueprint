@@ -1,6 +1,5 @@
 namespace Csag.Blueprint.Application.Json;
 
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -25,23 +24,12 @@ using System.Text.Json.Serialization;
 /// </remarks>
 public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
 {
-    private const string WriteFormat = "yyyy-MM-dd'T'HH:mm:ss";
-
-    private const string FormatMessage =
-        "The value must be a local date and time in the format yyyy-MM-ddTHH:mm:ss or yyyy-MM-ddTHH:mm.";
-
-    private const string OffsetMessage =
-        "The value must be a local date and time without a UTC offset or 'Z', in the format yyyy-MM-ddTHH:mm:ss " +
-        "or yyyy-MM-ddTHH:mm: send the clock reading at the place, not an instant.";
-
-    private static readonly string[] ReadFormats = [WriteFormat, "yyyy-MM-dd'T'HH:mm"];
-
     /// <inheritdoc/>
     public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType != JsonTokenType.String)
         {
-            throw new JsonException(FormatMessage);
+            throw new JsonException(LocalDateTimeFormat.GetInvalidMessage(null));
         }
 
         return Parse(reader.GetString());
@@ -52,7 +40,7 @@ public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
     {
         ArgumentNullException.ThrowIfNull(writer);
 
-        writer.WriteStringValue(value.ToString(WriteFormat, CultureInfo.InvariantCulture));
+        writer.WriteStringValue(LocalDateTimeFormat.Format(value));
     }
 
     /// <inheritdoc/>
@@ -66,31 +54,13 @@ public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
     {
         ArgumentNullException.ThrowIfNull(writer);
 
-        writer.WritePropertyName(value.ToString(WriteFormat, CultureInfo.InvariantCulture));
+        writer.WritePropertyName(LocalDateTimeFormat.Format(value));
     }
 
     private static DateTime Parse(string? text)
     {
-        if (DateTime.TryParseExact(text, ReadFormats, CultureInfo.InvariantCulture, DateTimeStyles.None, out var value))
-        {
-            return DateTime.SpecifyKind(value, DateTimeKind.Unspecified);
-        }
-
-        throw new JsonException(HasOffset(text) ? OffsetMessage : FormatMessage);
-    }
-
-    /// <summary>
-    /// Determines whether the time part of an ISO 8601 value ends in <c>Z</c> or a numeric offset.
-    /// </summary>
-    private static bool HasOffset(string? text)
-    {
-        var timeStart = text?.IndexOf('T', StringComparison.OrdinalIgnoreCase) ?? -1;
-        if (timeStart < 0)
-        {
-            return false;
-        }
-
-        var time = text.AsSpan(timeStart + 1);
-        return time.EndsWith("Z", StringComparison.OrdinalIgnoreCase) || time.IndexOfAny('+', '-') >= 0;
+        return LocalDateTimeFormat.TryParse(text, out var reading)
+            ? reading
+            : throw new JsonException(LocalDateTimeFormat.GetInvalidMessage(text));
     }
 }

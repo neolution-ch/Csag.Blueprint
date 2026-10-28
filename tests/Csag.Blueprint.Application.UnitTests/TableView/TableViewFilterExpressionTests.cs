@@ -120,9 +120,25 @@ public sealed class TableViewFilterExpressionTests
     }
 
     [Fact]
-    public void GetFilterExpression_EqualsOnDateTimeOffsetColumnWithReadingThatDoesNotExist_ReturnsNull()
+    public void GetFilterExpression_EqualsOnDateTimeOffsetColumnWithReadingThatDoesNotExist_MatchesNothing()
     {
-        Definition.GetFilterExpression("CreatedAt", "2027-03-28T02:30:00", Zurich).ShouldBeNull();
+        // 02:30 is skipped when Zurich springs forward: no instant equals it, so the filter must exclude every
+        // row rather than be dropped and include them all.
+        var vehicle = CreateVehicle();
+        vehicle.CreatedAt = new DateTimeOffset(2027, 3, 28, 1, 30, 0, TimeSpan.Zero);
+
+        Matches("CreatedAt", "2027-03-28T02:30:00", vehicle, Zurich).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GetFilterExpression_InOnDateTimeOffsetColumn_MatchesListedInstantsAndNothingForReadingsThatDoNotExist()
+    {
+        var vehicle = CreateVehicle();
+        vehicle.InspectedAt = new DateTimeOffset(2027, 3, 28, 1, 0, 0, TimeSpan.Zero); // 03:00 in Zurich
+
+        Matches("InspectedAt", "2027-03-28T02:30:00,2027-03-28T03:00:00", vehicle, Zurich).ShouldBeTrue();
+        Matches("InspectedAt", "2027-03-28T02:30:00", vehicle, Zurich).ShouldBeFalse();
+        Matches("InspectedAt", "2027-03-28T02:15:00,2027-03-28T02:45:00", vehicle, Zurich).ShouldBeFalse();
     }
 
     [Theory]
@@ -461,6 +477,7 @@ public sealed class TableViewFilterExpressionTests
             CreatedAt = new DateTimeOffset(2024, 5, 1, 10, 0, 0, TimeSpan.FromHours(2)),
             LastServiceAt = new DateTimeOffset(2024, 6, 15, 8, 30, 0, TimeSpan.Zero),
             NextServiceLocal = new DateTime(2026, 10, 25, 9, 0, 0, DateTimeKind.Unspecified),
+            InspectedAt = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero),
             PickupLocal = new DateTime(2026, 10, 26, 10, 0, 0, DateTimeKind.Unspecified),
             Notes = "well maintained",
         };
@@ -503,6 +520,8 @@ public sealed class TableViewFilterExpressionTests
         public DateTime NextServiceLocal { get; set; }
 
         public DateTime PickupLocal { get; set; }
+
+        public DateTimeOffset InspectedAt { get; set; }
 
         public string Notes { get; set; } = string.Empty;
     }
@@ -550,6 +569,8 @@ public sealed class TableViewFilterExpressionTests
 
         public DateTime PickupLocal { get; set; } = DateTime.MaxValue;
 
+        public DateTimeOffset InspectedAt { get; set; } = DateTimeOffset.MaxValue;
+
         public string Notes { get; set; } = string.Empty;
 
         public string Synthetic { get; set; } = string.Empty;
@@ -577,6 +598,7 @@ public sealed class TableViewFilterExpressionTests
             this.Column(d => d.LastServiceAt).Filterable(TableViewFilterOperator.DateRange);
             this.Column(d => d.NextServiceLocal).Filterable(TableViewFilterOperator.DateRange);
             this.Column(d => d.PickupLocal).Filterable(TableViewFilterOperator.Equals);
+            this.Column(d => d.InspectedAt).Filterable(TableViewFilterOperator.In);
             this.Column(d => d.Notes);
 
             // The DTO exposes Synthetic but the entity has no such property, so the column ends up

@@ -215,6 +215,7 @@ public sealed class TableViewDataRequestValidatorTests
     [InlineData(null)]
     [InlineData("Europe/Zurich")]
     [InlineData("UTC")]
+    [InlineData("Mars/Olympus_Mons")] // well-formed but unknown: the endpoint falls back to the tenant zone
     public void Validate_TimeZoneOmittedOrIana_Passes(string? timeZone)
     {
         // Arrange
@@ -229,7 +230,7 @@ public sealed class TableViewDataRequestValidatorTests
 
     [Theory]
     [InlineData("W. Europe Standard Time")]
-    [InlineData("Mars/Olympus_Mons")]
+    [InlineData("Europe//Zurich")]
     [InlineData("")]
     public void Validate_TimeZoneNotIana_Fails(string timeZone)
     {

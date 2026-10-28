@@ -7,6 +7,7 @@ namespace Csag.Blueprint.Web.Extensions
     using Microsoft.AspNetCore.Builder;
     using Microsoft.AspNetCore.Identity;
     using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Primitives;
 
     /// <summary>
     /// Extension methods for configuring FastEndpoints and Swagger on WebApplication.
@@ -94,6 +95,12 @@ namespace Csag.Blueprint.Web.Extensions
                     // Without this, security scanners (e.g. OWASP ZAP) flag the 500 as a SQL injection.
                     x.Binding.FormExceptionTransformer =
                         _ => new FluentValidation.Results.ValidationFailure("_", "The request body was malformed or contained invalid multipart data.");
+
+                    // Query, route, form and header values bypass System.Text.Json, and FastEndpoints' own
+                    // DateTime parsing accepts offsets (converting to the server's zone), fractions and
+                    // culture formats. These parsers accept exactly the local readings a JSON body does.
+                    x.Binding.ValueParserFor<DateTime>(ParseLocalReading);
+                    x.Binding.ValueParserFor<DateTime?>(ParseOptionalLocalReading);
                 });
 
             // Serve the Swagger UI HTML and the runtime Swagger JSON document only when enabled.
@@ -106,6 +113,18 @@ namespace Csag.Blueprint.Web.Extensions
             }
 
             return app;
+        }
+
+        private static ParseResult ParseLocalReading(StringValues input)
+        {
+            return LocalDateTimeFormat.TryParse(input.ToString(), out var reading)
+                ? new ParseResult(true, reading)
+                : new ParseResult(false, null);
+        }
+
+        private static ParseResult ParseOptionalLocalReading(StringValues input)
+        {
+            return StringValues.IsNullOrEmpty(input) ? new ParseResult(true, null) : ParseLocalReading(input);
         }
     }
 }

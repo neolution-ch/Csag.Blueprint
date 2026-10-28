@@ -13,7 +13,8 @@ using Microsoft.EntityFrameworkCore;
 /// <see cref="ITenantTimeZoneProvider"/>, decides both how date filters on instant columns are evaluated and
 /// in which zone the workbook shows instants; dates and times are formatted for the request culture. The
 /// headers of instant columns name that zone, and the headers of local reading columns name the tenant's, unless
-/// their zone comes from the row.
+/// their zone comes from the row. A request zone this host's time zone data does not know falls back to the
+/// tenant's zone, with a warning logged, and the headers name the zone actually used.
 /// </summary>
 /// <typeparam name="TContext">The database context type.</typeparam>
 /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -85,7 +86,7 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
     /// <inheritdoc/>
     public override async Task HandleAsync(TableViewExportRequest req, CancellationToken ct)
     {
-        if (!TableViewRequestTimeZone.TryFindRequested(req.TimeZone, out var requestedTimeZone))
+        if (!TableViewRequestTimeZone.TryFindRequested(req.TimeZone, this.Logger, out var requestedTimeZone))
         {
             this.ThrowError(r => r.TimeZone, TableViewRequestTimeZone.InvalidMessage);
         }

@@ -1,6 +1,6 @@
 namespace Csag.Blueprint.Web.Swagger;
 
-using System.Globalization;
+using Csag.Blueprint.Application.Json;
 using Newtonsoft.Json;
 
 /// <summary>
@@ -24,7 +24,7 @@ internal sealed class LocalDateTimeExampleConverter : JsonConverter
 
         if (value is DateTime reading)
         {
-            writer.WriteValue(reading.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture));
+            writer.WriteValue(LocalDateTimeFormat.Format(reading));
         }
         else
         {

@@ -36,7 +36,7 @@ public sealed class TableViewExportRequestValidator : Validator<TableViewExportR
             .WithMessage("Page is required when PageSize is set");
 
         this.RuleFor(x => x.TimeZone)
-            .MustBeIanaTimeZone()
+            .MustBeWellFormedIanaTimeZone()
             .WithMessage(TableViewRequestTimeZone.InvalidMessage);
 
         this.RuleForEach(x => x.SortColumns)

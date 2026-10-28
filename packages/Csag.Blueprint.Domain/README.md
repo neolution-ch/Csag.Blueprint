@@ -79,11 +79,12 @@ entities can derive an instant from a local reading themselves.
 
 | Member | Purpose |
 | --- | --- |
-| `TryToInstant(localReading, zone, out instant)` | The instant a reading denotes. `false` when the reading falls in a spring-forward gap; a reading that happens twice (fall-back overlap) resolves to its earlier occurrence. |
+| `TryToInstant(localReading, zone, out instant)` | The instant a reading denotes. `false` when the reading falls in a spring-forward gap, including past gaps that Linux's `TimeZoneInfo.IsInvalidTime` misses; a reading that happens twice (fall-back overlap) resolves to its earlier occurrence. |
 | `ToLocalReading(instant, zone)` | The reading a clock in the zone shows at an instant. |
 | `Today(timeProvider, zone)` | Today's date in the zone, not in UTC. |
 | `DayRange(date, zone)` | The half-open instant range `[Start, End)` a calendar day spans in the zone: 23 or 25 hours on transition days, starting at the transition when local midnight does not exist. |
-| `TryFindIanaTimeZone(id, out zone)` | Finds a zone by its exact IANA id and rejects Windows ids. Needs the host's time zone data (`tzdata` on Linux). |
+| `TryFindIanaTimeZone(id, out zone)` | Finds a zone by its exact IANA id and rejects Windows ids and zoneinfo paths that are no ids (`Europe//Zurich`, `localtime`, `right/UTC`). Needs the host's time zone data (`tzdata` on Linux). |
+| `IsWellFormedIanaTimeZoneId(id)` | Whether a value has the form of an IANA id, known to this host or not: an id from newer time zone data (a browser's) passes, a malformed value does not. |
 
 ## Architectural Role
 

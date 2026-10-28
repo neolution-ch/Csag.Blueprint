@@ -186,13 +186,17 @@ a `DateTime` (a local reading, see `LocalDateTimeJsonConverter` in `Csag.Bluepri
 `type: string, format: local-date-time, pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$`, and a `TimeSpan` is a string
 with the pattern of its constant (`c`) format, `[-][d.]hh:mm:ss[.fffffff]`, without `format: duration`.
 
+`UseFastEndpointsWithConventions` binds `DateTime` and `DateTime?` from query, route, form and header values with the
+same formats as a JSON body (`LocalDateTimeFormat`): a value with an offset, `Z`, a fraction or a culture format is a 400.
+
 ### Time zone validation
 
 `TimeZoneRuleBuilderExtensions` adds FluentValidation rules next to `WithLocalizedMessage`:
 
 | Rule | Requires |
 | --- | --- |
-| `MustBeIanaTimeZone()` | an IANA zone id this host resolves (`Europe/Zurich`, not `W. Europe Standard Time`); null passes |
+| `MustBeIanaTimeZone()` | an IANA zone id this host resolves (`Europe/Zurich`, not `W. Europe Standard Time`); for stored zones; null passes |
+| `MustBeWellFormedIanaTimeZone()` | a value of the IANA form, known to this host or not; for a zone a request names for itself, such as the browser's; null passes |
 | `MustNotBeAfterToday(timeProvider, timeZone)` | a `DateOnly` not after today in the zone |
 | `MustExistInTimeZone(timeZone)` | a local reading (`DateTime`) that is not in a spring-forward gap of the zone |
 
@@ -204,10 +208,12 @@ asynchronous: FastEndpoints calls `ValidateAsync`, and a synchronous `Validate` 
 
 `TableViewDataEndpointBase` and `TableViewExportEndpointBase` read the optional `timeZone` of their request (validated
 by `TableViewDataRequestValidator` and `TableViewExportRequestValidator`) and fall back to `ITenantTimeZoneProvider`.
+A well-formed `timeZone` this host's time zone data does not know falls back the same way, with a warning logged;
+`TableViewRequestTimeZone.TryFindRequested` applies that rule for an endpoint that handles these requests itself.
 `TableViewExcelExporter` writes real date cells: a `DateOnly` as a date, a local reading as it reads, and an instant as
 the reading in the effective zone including its time, with number formats from the request culture's date and time
 patterns. The headers of columns with a time name their zone as an IANA id after the column header: an instant column
-the effective zone (`Created at (Europe/London)`), a local reading column the tenant's zone (`Start (Europe/Zurich)`);
+the effective zone, so a fallback is visible (`Created at (Europe/London)`), a local reading column the tenant's zone (`Start (Europe/Zurich)`);
 date columns name none. A local reading column whose zone comes from its row (`TimeZoneColumn`) names none either:
 its rows can be in different zones, and the zone column carries each row's zone into the workbook.
 

@@ -452,7 +452,7 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
 
     [Theory]
     [InlineData("W. Europe Standard Time")]
-    [InlineData("Europe/Atlantis")]
+    [InlineData("Europe//Zurich")]
     public async Task DataEndpoint_TimeZoneNotIana_Returns400Async(string timeZone)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -536,6 +536,36 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         worksheet.Cell(2, 8).DataType.ShouldBe(XLDataType.DateTime);
         var expected = ZonedTime.ToLocalReading(createdAt, FindZone("Pacific/Kiritimati"));
         worksheet.Cell(2, 8).GetDateTime().ShouldBe(expected, TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task DataEndpoint_WellFormedZoneUnknownToHost_FallsBackToTenantZoneAsync()
+    {
+        // A browser can know zones this host's time zone data does not yet. Such a zone is no error: the
+        // request is evaluated in the tenant's zone, UTC here since the host registers no provider.
+        var createdAt = await this.GetCreatedAtAsync("City Bike");
+        var utcDate = DateOnly.FromDateTime(createdAt.UtcDateTime).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+
+        (await this.QueryNamesAsync("City Bike", utcDate, "Mars/Olympus_Mons")).ShouldBe(["City Bike"]);
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_WellFormedZoneUnknownToHost_NamesTheZoneUsedAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var exportResponse = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri,
+            new TableViewExportRequest { Filters = new Dictionary<string, string> { ["Name"] = "City Bike" }, TimeZone = "Mars/Olympus_Mons" },
+            BlueprintJsonOptions.Default,
+            ct);
+        await exportResponse.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
+
+        using var stream = new MemoryStream(await exportResponse.Content.ReadAsByteArrayAsync(ct));
+        using var workbook = new XLWorkbook(stream);
+
+        // The instant column names the zone actually used, so the fallback is visible in the workbook.
+        workbook.Worksheet(1).Cell(1, 8).GetString().ShouldBe("Created At (UTC)");
     }
 
     private static TimeZoneInfo FindZone(string id)

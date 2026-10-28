@@ -24,7 +24,7 @@ public sealed class TableViewDataRequestValidator : Validator<TableViewDataReque
             .WithMessage("PageSize must be between 1 and 100");
 
         this.RuleFor(x => x.TimeZone)
-            .MustBeIanaTimeZone()
+            .MustBeWellFormedIanaTimeZone()
             .WithMessage(TableViewRequestTimeZone.InvalidMessage);
 
         this.RuleForEach(x => x.SortColumns)

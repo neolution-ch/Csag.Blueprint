@@ -170,11 +170,37 @@ public sealed class ZonedTimeTests
         ZonedTime.Today(clock, NewYork).ShouldBe(new DateOnly(2026, 10, 21));
     }
 
+    [Fact]
+    public void TryToInstant_ReadingInPastGapOfZoneThatDroppedDaylightSavingTime_DoesNotExist()
+    {
+        // Chihuahua sprang forward from 02:00 to 03:00 on 2022-04-03 and dropped daylight saving time that
+        // October. Linux's TimeZoneInfo.IsInvalidTime misses the gap; converting back does not.
+        ZonedTime.TryToInstant(new DateTime(2022, 4, 3, 2, 30, 0, DateTimeKind.Unspecified), FindZone("America/Chihuahua"), out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void DayRange_DayWhoseMidnightFellInPastGapOfZoneThatDroppedDaylightSavingTime_StartsAtTransition()
+    {
+        // Paraguay sprang forward at midnight on 2024-10-06 (from -04:00 to -03:00) and kept -03:00 from that
+        // month on, so the day began at 01:00 local, 04:00Z.
+        var asuncion = FindZone("America/Asuncion");
+
+        var (start, _) = ZonedTime.DayRange(new DateOnly(2024, 10, 6), asuncion);
+
+        start.ShouldBe(new DateTimeOffset(2024, 10, 6, 4, 0, 0, TimeSpan.Zero));
+        ZonedTime.ToLocalReading(start, asuncion).ShouldBe(new DateTime(2024, 10, 6, 1, 0, 0, DateTimeKind.Unspecified));
+    }
+
     [Theory]
     [InlineData("Europe/Zurich")]
     [InlineData("America/New_York")]
     [InlineData("UTC")] // what a browser on a machine set to UTC reports
     [InlineData("Etc/UTC")]
+    [InlineData("Etc/GMT+5")]
+    [InlineData("EST5EDT")]
+    [InlineData("America/Port-au-Prince")]
+    [InlineData("America/Argentina/Buenos_Aires")]
+    [InlineData("US/Eastern")] // a backward link
     public void TryFindIanaTimeZone_IanaId_FindsZoneWithThatId(string id)
     {
         ZonedTime.TryFindIanaTimeZone(id, out var zone).ShouldBeTrue();
@@ -192,6 +218,48 @@ public sealed class ZonedTimeTests
         ZonedTime.TryFindIanaTimeZone(id, out var zone).ShouldBeFalse();
 
         zone.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("Europe//Zurich")] // the remaining rejects resolve on Linux, which reads the id as a path
+    [InlineData("America//New_York")]
+    [InlineData("localtime")]
+    [InlineData("posixrules")]
+    [InlineData("Factory")]
+    [InlineData("right/Europe/Zurich")]
+    [InlineData("right/UTC")]
+    [InlineData("posix/Europe/Zurich")]
+    [InlineData("/Europe/Zurich")]
+    [InlineData("Europe/Zurich/")]
+    [InlineData("Europe/./Zurich")]
+    [InlineData("../zoneinfo/Europe/Zurich")]
+    public void TryFindIanaTimeZone_PathThatIsNoIanaId_IsRejected(string id)
+    {
+        ZonedTime.IsWellFormedIanaTimeZoneId(id).ShouldBeFalse();
+        ZonedTime.TryFindIanaTimeZone(id, out var zone).ShouldBeFalse();
+        zone.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("Europe/Zurich")]
+    [InlineData("Etc/GMT-14")]
+    [InlineData("America/Argentina/Buenos_Aires")]
+    [InlineData("Mars/Olympus_Mons")] // well-formed, though no tz database knows it
+    public void IsWellFormedIanaTimeZoneId_NameOfTheIanaForm_IsTrueWhetherKnownOrNot(string id)
+    {
+        ZonedTime.IsWellFormedIanaTimeZoneId(id).ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("W. Europe Standard Time")]
+    [InlineData("Europe/Zürich")]
+    [InlineData("+02:00")]
+    public void IsWellFormedIanaTimeZoneId_ValueOfAnotherForm_IsFalse(string? id)
+    {
+        ZonedTime.IsWellFormedIanaTimeZoneId(id).ShouldBeFalse();
     }
 
     [Theory]

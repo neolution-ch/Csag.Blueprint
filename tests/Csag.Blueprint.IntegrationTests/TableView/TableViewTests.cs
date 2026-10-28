@@ -377,6 +377,79 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         worksheet.Cell(3, 3).GetString().ShouldBe("Sea kayak");
     }
 
+    [Fact]
+    public async Task ExportEndpoint_UnpaginatedExportOverTheCap_IsRefusedAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // The host's export endpoint caps an export one row below tenant A's seeded vehicles, so the
+        // unfiltered export matches more rows than it may hold.
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri, new TableViewExportRequest(), BlueprintJsonOptions.Default, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
+        response.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync(ct);
+        content.ShouldContain($"more than the {SeedData.TenantAVehicleCount - 1} rows", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_UnpaginatedExportOfExactlyTheCap_IsExportedWholeAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Every vehicle but the 25.00 Family Kayak: exactly as many rows as the host's cap. The export reads
+        // one row past the cap to detect more, so a result that fills the cap must still be exported.
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri,
+            new TableViewExportRequest { Filters = new Dictionary<string, string> { ["PricePerHour"] = "0-20" } },
+            BlueprintJsonOptions.Default,
+            ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
+
+        using var stream = new MemoryStream(await response.Content.ReadAsByteArrayAsync(ct));
+        using var workbook = new XLWorkbook(stream);
+
+        // One header row plus one row per vehicle up to the cap.
+        workbook.Worksheet(1).RowsUsed().Count().ShouldBe(SeedData.TenantAVehicleCount - 1 + 1);
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_PageExport_IsBoundedByThePageNotTheCapAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // One page holding every seeded vehicle: more rows than the cap, which applies to unpaginated
+        // exports only.
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri, new TableViewExportRequest { Page = 1, PageSize = 100 }, BlueprintJsonOptions.Default, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
+
+        using var stream = new MemoryStream(await response.Content.ReadAsByteArrayAsync(ct));
+        using var workbook = new XLWorkbook(stream);
+
+        // One header row plus one row per seeded vehicle.
+        workbook.Worksheet(1).RowsUsed().Count().ShouldBe(SeedData.TenantAVehicleCount + 1);
+    }
+
+    [Theory]
+    [InlineData(1, int.MaxValue)]
+    [InlineData(0, 10)]
+    [InlineData(1, null)]
+    [InlineData(null, 10)]
+    public async Task ExportEndpoint_PageOutOfBoundsOrIncomplete_IsRefusedAsync(int? page, int? pageSize)
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri, new TableViewExportRequest { Page = page, PageSize = pageSize }, BlueprintJsonOptions.Default, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
+    }
+
     [Theory]
     [InlineData("W. Europe Standard Time")]
     [InlineData("Europe/Atlantis")]

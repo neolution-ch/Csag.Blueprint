@@ -1,5 +1,90 @@
 # @neolution-ch/csag-blueprint-infrastructure
 
+## 0.7.0
+
+### Minor Changes
+
+- [#44](https://github.com/neolution-ch/Csag.Blueprint/pull/44) [`dbb4310`](https://github.com/neolution-ch/Csag.Blueprint/commit/dbb4310799f3cdf954e2f9247961670cc32a1652) Thanks [@neotob](https://github.com/neotob)! - Apply the blueprint model conventions once the model is complete, below the application's own configuration
+  
+  `BlueprintDbContext` used to apply multi-tenancy inline in `OnModelCreating`, so it only reached the
+  entity types discovered at that point. An `IMustHaveTenant` entity your context registered *after*
+  its `base.OnModelCreating` call without a `DbSet`, as `ApplyConfigurationsFromAssembly` often does,
+  got no tenant filter at all, and its rows were visible to every tenant.
+  
+  All blueprint conventions (multi-tenancy, contract constraints, localized texts, soft-delete
+  filtering, sequential `Guid` keys) now run from `BlueprintModelFinalizingConvention`, registered in
+  `ConfigureConventions`, once EF Core has finished building the model. Every entity type is covered,
+  however it entered the model.
+  
+  The conventions are applied at EF Core's convention level, so your own configuration wins even
+  though they run last. That applies to explicit fluent configuration and data annotations, and to
+  the model-wide `Configure*` extension methods when you call them directly. A tenant relationship you map yourself
+  keeps its navigation and delete behavior, a different `InternalName` length or index name is kept,
+  and so on. Owned types are supported; they carry no filters of their own, as EF Core requires.
+  
+  **When upgrading:**
+  
+  - A context overriding `ConfigureConventions` must call `base.ConfigureConventions`, or no blueprint
+    conventions are applied, tenant isolation included.
+  - An unnamed query filter of your own on an `IMustHaveTenant` entity now makes the model fail to
+    build, because EF Core does not allow unnamed and named filters on the same entity. Register it
+    under a name (`HasQueryFilter("Archived", e => !e.Archived)`). Previously such a filter replaced the
+    tenant filter without warning. The `Tenant` and `SoftDelete` names themselves are reserved for
+    the blueprint's filters, so a filter of yours registered under one of them fails the build too.
+  - Generate an EF Core migration. Tenant-owned entities registered without a `DbSet` gain their
+    `TenantId` index and tenant foreign key. An entity with a `Tenant` navigation now shares the single
+    `TenantId` foreign key instead of getting a second, shadow `TenantId1` one, so the migration drops
+    the `TenantId1` column.
+
+- [#44](https://github.com/neolution-ch/Csag.Blueprint/pull/44) [`dbb4310`](https://github.com/neolution-ch/Csag.Blueprint/commit/dbb4310799f3cdf954e2f9247961670cc32a1652) Thanks [@neotob](https://github.com/neotob)! - Add entity contracts for soft deletion, active ranges, internal names and localized texts, with named global query filters
+  
+  New `Csag.Blueprint.Domain` contracts: `ISoftDeletable`, `IHasActiveRange`, `IHasInternalName`,
+  `ILocalizedText` and `IHasLocalizedTexts<T>`.
+  
+  `Csag.Blueprint.Infrastructure` gains the matching model conventions (`ConfigureEntityFiltering`,
+  `ConfigureLocalizedTextConventions`, `ConfigureContractConstraints`, `ConfigureGuidPrimaryKeyDefaults`)
+  and query extensions (`WhereNotDeleted`, `WhereActiveNow`, `IncludeCurrentLanguageText`,
+  `SelectWithCurrentLanguageText`, …). `BlueprintDbContext` applies the conventions automatically.
+  
+  - **Named query filters.** Both blueprint-owned global query filters are registered under a name
+    (`BlueprintQueryFilters.Tenant` and `BlueprintQueryFilters.SoftDelete`), so a query can opt out of
+    one without losing the other. Use `IgnoreSoftDeleteFilter()` / `OnlySoftDeleted()` to reach
+    soft-deleted rows; the parameterless `IgnoreQueryFilters()` also disables tenant isolation.
+  - **Soft deletion and active ranges.** `ISoftDeletable` entities get the soft-delete filter and an
+    `IX_{table}_DeletedAt` index. `IHasActiveRange` deliberately gets no filter, only a composite
+    `IX_{table}_ActiveRange` index: the point in time an active range is evaluated against is the
+    caller's choice, so use `WhereActiveNow()` / `WhereActiveAt()` / `WhereActiveInRange()`.
+  - **Inheritance.** The filters are registered on the root of an inheritance hierarchy, which is the
+    only place EF Core allows them, and derived types inherit them. A hierarchy that adopts
+    `ISoftDeletable` or `IMustHaveTenant` *below* its root cannot be filtered by EF Core and fails at
+    model build with an explanatory message.
+  - **Localized texts.** `ConfigureLocalizedTextConventions` cascades deletes from an entity to its
+    texts and adds a per-language unique index, using whatever foreign key the relationship has.
+    `IncludeCurrentLanguageText`, `WhereHasCurrentLanguageText`, `CurrentLanguageTextExpression` and
+    `SelectWithCurrentLanguageText` rank texts the same way, inside the EF Core query: exact current
+    language, then the same language in another region (including the bare code), then the exact
+    fallback, then the fallback's language. These, and the single-language helpers
+    (`IncludeTextsForLanguage`, `WhereHasTextForLanguage`, …), compare language codes
+    case-insensitively on every provider.
+  - **Language providers.** `ICurrentLanguageProvider` supplies the current and fallback language.
+    `DefaultLanguageProvider` reads `CultureInfo.CurrentUICulture` and falls back to a configured code
+    for the invariant culture; `ExplicitLanguageProvider` covers call sites that already know the
+    language, such as an endpoint taking it as a parameter.
+  - **Sequential keys on SQL Server.** `ConfigureGuidPrimaryKeyDefaults` gives every single-column
+    `Guid` primary key a `NEWSEQUENTIALID()` column default, for inserts that bypass EF Core. EF Core
+    keeps assigning keys client-side on `Add`, so an added entity's key is usable before `SaveChanges`.
+    Keys that declare a default or `ValueGeneratedNever()`, and keys that are also foreign keys (such as
+    an owned type's), are left alone. `BlueprintDbContext` applies it only on SQL Server, where the
+    function exists.
+  
+  **When upgrading:** generate an EF Core migration. On SQL Server, every single-column `Guid` primary
+  key gains the `NEWSEQUENTIALID()` default, and entities adopting the new contracts gain their columns
+  and indexes.
+
+## 0.6.0
+
+No changes in this release.
+
 ## 0.5.0
 
 ### Minor Changes

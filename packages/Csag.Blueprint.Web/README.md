@@ -92,6 +92,12 @@ The provider writes `UserId`, `TenantId`, and `CorrelationId` to columns. The em
 display name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either
 value requires parsing the JSON data of the row.
 
+Each EF entry records the entity's column values and its changes, not a copy of the entity object.
+A field exclusion — the standard `PasswordHash`, `SecurityStamp`, `ConcurrencyStamp` and
+`ClientSecretHash`, or one added through `BlueprintAuditOptions.EntityFieldConfigurator` — therefore
+keeps the field out of the stored entry entirely. Do not call `IncludeEntityObjects()` in that
+callback: Audit.NET serializes an included entity object whole, excluded fields and all.
+
 `UseBlueprintMiddleware()` always registers `HttpAuditMiddleware`, first, so that it wraps
 everything else in the pipeline: authentication and authorization, and also the exception handler
 and status code pages. The ASP.NET Core authorization middleware does not call the next middleware
@@ -100,6 +106,13 @@ registered after the exception handler would never see a status code that an unh
 produced, so it could never audit one. An app does not need to register `HttpAuditMiddleware`
 itself. Remove any manual `app.UseMiddleware<HttpAuditMiddleware>()` call; a duplicate registration
 records two events per audited request.
+
+An EF event's `TenantId` is the ambient `TenantContext.Current`, the tenant the actor has active, not
+necessarily the tenant that owns the rows changed. A platform administrator who changes a global row
+while a tenant is active therefore records the change under that tenant. Set
+`BlueprintAuditOptions.EntityChangeTenantResolver` to decide per save: it receives the request (null
+outside one) and the active tenant, and returns the tenant to record, or null for none. HTTP events
+keep the tenant their request resolves to.
 
 `ConfigureBlueprintAuditLogging` configures both audit features, the EF Core events and the HTTP
 request events, from this one call; both are on by default. Its configure callback exposes the same

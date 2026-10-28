@@ -34,6 +34,11 @@ public sealed class BlueprintAuditOptions<TContext>
     /// Called within the <c>ForContext</c> configurator after standard blueprint field
     /// exclusions (PasswordHash, SecurityStamp, etc.) are applied.
     /// </summary>
+    /// <remarks>
+    /// Field exclusions cover the column values and changes, which are all an entry records. Do not call
+    /// <c>IncludeEntityObjects()</c> here: Audit.NET serializes an included entity object whole, so every
+    /// excluded field, the standard ones included, would be stored with it.
+    /// </remarks>
     /// <example>
     /// <code>
     /// options.EntityFieldConfigurator = config => config
@@ -41,6 +46,25 @@ public sealed class BlueprintAuditOptions<TContext>
     /// </code>
     /// </example>
     public Action<IContextSettingsConfigurator<TContext>>? EntityFieldConfigurator { get; set; }
+
+    /// <summary>
+    /// Gets or sets an optional callback deciding which tenant an entity-change audit event is recorded
+    /// under. When unset, the event is recorded under the ambient <c>TenantContext.Current</c>: the
+    /// actor's active tenant, which is not necessarily the tenant whose rows were changed.
+    /// </summary>
+    /// <remarks>
+    /// Called once per <c>SaveChanges</c>, when its audit scope is created. HTTP audit events are not
+    /// affected: <see cref="HttpAuditMiddleware"/> records the tenant the request resolves to.
+    /// </remarks>
+    /// <example>
+    /// Record changes made through platform-administration endpoints outside every tenant, whichever
+    /// tenant the administrator has active:
+    /// <code>
+    /// options.EntityChangeTenantResolver = (httpContext, activeTenantId) =>
+    ///     httpContext?.Request.Path.StartsWithSegments("/api/platform") == true ? null : activeTenantId;
+    /// </code>
+    /// </example>
+    public AuditTenantResolver? EntityChangeTenantResolver { get; set; }
 
     /// <summary>
     /// Gets the configuration for <c>HttpAuditMiddleware</c>. This is the same instance the

@@ -20,6 +20,12 @@ packages that pull them in, `Microsoft.Data.SqlClient` and `Foundatio.MessagePac
 vulnerable versions. Upgrading the blueprint packages is enough to get the patched versions, without
 a pin of your own.
 
-**When upgrading:** your own `Microsoft.AspNetCore.*` and `Microsoft.EntityFrameworkCore.*`
-references must be 10.0.13 or later, or restore fails with a package downgrade error (NU1605, or
-NU1109 under central package management).
+**When upgrading:**
+
+- Your own `Microsoft.AspNetCore.*` and `Microsoft.EntityFrameworkCore.*` references must be 10.0.13
+  or later, or restore fails with a package downgrade error (NU1605, or NU1109 under central package
+  management).
+- Run your applications on the .NET 10.0.13 runtime or later. Microsoft fixes these advisories in
+  the runtime as well as in the packages, and the Xml advisory also covers `System.Private.Xml`,
+  which only ships with the runtime. Update the installed runtime or the container base image, and
+  rebuild and redeploy self-contained applications.

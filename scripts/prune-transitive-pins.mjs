@@ -17,8 +17,9 @@
  * Each pin is deleted in turn, the lock files are re-resolved and the NuGet
  * vulnerability scan runs. The deletion is kept when the scan reports no vulnerable
  * package version beyond those it reported with every pin in place. Otherwise the pin
- * is put back. A pin marked KeepPin="true" is never tried, for pins held for a reason
- * other than an advisory.
+ * is put back, as it is when restore fails without it. A scan that cannot run stops the
+ * script with an error. A pin marked KeepPin="true" is never tried, for pins held for a
+ * reason other than an advisory.
  *
  * Usage:
  *   node scripts/prune-transitive-pins.mjs [report.md]
@@ -243,17 +244,33 @@ if (candidates.length > 0) {
     let reason;
     try {
       restore();
-      const introduced = [...scanVulnerabilities()].filter(
-        ([key]) => !baseline.has(key),
-      );
+    } catch (error) {
+      console.log(String(error.stdout ?? "").slice(-4000));
+      reason = `Restore failed without it: ${error.message.split("\n")[0]}`;
+    }
+
+    if (!reason) {
+      let vulnerable;
+      try {
+        vulnerable = scanVulnerabilities();
+      } catch (error) {
+        // A scan that cannot run says nothing about this pin. Put it back and stop, so
+        // that a partial run never turns into a pull request.
+        fs.writeFileSync(propsPath, props, "utf8");
+        console.log(String(error.stdout ?? "").slice(-4000));
+        try {
+          restore();
+        } catch {
+          // The scan failure is the error worth reporting.
+        }
+        throw error;
+      }
+      const introduced = [...vulnerable].filter(([key]) => !baseline.has(key));
       if (introduced.length > 0) {
         reason = `Without it the scan reports ${introduced
           .map(([key, urls]) => `${key} (${urls.join(", ")})`)
           .join(", ")}`;
       }
-    } catch (error) {
-      console.log(String(error.stdout ?? "").slice(-4000));
-      reason = `Restore or scan failed without it: ${error.message.split("\n")[0]}`;
     }
 
     if (reason) {

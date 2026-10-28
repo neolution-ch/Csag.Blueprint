@@ -243,7 +243,7 @@ public sealed class ZonedTimeTests
     [InlineData("Etc/GMT-14")]
     [InlineData("America/Argentina/Buenos_Aires")]
     [InlineData("America/Port-au-Prince")]
-    [InlineData("EST5EDT")] // legacy names, which Ubuntu ships separately in tzdata-legacy
+    [InlineData("EST5EDT")] // names some hosts' tz data lacks: GitHub's Ubuntu runner resolves neither
     [InlineData("US/Eastern")]
     [InlineData("Mars/Olympus_Mons")] // well-formed, though no tz database knows it
     public void IsWellFormedIanaTimeZoneId_NameOfTheIanaForm_IsTrueWhetherKnownOrNot(string id)
@@ -261,6 +261,14 @@ public sealed class ZonedTimeTests
     public void IsWellFormedIanaTimeZoneId_ValueOfAnotherForm_IsFalse(string? id)
     {
         ZonedTime.IsWellFormedIanaTimeZoneId(id).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsWellFormedIanaTimeZoneId_IdLongerThan64Characters_IsFalse()
+    {
+        ZonedTime.IsWellFormedIanaTimeZoneId("Europe/" + new string('a', 57)).ShouldBeTrue("64 characters is the limit");
+        ZonedTime.IsWellFormedIanaTimeZoneId("Europe/" + new string('a', 58)).ShouldBeFalse();
+        ZonedTime.IsWellFormedIanaTimeZoneId(new string('a', 5_000_000)).ShouldBeFalse();
     }
 
     [Theory]

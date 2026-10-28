@@ -12,12 +12,33 @@ using Microsoft.Extensions.Options;
 public sealed class TimeZoneDataHealthCheckTests
 {
     [Fact]
-    public async Task CheckHealthAsync_WhenWellKnownZoneResolves_ReportsHealthy()
+    public async Task CheckHealthAsync_WhenBothZonesResolve_ReportsHealthy()
     {
-        var result = await new TimeZoneDataHealthCheck().CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
+        var result = await new TimeZoneDataHealthCheck("Europe/Zurich", "America/New_York")
+            .CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
 
         result.Status.ShouldBe(HealthStatus.Healthy);
         result.Description.ShouldNotBeNull().ShouldContain("Europe/Zurich");
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_WhenLegacyNameDoesNotResolve_ReportsDegraded()
+    {
+        // A legacy probe no tz database has stands in for a host without tzdata-legacy.
+        var result = await new TimeZoneDataHealthCheck("Europe/Zurich", "Mars/Olympus_Mons")
+            .CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
+
+        result.Status.ShouldBe(HealthStatus.Degraded);
+        result.Description.ShouldNotBeNull().ShouldContain("tzdata-legacy");
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_WithDefaults_IsNotUnhealthyOnHostWithTimeZoneData()
+    {
+        // Degraded on a host without the legacy links, such as GitHub's Ubuntu runner; Healthy elsewhere.
+        var result = await new TimeZoneDataHealthCheck().CheckHealthAsync(new HealthCheckContext(), TestContext.Current.CancellationToken);
+
+        result.Status.ShouldNotBe(HealthStatus.Unhealthy);
     }
 
     [Theory]

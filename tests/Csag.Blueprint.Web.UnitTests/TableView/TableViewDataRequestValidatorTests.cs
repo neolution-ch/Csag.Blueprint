@@ -244,4 +244,17 @@ public sealed class TableViewDataRequestValidatorTests
         result.ShouldHaveValidationErrorFor(x => x.TimeZone)
             .WithErrorMessage("TimeZone must be an IANA time zone id, such as Europe/Zurich.");
     }
+
+    [Fact]
+    public void Validate_TimeZoneLongerThan64Characters_Fails()
+    {
+        // Arrange — well-formed in every other respect, but no real id comes close.
+        var request = new TableViewDataRequest { TimeZone = "Europe/" + new string('a', 58) };
+
+        // Act
+        var result = this.validator.TestValidate(request);
+
+        // Assert
+        result.ShouldHaveValidationErrorFor(x => x.TimeZone);
+    }
 }

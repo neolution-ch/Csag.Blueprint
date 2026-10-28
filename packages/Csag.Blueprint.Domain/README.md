@@ -83,8 +83,8 @@ entities can derive an instant from a local reading themselves.
 | `ToLocalReading(instant, zone)` | The reading a clock in the zone shows at an instant. |
 | `Today(timeProvider, zone)` | Today's date in the zone, not in UTC. |
 | `DayRange(date, zone)` | The half-open instant range `[Start, End)` a calendar day spans in the zone: 23 or 25 hours on transition days, starting at the transition when local midnight does not exist. |
-| `TryFindIanaTimeZone(id, out zone)` | Finds a zone by its exact IANA id and rejects Windows ids and zoneinfo paths that are no ids (`Europe//Zurich`, `localtime`, `right/UTC`). Needs the host's time zone data (`tzdata` on Linux). |
-| `IsWellFormedIanaTimeZoneId(id)` | Whether a value has the form of an IANA id, known to this host or not: an id from newer time zone data (a browser's) passes, a malformed value does not. |
+| `TryFindIanaTimeZone(id, out zone)` | Finds a zone by its exact IANA id and rejects Windows ids and zoneinfo paths that are no ids (`Europe//Zurich`, `localtime`, `right/UTC`). Needs the host's time zone data (`tzdata` on Linux). Backward links that browsers still send (`Asia/Calcutta`, `Asia/Saigon`, `Europe/Kiev`) resolve only where that data has them: Debian and Ubuntu ship them in `tzdata-legacy`, Alpine's `tzdata` includes them. |
+| `IsWellFormedIanaTimeZoneId(id)` | Whether a value has the form of an IANA id (at most 64 characters), known to this host or not: an id from newer time zone data (a browser's) passes, a malformed value does not. |
 
 ## Architectural Role
 

@@ -98,9 +98,9 @@ namespace Csag.Blueprint.Web.Extensions
 
                     // Query, route, form and header values bypass System.Text.Json, and FastEndpoints' own
                     // DateTime parsing accepts offsets (converting to the server's zone), fractions and
-                    // culture formats. These parsers accept exactly the local readings a JSON body does.
+                    // culture formats. This parser accepts exactly the local readings a JSON body does.
+                    // FastEndpoints keys parsers by the underlying type, so it serves DateTime? as well.
                     x.Binding.ValueParserFor<DateTime>(ParseLocalReading);
-                    x.Binding.ValueParserFor<DateTime?>(ParseOptionalLocalReading);
                 });
 
             // Serve the Swagger UI HTML and the runtime Swagger JSON document only when enabled.
@@ -115,16 +115,18 @@ namespace Csag.Blueprint.Web.Extensions
             return app;
         }
 
+        /// <summary>
+        /// Parses a bound local reading. An empty value fails like any other malformed one. A failure still
+        /// carries a DateTime: the header and claim binders assign the value before they look at the outcome,
+        /// so a null would fail there with a NullReferenceException instead of a 400, and the query and form
+        /// binders assign it, failure or not, to a nullable property whose value is empty
+        /// (<c>UseDefaultValuesForNullableProps</c>).
+        /// </summary>
         private static ParseResult ParseLocalReading(StringValues input)
         {
             return LocalDateTimeFormat.TryParse(input.ToString(), out var reading)
                 ? new ParseResult(true, reading)
-                : new ParseResult(false, null);
-        }
-
-        private static ParseResult ParseOptionalLocalReading(StringValues input)
-        {
-            return StringValues.IsNullOrEmpty(input) ? new ParseResult(true, null) : ParseLocalReading(input);
+                : new ParseResult(false, default(DateTime));
         }
     }
 }

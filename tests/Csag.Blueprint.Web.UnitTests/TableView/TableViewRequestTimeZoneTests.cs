@@ -36,11 +36,28 @@ public sealed class TableViewRequestTimeZoneTests
     public void TryFindRequested_WellFormedZoneUnknownToHost_FallsBackWithWarning()
     {
         var logger = new RecordingLogger();
+        var id = UnknownId();
 
-        TableViewRequestTimeZone.TryFindRequested("Mars/Olympus_Mons", logger, out var zone).ShouldBeTrue();
+        TableViewRequestTimeZone.TryFindRequested(id, logger, out var zone).ShouldBeTrue();
 
         zone.ShouldBeNull("the caller falls back to the tenant zone");
-        logger.Warnings.ShouldHaveSingleItem().ShouldContain("Mars/Olympus_Mons");
+        logger.Warnings.ShouldHaveSingleItem().ShouldContain(id);
+    }
+
+    [Fact]
+    public void TryFindRequested_SameUnknownZoneAgain_WarnsOnlyOnce()
+    {
+        var first = new RecordingLogger();
+        var second = new RecordingLogger();
+        var id = UnknownId();
+
+        TableViewRequestTimeZone.TryFindRequested(id, first, out _).ShouldBeTrue();
+        TableViewRequestTimeZone.TryFindRequested(id, second, out var zone).ShouldBeTrue();
+
+        zone.ShouldBeNull();
+        first.Warnings.ShouldHaveSingleItem();
+        second.Warnings.ShouldBeEmpty("a browser sends its zone on every request; one warning per id is enough");
+        second.Debugs.ShouldHaveSingleItem().ShouldContain(id);
     }
 
     [Theory]
@@ -57,9 +74,16 @@ public sealed class TableViewRequestTimeZoneTests
         logger.Warnings.ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// The set of ids already warned about lives for the process, so each test uses an id of its own.
+    /// </summary>
+    private static string UnknownId() => $"Mars/Test_{Guid.NewGuid():N}";
+
     private sealed class RecordingLogger : ILogger
     {
         public List<string> Warnings { get; } = [];
+
+        public List<string> Debugs { get; } = [];
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -71,6 +95,10 @@ public sealed class TableViewRequestTimeZoneTests
             if (logLevel == LogLevel.Warning)
             {
                 this.Warnings.Add(formatter(state, exception));
+            }
+            else if (logLevel == LogLevel.Debug)
+            {
+                this.Debugs.Add(formatter(state, exception));
             }
         }
     }

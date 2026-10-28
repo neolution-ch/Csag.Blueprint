@@ -24,6 +24,12 @@ using System.Diagnostics.CodeAnalysis;
 public static class ZonedTime
 {
     /// <summary>
+    /// The longest id accepted as well-formed. The longest id in the tz database has 32 characters; the
+    /// limit leaves room for new ones while keeping arbitrary input out of lookups and logs.
+    /// </summary>
+    private const int MaxIdLength = 64;
+
+    /// <summary>
     /// Files in a tz database directory that are not zones: the host's own zone, the template for POSIX
     /// TZ strings, and the placeholder zone of the distribution build.
     /// </summary>
@@ -128,7 +134,7 @@ public static class ZonedTime
     /// Determines whether an id has the form of an IANA zone id, whether or not this host's time zone data
     /// knows it: one or more names of ASCII letters, digits, <c>_</c>, <c>+</c> and <c>-</c>, separated by
     /// single slashes, such as <c>Europe/Zurich</c>, <c>America/Argentina/Buenos_Aires</c>, <c>Etc/GMT+5</c>
-    /// or <c>UTC</c>. The tz database's files that are not zones (<c>localtime</c>, <c>posixrules</c>,
+    /// or <c>UTC</c>, at most 64 characters long. The tz database's files that are not zones (<c>localtime</c>, <c>posixrules</c>,
     /// <c>Factory</c>, and the <c>posix/</c> and <c>right/</c> trees) are not ids.
     /// </summary>
     /// <remarks>
@@ -139,7 +145,7 @@ public static class ZonedTime
     /// <returns><see langword="true"/> when <paramref name="id"/> has the form of an IANA zone id.</returns>
     public static bool IsWellFormedIanaTimeZoneId([NotNullWhen(true)] string? id)
     {
-        if (string.IsNullOrEmpty(id) || id[0] == '/' || id[^1] == '/')
+        if (string.IsNullOrEmpty(id) || id.Length > MaxIdLength || id[0] == '/' || id[^1] == '/')
         {
             return false;
         }
@@ -167,9 +173,10 @@ public static class ZonedTime
     /// The id must be well-formed (<see cref="IsWellFormedIanaTimeZoneId"/>) and match the zone's id exactly,
     /// including case, so one zone is never stored or compared under two spellings. Backward links such as
     /// <c>UTC</c> and <c>Asia/Calcutta</c>, which browsers may report, are accepted when the host's time zone
-    /// data has them (Ubuntu ships legacy names such as <c>US/Eastern</c> separately, in <c>tzdata-legacy</c>).
-    /// Resolution needs that data (the <c>tzdata</c> package on Linux, ICU on Windows); without it every id is
-    /// rejected.
+    /// data has them: Debian and Ubuntu ship most backward links (<c>Asia/Calcutta</c>, <c>Asia/Saigon</c>,
+    /// <c>America/Buenos_Aires</c>, <c>Europe/Kiev</c>, <c>US/Eastern</c> and others) in a separate
+    /// <c>tzdata-legacy</c> package, while Alpine's <c>tzdata</c> has them all. Resolution needs that data (the
+    /// <c>tzdata</c> package on Linux, ICU on Windows); without it every id is rejected.
     /// </remarks>
     /// <param name="id">The IANA zone id, for example <c>Europe/Zurich</c>.</param>
     /// <param name="zone">The zone when this method returns <see langword="true"/>.</param>

@@ -19,7 +19,16 @@ A `DateTime` in a contract now always means a local reading (the clock reading a
 
 **New:** `TableViewDataTypes` (Csag.Blueprint.Application) names the `TableViewColumnMetadata.DataType` values.
 
-**New:** `TableViewDataRequest.TimeZone` and `TableViewExportRequest.TimeZone`, an optional IANA id (normally the viewer's browser zone). `TableViewDataRequestValidator` and the new `TableViewExportRequestValidator` reject an id that is not IANA with a 400 validation error. Without it, the tenant zone applies, and UTC when there is none. `TableViewQueryRequest.TimeZone` carries the resolved zone to the executor; `ITableViewExecutor` gains an `ExecuteWithoutPaginationAsync` overload with a `TimeZoneInfo? timeZone`.
+**New:** `TableViewColumnDefinition.WithTimeZoneFrom(Expression<Func<TDto, string?>> timeZoneSelector)` declares that a local reading column's readings are in the zone its row names instead of the tenant's, for places that store their own IANA `TimeZoneId` (a site the tenant runs, a one-off venue). The selected property must itself be a column; `TableViewColumnMetadata.TimeZoneColumn` names it, so clients label each reading with its row's zone. Filters on the column are unchanged (local readings compare as they read), and its export header names no zone. Only local reading columns accept it.
+
+```csharp
+Column(dto => dto.OpensLocal)
+    .Filterable(TableViewFilterOperator.DateRange)
+    .WithTimeZoneFrom(dto => dto.TimeZoneId);
+Column(dto => dto.TimeZoneId);
+```
+
+**New:** `TableViewDataRequest.TimeZone` and `TableViewExportRequest.TimeZone`, an optional IANA id (normally the viewer's browser zone). `TableViewDataRequestValidator` and `TableViewExportRequestValidator` reject an id that is not IANA with a 400 validation error. Without it, the tenant zone applies, and UTC when there is none. `TableViewQueryRequest.TimeZone` carries the resolved zone to the executor; `ITableViewExecutor` gains an `ExecuteWithoutPaginationAsync` overload with a `TimeZoneInfo? timeZone`.
 
 **Breaking:** `TableViewColumnMetadata.DataType` reports `localDateTime` for a `DateTime` column and `instant` for a `DateTimeOffset` column; only `DateOnly` columns still report `date`.
 
@@ -31,7 +40,7 @@ A `DateTime` in a contract now always means a local reading (the clock reading a
 
 **Breaking:** `TableViewExecutor` takes an `ITenantTimeZoneProvider` in its constructor. It is resolved from DI as before; code that constructs it directly passes one (`new UtcTenantTimeZoneProvider()` in tests).
 
-**Behaviour change:** `TableViewExcelExporter` writes temporal values as real date cells: a `DateOnly` as a date, a local reading as it reads, and an instant converted to the effective zone with its time (previously its UTC date with the time dropped). Number formats follow the request culture's short date and time patterns (instants include seconds) instead of the fixed `dd.MM.yyyy`. The headers of columns with a time name their zone as an IANA id after the column header: an instant column the effective zone (`Created at (Europe/London)`), a local reading column the tenant's zone (`Start (Europe/Zurich)`); date columns are unchanged. `Export` takes optional `timeZone` (the zone instants are shown in and named by; UTC when null), `placeTimeZone` (named by local reading columns; none when null) and `culture` (current culture when null) parameters; `TableViewExportEndpointBase` passes the effective zone, the tenant zone and `CultureInfo.CurrentCulture`.
+**Behaviour change:** `TableViewExcelExporter` writes temporal values as real date cells: a `DateOnly` as a date, a local reading as it reads, and an instant converted to the effective zone with its time (previously its UTC date with the time dropped). Number formats follow the request culture's short date and time patterns (instants include seconds) instead of the fixed `dd.MM.yyyy`. The headers of columns with a time name their zone as an IANA id after the column header: an instant column the effective zone (`Created at (Europe/London)`), a local reading column the tenant's zone (`Start (Europe/Zurich)`); date columns are unchanged, and so is a local reading column whose zone comes from its row (see `WithTimeZoneFrom`), since its rows can be in different zones that the zone column carries. `Export` takes optional `timeZone` (the zone instants are shown in and named by; UTC when null), `placeTimeZone` (named by local reading columns; none when null) and `culture` (current culture when null) parameters; `TableViewExportEndpointBase` passes the effective zone, the tenant zone and `CultureInfo.CurrentCulture`.
 
 **Behaviour change:** The OpenAPI document describes a `DateTime` as `type: string, format: local-date-time, pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$` (instead of `format: date-time`), and a `TimeSpan` as a string with the pattern of its constant format `[-][d.]hh:mm:ss[.fffffff]`, without `format: duration` (`TemporalSchemaProcessor`, registered by `AddSwaggerDocumentation`).
 
@@ -41,7 +50,7 @@ No EF model change: no migration is needed.
 
 Consumer migration (`csag-blueprint-web`):
 
-- Frontend `components/table-view/cells.tsx` switches on `dataType`: add `localDateTime` (format the reading as it reads, labelled with the place zone when the viewer's differs) and `instant` (format in the viewer's zone); until then both fall through to raw text. Send the viewer's zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) as `timeZone` on table view data and export requests.
+- Frontend `components/table-view/cells.tsx` switches on `dataType`: add `localDateTime` (format the reading as it reads, labelled with the place zone when the viewer's differs: the zone in the row's `timeZoneColumn` field when the column names one, else the tenant zone) and `instant` (format in the viewer's zone); until then both fall through to raw text. Send the viewer's zone (`Intl.DateTimeFormat().resolvedOptions().timeZone`) as `timeZone` on table view data and export requests.
 - Every client that sends a `DateTime` must send `yyyy-MM-ddTHH:mm[:ss]` without an offset or `Z`. Today's form-kit `DateTimeInputField` appends the browser offset, so the Example `TestEndpoint` (`DateTimeValue`, `OptionalDateTime`) answers 400 until the form sends local readings; its server-side `new DateTime(..., DateTimeKind.Utc)` example still serializes, without the `Z`.
 - A `DateTime` used as an instant in a DTO loses its meaning on the wire: change it to `DateTimeOffset`.
 - Regenerate the OpenAPI spec and the Orval client: `DateTime` properties change format and `TimeSpan` properties lose `format: duration`; the generated TypeScript types stay `string`.

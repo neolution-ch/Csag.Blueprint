@@ -2,6 +2,7 @@ namespace Csag.Blueprint.Application.TableView;
 
 using System.Collections.ObjectModel;
 using System.Linq.Expressions;
+using System.Reflection;
 using System.Text.RegularExpressions;
 
 /// <summary>
@@ -246,6 +247,45 @@ public sealed class TableViewColumnDefinition<TEntity, TDto>
         this.metadata.AllowedValues = Array.AsReadOnly(allowedValues
             .Select(value => value with { LabelKey = $"{prefix}.{value.Value}", IsLabelKeyOptional = false })
             .ToArray());
+        return this;
+    }
+
+    /// <summary>
+    /// Declares that this local reading column's readings are in a zone each row names, not in the tenant's
+    /// zone: a place elsewhere, such as a site the tenant runs or a one-off venue, stores its own IANA zone id.
+    /// The selected property must be a column of the same definition, so every row carries its zone; it is
+    /// exposed as <see cref="TableViewColumnMetadata.TimeZoneColumn"/>. Filters are unaffected, because
+    /// local readings are compared as they read, without a zone.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// Column(dto => dto.OpensLocal)
+    ///     .Filterable(TableViewFilterOperator.DateRange)
+    ///     .WithTimeZoneFrom(dto => dto.TimeZoneId);
+    /// Column(dto => dto.TimeZoneId);
+    /// </code>
+    /// </example>
+    /// <param name="timeZoneSelector">Selects the DTO property that holds the row's IANA zone id.</param>
+    /// <returns>This configuration for chaining.</returns>
+    /// <exception cref="InvalidOperationException">The column is not a local reading (<see cref="DateTime"/>) column.</exception>
+    /// <exception cref="ArgumentException"><paramref name="timeZoneSelector"/> does not select a property.</exception>
+    public TableViewColumnDefinition<TEntity, TDto> WithTimeZoneFrom(Expression<Func<TDto, string?>> timeZoneSelector)
+    {
+        ArgumentNullException.ThrowIfNull(timeZoneSelector);
+
+        if (this.metadata.DataType != TableViewDataTypes.LocalDateTime)
+        {
+            throw new InvalidOperationException(
+                $"Column '{this.metadata.Name}' is a '{this.metadata.DataType}' column. Only a local reading " +
+                "(DateTime) column takes its time zone from its row; an instant needs no zone and a date has none.");
+        }
+
+        if (timeZoneSelector.Body is not MemberExpression { Member: PropertyInfo property })
+        {
+            throw new ArgumentException("The selector must select a property of the DTO, such as dto => dto.TimeZoneId.", nameof(timeZoneSelector));
+        }
+
+        this.metadata.TimeZoneColumn = property.Name;
         return this;
     }
 

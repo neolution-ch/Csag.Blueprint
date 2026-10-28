@@ -149,6 +149,35 @@ public sealed class TableViewExcelExporterTests
     }
 
     [Fact]
+    public void Export_LocalReadingColumnWithZoneFromRow_NamesNoZoneAndKeepsReadings()
+    {
+        // Arrange — a Zurich tenant's stands, one of them at a boat show in Miami.
+        IList<TableViewColumnMetadata> metadata =
+        [
+            new() { Name = nameof(StandRow.OpensLocal), DisplayName = "Opens", DataType = "localDateTime", TimeZoneColumn = nameof(StandRow.TimeZoneId) },
+            new() { Name = nameof(StandRow.ClosesLocal), DisplayName = "Closes", DataType = "localDateTime" },
+            new() { Name = nameof(StandRow.TimeZoneId), DisplayName = "Time zone", DataType = "string" },
+        ];
+        IList<StandRow> data =
+        [
+            new() { OpensLocal = new DateTime(2026, 10, 25, 9, 0, 0, DateTimeKind.Unspecified), ClosesLocal = new DateTime(2026, 10, 25, 18, 0, 0, DateTimeKind.Unspecified), TimeZoneId = "Europe/Zurich" },
+            new() { OpensLocal = new DateTime(2026, 10, 25, 10, 0, 0, DateTimeKind.Unspecified), ClosesLocal = new DateTime(2026, 10, 25, 17, 0, 0, DateTimeKind.Unspecified), TimeZoneId = "America/New_York" },
+        ];
+
+        // Act
+        var bytes = TableViewExcelExporter.Export(data, metadata, timeZone: FindZone("Europe/London"), placeTimeZone: FindZone("Europe/Zurich"), culture: CultureInfo.InvariantCulture);
+
+        // Assert
+        using var workbook = new XLWorkbook(new MemoryStream(bytes));
+        var worksheet = workbook.Worksheet(1);
+        worksheet.Cell(1, 1).GetString().ShouldBe("Opens", "its rows are in different zones, which the zone column carries");
+        worksheet.Cell(1, 2).GetString().ShouldBe("Closes (Europe/Zurich)", "a local reading without a row zone is in the tenant zone");
+        worksheet.Cell(1, 3).GetString().ShouldBe("Time zone");
+        worksheet.Cell(3, 1).GetDateTime().ShouldBe(new DateTime(2026, 10, 25, 10, 0, 0, DateTimeKind.Unspecified), "the reading is written as it reads");
+        worksheet.Cell(3, 3).GetString().ShouldBe("America/New_York");
+    }
+
+    [Fact]
     public void Export_NonTemporalColumn_KeepsItsHeader()
     {
         IList<TableViewColumnMetadata> metadata = [new() { Name = nameof(Row.Name), DisplayName = "Name", DataType = "string" }];
@@ -185,6 +214,15 @@ public sealed class TableViewExcelExporterTests
         public TestVehicleKind Kind { get; init; }
 
         public string Name { get; init; } = string.Empty;
+    }
+
+    private sealed class StandRow
+    {
+        public DateTime OpensLocal { get; init; }
+
+        public DateTime ClosesLocal { get; init; }
+
+        public string TimeZoneId { get; init; } = string.Empty;
     }
 
     private sealed class TemporalRow

@@ -25,7 +25,9 @@ public static class TableViewExcelExporter
     /// A cell with a time means nothing without its zone, so the headers of those columns name it, as
     /// the IANA id after the display name: <c>Created at (Europe/London)</c>. An instant column names
     /// <paramref name="timeZone"/>, a local reading column names <paramref name="placeTimeZone"/>, and a
-    /// date column names none.
+    /// date column names none. A local reading column whose zone comes from its row
+    /// (<see cref="TableViewColumnMetadata.TimeZoneColumn"/>) names none either: its rows can be in different
+    /// zones, which the zone column carries.
     /// </para>
     /// </remarks>
     /// <typeparam name="TDto">The DTO type.</typeparam>
@@ -95,13 +97,14 @@ public static class TableViewExcelExporter
         {
             headerZone = timeZone;
         }
-        else if (column.DataType == TableViewDataTypes.LocalDateTime)
+        else if (column.DataType == TableViewDataTypes.LocalDateTime && column.TimeZoneColumn is null)
         {
             headerZone = placeTimeZone;
         }
         else
         {
-            // A date column, or one without a time, means the same in every zone.
+            // A date or a column without a time means the same in every zone, and a local reading whose
+            // zone comes from its row has no single zone to name.
         }
 
         return headerZone is null ? column.DisplayName : $"{column.DisplayName} ({headerZone.Id})";

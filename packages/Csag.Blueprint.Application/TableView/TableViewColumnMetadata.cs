@@ -34,6 +34,15 @@ public sealed class TableViewColumnMetadata
     public string DataType { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the name of the column whose value, in the same row, is the IANA zone id of this
+    /// column's local reading; set with <see cref="TableViewColumnDefinition{TEntity, TDto}.WithTimeZoneFrom"/>.
+    /// Null when the column is not a local reading or its readings are all in the tenant's zone, the default.
+    /// A client labels each reading with the zone its row names rather than with the tenant's zone, and an
+    /// Excel export names no zone in the column's header, since the zone column carries it per row.
+    /// </summary>
+    public string? TimeZoneColumn { get; set; }
+
+    /// <summary>
     /// Gets or sets the description of the column.
     /// </summary>
     public string Description { get; set; } = string.Empty;

@@ -12,7 +12,8 @@ using Microsoft.EntityFrameworkCore;
 /// The request's <see cref="TableViewExportRequest.TimeZone"/>, else the zone of the registered
 /// <see cref="ITenantTimeZoneProvider"/>, decides both how date filters on instant columns are evaluated and
 /// in which zone the workbook shows instants; dates and times are formatted for the request culture. The
-/// headers of instant columns name that zone, and the headers of local reading columns name the tenant's.
+/// headers of instant columns name that zone, and the headers of local reading columns name the tenant's, unless
+/// their zone comes from the row.
 /// </summary>
 /// <typeparam name="TContext">The database context type.</typeparam>
 /// <typeparam name="TEntity">The entity type.</typeparam>

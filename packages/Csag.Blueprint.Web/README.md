@@ -208,7 +208,8 @@ by `TableViewDataRequestValidator` and `TableViewExportRequestValidator`) and fa
 the reading in the effective zone including its time, with number formats from the request culture's date and time
 patterns. The headers of columns with a time name their zone as an IANA id after the column header: an instant column
 the effective zone (`Created at (Europe/London)`), a local reading column the tenant's zone (`Start (Europe/Zurich)`);
-date columns name none.
+date columns name none. A local reading column whose zone comes from its row (`TimeZoneColumn`) names none either:
+its rows can be in different zones, and the zone column carries each row's zone into the workbook.
 
 ### Rate limiting
 

@@ -86,6 +86,17 @@ public sealed class UserTableViewDefinition : TableViewDefinition<UserEntity, Us
 
 A `DateTime` in a table view DTO is always a local reading; use `DateTimeOffset` for instants.
 
+A local reading is in the tenant's zone unless the column says its zone comes from the row. A place elsewhere — a site the tenant runs, or a one-off venue such as a boat-show stand in Miami for a Zurich tenant — stores its own IANA zone id, and a table can then list readings in several zones:
+
+```csharp
+Column(dto => dto.OpensLocal)
+    .Filterable(TableViewFilterOperator.DateRange)
+    .WithTimeZoneFrom(dto => dto.TimeZoneId);   // the stand's own zone, per row
+Column(dto => dto.TimeZoneId);                  // must be a column, so every row carries it
+```
+
+The column's metadata names the zone column in `TimeZoneColumn` (`"TimeZoneId"`), so a client labels each reading with its row's zone. Filters are unaffected: local readings compare as they read. `WithTimeZoneFrom` is refused on a column that is not a local reading, and the definition's `Metadata` throws when the zone property is not a column.
+
 ### Filter operators
 
 | Operator    | Description |

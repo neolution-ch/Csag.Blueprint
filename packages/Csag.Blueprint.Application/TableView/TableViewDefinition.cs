@@ -18,6 +18,10 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
     private readonly List<TableViewColumnDefinition<TEntity, TDto>> columnDefinitions = [];
 
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">
+    /// A column takes its time zone (<see cref="TableViewColumnDefinition{TEntity, TDto}.WithTimeZoneFrom"/>)
+    /// from a property that is not a column of this definition.
+    /// </exception>
     public IList<TableViewColumnMetadata> Metadata
     {
         get
@@ -29,6 +33,7 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
                 metadata.Add(definition.Metadata);
             }
 
+            EnsureTimeZoneColumnsExist(metadata);
             return metadata;
         }
     }
@@ -262,6 +267,23 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         }
 
         return expression.Type;
+    }
+
+    /// <summary>
+    /// Fails when a column takes its time zone from a property that is not a column: only columns are
+    /// projected, so its rows would carry no zone.
+    /// </summary>
+    private static void EnsureTimeZoneColumnsExist(List<TableViewColumnMetadata> metadata)
+    {
+        foreach (var column in metadata)
+        {
+            if (column.TimeZoneColumn is { } zoneColumn && !metadata.Exists(c => c.Name == zoneColumn))
+            {
+                throw new InvalidOperationException(
+                    $"Column '{column.Name}' takes its time zone from '{zoneColumn}', which is not a column of the " +
+                    $"table view. Configure it with Column(dto => dto.{zoneColumn}) so every row carries its zone.");
+            }
+        }
     }
 
     private static IEnumerable<TableViewAllowedValue> CreateEnumAllowedValues(Type enumType)

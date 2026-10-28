@@ -166,8 +166,10 @@ public static class ZonedTime
     /// <remarks>
     /// The id must be well-formed (<see cref="IsWellFormedIanaTimeZoneId"/>) and match the zone's id exactly,
     /// including case, so one zone is never stored or compared under two spellings. Backward links such as
-    /// <c>UTC</c> and <c>Asia/Calcutta</c>, which browsers may report, are accepted. Resolution needs the host's
-    /// time zone data (the <c>tzdata</c> package on Linux, ICU on Windows); without it every id is rejected.
+    /// <c>UTC</c> and <c>Asia/Calcutta</c>, which browsers may report, are accepted when the host's time zone
+    /// data has them (Ubuntu ships legacy names such as <c>US/Eastern</c> separately, in <c>tzdata-legacy</c>).
+    /// Resolution needs that data (the <c>tzdata</c> package on Linux, ICU on Windows); without it every id is
+    /// rejected.
     /// </remarks>
     /// <param name="id">The IANA zone id, for example <c>Europe/Zurich</c>.</param>
     /// <param name="zone">The zone when this method returns <see langword="true"/>.</param>

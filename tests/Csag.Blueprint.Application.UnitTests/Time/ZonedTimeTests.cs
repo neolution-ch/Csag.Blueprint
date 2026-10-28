@@ -197,10 +197,8 @@ public sealed class ZonedTimeTests
     [InlineData("UTC")] // what a browser on a machine set to UTC reports
     [InlineData("Etc/UTC")]
     [InlineData("Etc/GMT+5")]
-    [InlineData("EST5EDT")]
     [InlineData("America/Port-au-Prince")]
     [InlineData("America/Argentina/Buenos_Aires")]
-    [InlineData("US/Eastern")] // a backward link
     public void TryFindIanaTimeZone_IanaId_FindsZoneWithThatId(string id)
     {
         ZonedTime.TryFindIanaTimeZone(id, out var zone).ShouldBeTrue();
@@ -244,6 +242,9 @@ public sealed class ZonedTimeTests
     [InlineData("Europe/Zurich")]
     [InlineData("Etc/GMT-14")]
     [InlineData("America/Argentina/Buenos_Aires")]
+    [InlineData("America/Port-au-Prince")]
+    [InlineData("EST5EDT")] // legacy names, which Ubuntu ships separately in tzdata-legacy
+    [InlineData("US/Eastern")]
     [InlineData("Mars/Olympus_Mons")] // well-formed, though no tz database knows it
     public void IsWellFormedIanaTimeZoneId_NameOfTheIanaForm_IsTrueWhetherKnownOrNot(string id)
     {

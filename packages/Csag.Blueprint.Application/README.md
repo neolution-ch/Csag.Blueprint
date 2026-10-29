@@ -97,6 +97,16 @@ Column(dto => dto.TimeZoneId);                  // must be a column, so every ro
 
 The column's metadata names the zone column in `TimeZoneColumn` (`"TimeZoneId"`), so a client labels each reading with its row's zone. Filters are unaffected: local readings compare as they read. `WithTimeZoneFrom` is refused on a column that is not a local reading, and the definition's `Metadata` throws when the zone property is not a column.
 
+An entity's time values (`PlaceTime`, `ZonedPlaceTime`, `ViewerTime` in `Csag.Blueprint.Domain.Time`) are not columns themselves. Give the DTO a flat property per member it shows and select the member; each column then has the data type of its kind and filters, sorts and exports in SQL like a column over a plain property:
+
+```csharp
+Column(dto => dto.StartLocal, e => e.Start.Local);                // localDateTime, in the tenant's zone
+Column(dto => dto.StartAt, e => e.Start.At);                      // instant
+Column(dto => dto.StandOpensLocal, e => e.StandOpens.Local)       // localDateTime, in the stand's zone
+    .WithTimeZoneFrom(dto => dto.StandOpensTimeZoneId);
+Column(dto => dto.StandOpensTimeZoneId, e => e.StandOpens.TimeZoneId);
+```
+
 ### Filter operators
 
 | Operator    | Description |

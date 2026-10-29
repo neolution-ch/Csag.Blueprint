@@ -205,6 +205,35 @@ public static class ZonedTime
         return true;
     }
 
+    /// <summary>
+    /// Finds the transition that skipped a reading in a spring-forward gap: the first instant whose local
+    /// reading is at or after it.
+    /// </summary>
+    /// <param name="reading">A reading that falls in a gap of <paramref name="zone"/>.</param>
+    /// <param name="zone">The zone of the place.</param>
+    /// <returns>The first instant, in UTC, at which a clock in the zone shows <paramref name="reading"/> or later.</returns>
+    internal static DateTimeOffset FindGapTransition(DateTime reading, TimeZoneInfo zone)
+    {
+        // Local readings only move forward around a gap, so a binary search over the surrounding two days
+        // finds it.
+        var low = Math.Max(reading.Ticks - TimeSpan.TicksPerDay, DateTime.MinValue.Ticks);
+        var high = Math.Min(reading.Ticks + TimeSpan.TicksPerDay, DateTime.MaxValue.Ticks);
+        while (low < high)
+        {
+            var middle = low + ((high - low) / 2);
+            if (ToLocalReading(new DateTimeOffset(middle, TimeSpan.Zero), zone) >= reading)
+            {
+                high = middle;
+            }
+            else
+            {
+                low = middle + 1;
+            }
+        }
+
+        return new DateTimeOffset(low, TimeSpan.Zero);
+    }
+
     private static DateTimeOffset StartOfDay(DateOnly date, TimeZoneInfo zone)
     {
         var midnight = date.ToDateTime(TimeOnly.MinValue);
@@ -219,33 +248,18 @@ public static class ZonedTime
             return ClampToRange(estimate);
         }
 
-        // Midnight falls in a spring-forward gap, so the day starts at the transition: the first instant
-        // whose local reading is at or after midnight. Local readings only move forward around a gap, so
-        // a binary search over the surrounding two days finds it.
-        var low = Math.Max(midnight.Ticks - TimeSpan.TicksPerDay, DateTime.MinValue.Ticks);
-        var high = Math.Min(midnight.Ticks + TimeSpan.TicksPerDay, DateTime.MaxValue.Ticks);
-        while (low < high)
-        {
-            var middle = low + ((high - low) / 2);
-            if (ToLocalReading(new DateTimeOffset(middle, TimeSpan.Zero), zone) >= midnight)
-            {
-                high = middle;
-            }
-            else
-            {
-                low = middle + 1;
-            }
-        }
+        // Midnight falls in a spring-forward gap, so the day starts at the transition.
+        var transition = FindGapTransition(midnight, zone).UtcTicks;
 
         // Windows adjustment rules cannot express a transition at 24:00 and place it at 23:59:59.999
         // instead. Real transitions fall on whole seconds, so rounding up recovers the instant meant.
-        var partialSecond = low % TimeSpan.TicksPerSecond;
+        var partialSecond = transition % TimeSpan.TicksPerSecond;
         if (partialSecond != 0)
         {
-            low = Math.Min(low - partialSecond + TimeSpan.TicksPerSecond, DateTime.MaxValue.Ticks);
+            transition = Math.Min(transition - partialSecond + TimeSpan.TicksPerSecond, DateTime.MaxValue.Ticks);
         }
 
-        return new DateTimeOffset(low, TimeSpan.Zero);
+        return new DateTimeOffset(transition, TimeSpan.Zero);
     }
 
     private static bool TryCreateUtcInstant(long utcTicks, out DateTimeOffset instant)

@@ -22,13 +22,11 @@ env:
 jobs:
     publish:
         name: Publish preview packages
-        # Fork and Dependabot PRs don't get the FEEDZ_TOKEN secret. The changesets release PR
-        # only carries versions that are about to ship to nuget.org anyway.
+        # Fork and Dependabot PRs don't get the FEEDZ_TOKEN secret.
         if: >-
             !github.event.pull_request.draft &&
             github.event.pull_request.head.repo.full_name == github.repository &&
-            github.event.pull_request.user.login != 'dependabot[bot]' &&
-            !startsWith(github.head_ref, 'changeset-release/')
+            github.event.pull_request.user.login != 'dependabot[bot]'
         runs-on: ubuntu-latest
         permissions:
             contents: read
@@ -46,15 +44,22 @@ jobs:
               id: version
               env:
                   PR_NUMBER: ${{ github.event.pull_request.number }}
+                  HEAD_REF: ${{ github.head_ref }}
               run: |
-                  # One patch above the current release, so a preview sorts after it and a
-                  # consumer that moves only some Csag.Blueprint.* packages to the preview gets
-                  # a NU1605 downgrade error instead of a silent mix. The run number makes every
-                  # push a new version, because NuGet caches packages by id and version and
-                  # never downloads the same version twice.
+                  # A feature PR carries the current release in package.json, so its preview goes
+                  # one patch above it. The changesets release PR already carries the upcoming
+                  # version, so its preview is a release candidate just below that release.
+                  # Either way the preview sorts after the current release, and a consumer that
+                  # moves only some Csag.Blueprint.* packages to it gets a NU1605 downgrade error
+                  # instead of a silent mix. The run number makes every push a new version,
+                  # because NuGet caches packages by id and version and never downloads the same
+                  # version twice.
                   BASE=$(node -p "require('./packages/Csag.Blueprint.Domain/package.json').version")
                   IFS=. read -r MAJOR MINOR PATCH <<< "${BASE%%-*}"
-                  echo "version=${MAJOR}.${MINOR}.$((PATCH + 1))-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+                  if [[ "$HEAD_REF" != changeset-release/* ]]; then
+                      PATCH=$((PATCH + 1))
+                  fi
+                  echo "version=${MAJOR}.${MINOR}.${PATCH}-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
 
             - name: Remove changesets version-tracking stubs
               run: |

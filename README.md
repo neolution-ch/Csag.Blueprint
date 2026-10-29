@@ -43,7 +43,7 @@ Requires the .NET SDK pinned in [global.json](global.json). Restore uses NuGet l
 
 ## Preview packages
 
-Every pull request publishes all six packages to a public preview feed on feedz.io, versioned one patch above the current release, for example `0.7.1-pr.42.183` (PR 42, workflow run 183). A comment on the PR names the version built from its latest push. Previews are removed from the feed after 30 days. Releases go to nuget.org only.
+Every pull request publishes all six packages to a public preview feed on feedz.io, versioned one patch above the current release, for example `0.7.1-pr.42.183` (PR 42, workflow run 183). The **"chore: version packages"** PR publishes a release candidate of the upcoming version instead, for example `0.7.1-pr.73.190`, so the combined changes of the next release can be tested before it ships. A comment on the PR names the version built from its latest push. Previews are removed from the feed after 30 days. Releases go to nuget.org only.
 
 To try a preview in an application, add the feed to its `nuget.config`. It needs no credentials:
 

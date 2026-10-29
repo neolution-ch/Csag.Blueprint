@@ -15,10 +15,9 @@ GHSA-r955-8q5j-3h83) and `System.Security.Cryptography.Pkcs` 10.0.13 (GHSA-846f-
 GHSA-2fmv-rv2c-59x7).
 
 `Csag.Blueprint.Infrastructure`, `Csag.Blueprint.Web` and `Csag.Blueprint.Testing` now also depend
-on `System.Security.Cryptography.Pkcs` 10.0.13 and `MessagePack` 3.1.12 (GHSA-qhrr-8q5h-9q3h). The
-packages that pull them in, `Microsoft.Data.SqlClient` and `Foundatio.MessagePack`, still ask for
-vulnerable versions. Upgrading the blueprint packages is enough to get the patched versions, without
-a pin of your own.
+on `System.Security.Cryptography.Pkcs` 10.0.13. The package that pulls it in,
+`Microsoft.Data.SqlClient`, still asks for a vulnerable version. Upgrading the blueprint packages is
+enough to get the patched version, without a pin of your own.
 
 **When upgrading:**
 

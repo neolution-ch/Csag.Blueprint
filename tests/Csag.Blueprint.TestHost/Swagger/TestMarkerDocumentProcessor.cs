@@ -39,13 +39,18 @@ public sealed class TestMarkerDocumentProcessor : IDocumentProcessor
                 && name.Length > "ProblemDetails".Length
                 && name["ProblemDetails".Length..].All(char.IsAsciiDigit));
 
+        var operation = new OpenApiOperation
+        {
+            OperationId = "GetTestMarker",
+            Summary = defaultsApplied ? BlueprintDefaultsAppliedMarker : "blueprint-defaults-not-yet-applied",
+        };
+
+        // OpenAPI requires at least one response per operation; a bare 200 keeps the document valid.
+        operation.Responses["200"] = new OpenApiResponse { Description = "Test marker." };
+
         context.Document.Paths.TryAdd(MarkerPath, new OpenApiPathItem
         {
-            [OpenApiOperationMethod.Get] = new OpenApiOperation
-            {
-                OperationId = "GetTestMarker",
-                Summary = defaultsApplied ? BlueprintDefaultsAppliedMarker : "blueprint-defaults-not-yet-applied",
-            },
+            [OpenApiOperationMethod.Get] = operation,
         });
     }
 }

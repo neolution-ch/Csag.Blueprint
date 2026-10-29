@@ -969,6 +969,12 @@
           "Neolution.Extensions.Caching.Distributed": "[3.0.0-beta.0, )"
         }
       },
+      "csag.blueprint.testhost.plugin": {
+        "type": "Project",
+        "dependencies": {
+          "FastEndpoints": "[8.3.0, )"
+        }
+      },
       "csag.blueprint.testing": {
         "type": "Project",
         "dependencies": {

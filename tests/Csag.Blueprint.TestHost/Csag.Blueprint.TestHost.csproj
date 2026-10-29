@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\packages\Csag.Blueprint.Web\Csag.Blueprint.Web.csproj" />
     <ProjectReference Include="..\Csag.Blueprint.Tests.Shared\Csag.Blueprint.Tests.Shared.csproj" />
+    <ProjectReference Include="..\Csag.Blueprint.TestHost.Plugin\Csag.Blueprint.TestHost.Plugin.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1544,11 +1544,18 @@
       "csag.blueprint.testhost": {
         "type": "Project",
         "dependencies": {
+          "Csag.Blueprint.TestHost.Plugin": "[1.0.0, )",
           "Csag.Blueprint.Tests.Shared": "[1.0.0, )",
           "Csag.Blueprint.Web": "[0.7.0, )",
           "FastEndpoints": "[8.3.0, )",
           "FastEndpoints.Swagger": "[8.3.0, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.13, )"
+        }
+      },
+      "csag.blueprint.testhost.plugin": {
+        "type": "Project",
+        "dependencies": {
+          "FastEndpoints": "[8.3.0, )"
         }
       },
       "csag.blueprint.testing": {

@@ -113,15 +113,17 @@ public sealed class TableViewExcelExporterTests
         worksheet.Cell(2, 3).Style.DateFormat.Format.ShouldStartWith("m/d/yyyy h:mm:ss");
     }
 
+    // Every case sets its calendar, because a culture's default calendar comes from the host's ICU data:
+    // ICU 74 gives ar-SA Um al-Qura, ICU 78 the Gregorian calendar.
     [Theory]
-    [InlineData("th-TH", null, "[$-1070000]")] // Thai Buddhist, th-TH's own calendar
-    [InlineData("ar-SA", null, "[$-1170000]")] // Um al-Qura, ar-SA's own calendar
-    [InlineData("fa-IR", null, "[$-1160000]")] // Persian, fa-IR's own calendar
+    [InlineData("th-TH", typeof(ThaiBuddhistCalendar), "[$-1070000]")]
+    [InlineData("ar-SA", typeof(UmAlQuraCalendar), "[$-1170000]")]
+    [InlineData("fa-IR", typeof(PersianCalendar), "[$-1160000]")]
     [InlineData("ar-SA", typeof(HijriCalendar), "[$-1060000]")]
     [InlineData("ja-JP", typeof(JapaneseCalendar), "[$-1030000]")]
     [InlineData("ko-KR", typeof(KoreanCalendar), "[$-1050000]")]
     [InlineData("he-IL", typeof(HebrewCalendar), "[$-1080000]")]
-    public void Export_CultureWithAnotherCalendar_FormatsDatesInThatCalendar(string cultureName, Type? calendarType, string calendarCode)
+    public void Export_CultureWithAnotherCalendar_FormatsDatesInThatCalendar(string cultureName, Type calendarType, string calendarCode)
     {
         var culture = WithCalendar(cultureName, calendarType);
         var data = new List<TemporalRow>

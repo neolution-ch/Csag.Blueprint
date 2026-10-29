@@ -1,7 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Csag.Blueprint.TestHost.Auditing;
 using Csag.Blueprint.TestHost.Extensions;
-using Csag.Blueprint.TestHost.Plugin;
 using Csag.Blueprint.TestHost.Swagger;
 using Csag.Blueprint.TestHost.Time;
 using Csag.Blueprint.Tests.Shared.Database;
@@ -25,14 +24,10 @@ builder.Services.AddSingleton<TimeProvider>(sp => sp.GetRequiredService<Pinnable
 // which tenant entity-change audit events are recorded under.
 builder.Services.AddSingleton<PinnableAuditTenantResolver>();
 
-// Package-level services: server options, OIDC, FastEndpoints, Swagger, distributed cache,
-// anti-forgery, and the claims-based tenant resolver. Also pins the BlueprintServicesOptions
-// contract. FastEndpointsAdditionalAssemblies discovers ExternalMarkerEndpoint from a separate
-// assembly. ConfigureOpenApiDocument registers a processor that runs after the Blueprint
-// document defaults. See ExternalAssemblyDiscoveryTests and SwaggerEndpointTests.
+// Package-level services, configured via BlueprintServicesOptions. ConfigureOpenApiDocument adds a
+// processor that runs after the Blueprint document defaults. See SwaggerEndpointTests.
 builder.AddBlueprintServices(o =>
 {
-    o.FastEndpointsAdditionalAssemblies = [typeof(ExternalMarkerEndpoint).Assembly];
     o.ConfigureOpenApiDocument = s => s.DocumentProcessors.Add(new TestMarkerDocumentProcessor());
 });
 

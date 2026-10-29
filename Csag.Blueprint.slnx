@@ -19,7 +19,6 @@
     <Project Path="tests/Csag.Blueprint.Web.UnitTests/Csag.Blueprint.Web.UnitTests.csproj" />
     <Project Path="tests/Csag.Blueprint.SourceGenerators.UnitTests/Csag.Blueprint.SourceGenerators.UnitTests.csproj" />
     <Project Path="tests/Csag.Blueprint.Testing.UnitTests/Csag.Blueprint.Testing.UnitTests.csproj" />
-    <Project Path="tests/Csag.Blueprint.TestHost.Plugin/Csag.Blueprint.TestHost.Plugin.csproj" />
     <Project Path="tests/Csag.Blueprint.TestHost/Csag.Blueprint.TestHost.csproj" />
     <Project Path="tests/Csag.Blueprint.IntegrationTests/Csag.Blueprint.IntegrationTests.csproj" />
   </Folder>

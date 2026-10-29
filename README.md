@@ -41,6 +41,31 @@ dotnet pack -c Release -o ./nupkgs
 
 Requires the .NET SDK pinned in [global.json](global.json). Restore uses NuGet lockfiles (`packages.lock.json`); CI restores with `--locked-mode`, so run `dotnet restore` after changing dependencies to refresh the lockfiles.
 
+## Preview packages
+
+Every pull request publishes all six packages to a public preview feed on feedz.io, versioned one patch above the current release, for example `0.7.1-pr.42.183` (PR 42, workflow run 183). The **"chore: version packages"** PR publishes a release candidate of the upcoming version instead, for example `0.7.1-pr.73.190`, so the combined changes of the next release can be tested before it ships. A comment on the PR names the version built from its latest push. Previews are removed from the feed after 30 days. Releases go to nuget.org only.
+
+To try a preview in an application, add the feed to its `nuget.config`. It needs no credentials:
+
+```xml
+<packageSources>
+  <clear />
+  <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+  <add key="csag-blueprint-previews" value="https://f.feedz.io/collana-solutions/csag-blueprint/nuget/index.json" />
+</packageSources>
+<packageSourceMapping>
+  <packageSource key="nuget.org">
+    <package pattern="*" />
+    <package pattern="Csag.Blueprint.*" />
+  </packageSource>
+  <packageSource key="csag-blueprint-previews">
+    <package pattern="Csag.Blueprint.*" />
+  </packageSource>
+</packageSourceMapping>
+```
+
+`Csag.Blueprint.*` stays mapped to nuget.org as well: package source mapping only asks the sources listed under a package's most specific pattern, so without it released versions would stop resolving. Then set every `Csag.Blueprint.*` package to the preview version, as with any release. Keep the feed on the branch that tests the preview rather than on the application's main branch, so its everyday restores don't depend on feedz.io.
+
 ## Release process
 
 This repository follows the [neolution-ch release playbook](https://github.com/neolution-ch/release-playbook) (Changesets, NuGet variant):

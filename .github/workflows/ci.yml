@@ -12,7 +12,7 @@ jobs:
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
-              uses: actions/checkout@v7.0.1
+              uses: actions/checkout@v7
               with:
                   fetch-depth: 0
 
@@ -28,8 +28,10 @@ jobs:
             - name: Install Dependencies
               run: pnpm install --frozen-lockfile
 
+            # The Version Packages PR consumes the changesets it releases, so the check cannot pass on it. A branch name
+            # alone is no proof (anyone can push a changeset-release/* branch), so the PR must also come from the bot.
             - name: Check for changesets
-              if: github.head_ref != 'changeset-release/main' && !startsWith(github.head_ref, 'changeset-release/release/')
+              if: ${{ !(startsWith(github.head_ref, 'changeset-release/') && github.event.pull_request.user.login == 'csag-changesets-bot[bot]') }}
               run: pnpm exec changeset status --since=origin/${{ github.base_ref }}
 
     build:
@@ -42,7 +44,7 @@ jobs:
             pull-requests: write
         steps:
             - name: Checkout
-              uses: actions/checkout@v7.0.1
+              uses: actions/checkout@v7
 
             - name: Setup .NET
               uses: actions/setup-dotnet@v6.0.0

@@ -19,14 +19,23 @@ namespace Csag.Blueprint.Web.Extensions
         /// Configures JSON serialization to use string representation for enums.
         /// </summary>
         /// <param name="services">The service collection.</param>
+        /// <returns>The service collection for chaining.</returns>
+        public static IServiceCollection AddFastEndpointsWithConfiguration(this IServiceCollection services)
+            => AddFastEndpointsWithConfiguration(services, additionalAssemblies: null);
+
+        /// <summary>
+        /// Adds FastEndpoints with JSON serialization configuration.
+        /// Configures JSON serialization to use string representation for enums.
+        /// </summary>
+        /// <param name="services">The service collection.</param>
         /// <param name="additionalAssemblies">
-        /// Optional extra assemblies to scan for endpoints and command/event handlers that live outside
+        /// Extra assemblies to scan for endpoints and command/event handlers that live outside
         /// the entry assembly (which is always scanned).
         /// </param>
         /// <returns>The service collection for chaining.</returns>
         public static IServiceCollection AddFastEndpointsWithConfiguration(
             this IServiceCollection services,
-            IEnumerable<Assembly>? additionalAssemblies = null)
+            IEnumerable<Assembly>? additionalAssemblies)
         {
             // Apply the shared Blueprint JSON conventions (camelCase property names,
             // string enums). Same helper is used by persistence layers so the on-the-wire

@@ -1,10 +1,11 @@
 namespace Csag.Blueprint.Web.Extensions;
 
 using System.Reflection;
+using Microsoft.AspNetCore.Builder;
 using NSwag.Generation.AspNetCore;
 
 /// <summary>
-/// Optional configuration for <see cref="BlueprintBuilderExtensions.AddBlueprintServices"/>.
+/// Optional configuration for <see cref="BlueprintBuilderExtensions.AddBlueprintServices(WebApplicationBuilder, Action{BlueprintServicesOptions})"/>.
 /// Add each new customization hook here, as a property. This keeps the aggregate registration
 /// method's signature single and stable.
 /// </summary>

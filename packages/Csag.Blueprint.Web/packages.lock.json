@@ -155,12 +155,12 @@
       },
       "Neolution.Extensions.Caching.Distributed": {
         "type": "Direct",
-        "requested": "[3.0.0-beta.1, )",
-        "resolved": "3.0.0-beta.1",
-        "contentHash": "rkgjZCCKyipEp1oXMeGHhHPDYExe1/xpg8WMacdKC5j6KCSoiKD7y2h2uCfiipa8RFEvF4qNVh8R/XFWmdCpbQ==",
+        "requested": "[3.0.0, )",
+        "resolved": "3.0.0",
+        "contentHash": "YjH4lg96S5JHPmsdeXmoPEnopFCRvwNf9RN7Bw1h/BRmw5MNRPndmxtBPAzuAsOX+sHME4hg3Rs4x8F+tsbzSQ==",
         "dependencies": {
           "Foundatio.MessagePack": "13.0.5",
-          "Neolution.Extensions.Caching.Abstractions": "3.0.0-beta.1"
+          "Neolution.Extensions.Caching.Abstractions": "3.0.0"
         }
       },
       "Neolution.Extensions.Configuration.GoogleSecrets": {
@@ -598,8 +598,8 @@
       },
       "Neolution.Extensions.Caching.Abstractions": {
         "type": "Transitive",
-        "resolved": "3.0.0-beta.1",
-        "contentHash": "VsBH6Fc7YqqxaS/6ZA7zbtuXaJ1VWLmELIMVTzIp+feEHmjpRH40Y8YCsSTm71pBiyODSiJ1Q5PSOIoetpodQw=="
+        "resolved": "3.0.0",
+        "contentHash": "JPiTvgGSzcjfxL9mGMk1+Xbh/ZFDzlOIQ87CrzKrjdHhjygNBQb3JPuXh9gmtqRkNwuhNu9wlaLJrbQdN89CGA=="
       },
       "Newtonsoft.Json": {
         "type": "Transitive",
@@ -831,7 +831,7 @@
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.13, )",
           "Microsoft.EntityFrameworkCore": "[10.0.13, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.13, )",
-          "Neolution.Extensions.Caching.Distributed": "[3.0.0-beta.1, )"
+          "Neolution.Extensions.Caching.Distributed": "[3.0.0, )"
         }
       },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {

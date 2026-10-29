@@ -17,16 +17,18 @@
  * Each pin is deleted in turn, the lock files are re-resolved and the NuGet
  * vulnerability scan runs. The deletion is kept when the scan reports no vulnerable
  * package version beyond those it reported with every pin in place. Otherwise the pin
- * is put back, as it is when restore fails without it. A scan that cannot run stops the
- * script with an error. A pin marked KeepPin="true" is never tried, for pins held for a
- * reason other than an advisory.
+ * is put back, as it is when restore fails without it. Any other failure, such as a scan
+ * that cannot run, puts every file back and stops the script with an error. A pin marked
+ * KeepPin="true" is never tried, for pins held for a reason other than an advisory.
  *
  * Usage:
- *   node scripts/prune-transitive-pins.mjs [report.md]
+ *   node scripts/prune-transitive-pins.mjs [--dry-run] [report.md]
  *
  * Leaves Directory.Packages.props and every packages.lock.json matching the pins that
- * remain. When a report path is given, writes a Markdown report there (the body of the
- * pull request opened by the Refresh lockfiles workflow).
+ * remain. With --dry-run it tries the pins the same way and then puts both back as they
+ * were, so only the output says what a normal run would remove. When a report path is
+ * given, writes a Markdown report there (the body of the pull request opened by the
+ * Refresh lockfiles workflow, and its run summary).
  */
 
 import fs from "node:fs";
@@ -35,7 +37,9 @@ import { execFileSync } from "node:child_process";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const propsPath = path.join(repoRoot, "Directory.Packages.props");
-const reportPath = process.argv[2];
+const args = process.argv.slice(2);
+const dryRun = args.includes("--dry-run");
+const reportPath = args.find((arg) => !arg.startsWith("--"));
 
 // A whole <PackageVersion ... /> element on its own lines. Attribute values are matched
 // as quoted strings so that a ">" inside one (RemoveWhen="... >= 1.2.3") does not end it.
@@ -51,20 +55,24 @@ function run(command, args) {
   });
 }
 
+/** Every packages.lock.json tracked by git, relative to the repository root. */
+function lockFilePaths() {
+  return run("git", ["ls-files", "*packages.lock.json"])
+    .split("\n")
+    .filter(Boolean);
+}
+
 /**
  * Read every packages.lock.json tracked by git. Returns, per lower-cased package id,
  * the dependency types it appears with and the versions it resolves to.
  */
 function readLockFiles() {
-  const files = run("git", ["ls-files", "*packages.lock.json"])
-    .split("\n")
-    .filter(Boolean);
   const packages = new Map();
 
-  for (const file of files) {
+  for (const file of lockFilePaths()) {
     const raw = fs
       .readFileSync(path.join(repoRoot, file), "utf8")
-      .replace(/^﻿/, "");
+      .replace(/^\uFEFF/, "");
     const lock = JSON.parse(raw);
     for (const framework of Object.values(lock.dependencies || {})) {
       for (const [id, entry] of Object.entries(framework)) {
@@ -124,6 +132,18 @@ function restoreLocked() {
 }
 
 /**
+ * Write Directory.Packages.props and the lock files back with the given contents, and
+ * restore so that obj/ matches them again.
+ */
+function putBack(propsContent, lockFiles) {
+  fs.writeFileSync(propsPath, propsContent, "utf8");
+  for (const [file, content] of lockFiles) {
+    fs.writeFileSync(path.join(repoRoot, file), content);
+  }
+  restoreLocked();
+}
+
+/**
  * Run the NuGet vulnerability scan over the restored solution. Returns the vulnerable
  * packages as "id@version" keys mapped to their advisory URLs.
  */
@@ -173,22 +193,30 @@ function formatVersions(versions) {
   return [...versions].sort().join(", ") || "none";
 }
 
-function buildReport(removed, kept) {
+function buildReport(pins, removed, kept) {
   const lines = [
-    "## Transitive pin cleanup",
+    dryRun ? "## Transitive pin cleanup (dry run)" : "## Transitive pin cleanup",
     "",
-    "Opened by the **Refresh lockfiles** workflow (`scripts/prune-transitive-pins.mjs`).",
+    dryRun
+      ? "Dry run of `scripts/prune-transitive-pins.mjs`. Nothing was changed. A normal run removes the pins listed under **Would be removed** and opens a pull request."
+      : "Opened by the **Refresh lockfiles** workflow (`scripts/prune-transitive-pins.mjs`).",
     "Each transitive pin in `Directory.Packages.props` was removed in turn, the lock files",
     "were re-resolved and the NuGet vulnerability scan was run. A removal is kept only when",
     "the scan reports nothing that it did not already report with every pin in place.",
     "",
-    "Removing a pin also removes it from the dependencies of every published package that",
-    "resolved it. When that is the case, the changeset of this PR is a patch.",
+    "Without its pin, a package resolves to the version its parents ask for, which can be",
+    "lower than the pin. The table shows that version. Removing a pin also removes it from",
+    "the dependencies of every published package that resolved it. When that is the case,",
+    "the pull request carries a patch changeset.",
     "",
   ];
 
+  if (pins.length === 0) {
+    lines.push("No transitive pins found.", "");
+  }
+
   if (removed.length > 0) {
-    lines.push("### Removed", "");
+    lines.push(dryRun ? "### Would be removed" : "### Removed", "");
     lines.push("| Package | Pinned at | Resolves to without the pin |");
     lines.push("|---------|-----------|-----------------------------|");
     for (const pin of removed) {
@@ -215,6 +243,12 @@ function buildReport(removed, kept) {
 // Main
 restoreLocked();
 const original = fs.readFileSync(propsPath, "utf8");
+const originalLockFiles = new Map(
+  lockFilePaths().map((file) => [
+    file,
+    fs.readFileSync(path.join(repoRoot, file)),
+  ]),
+);
 const lockBefore = readLockFiles();
 const pins = findPins(original, lockBefore);
 console.log(
@@ -234,69 +268,76 @@ const candidates = pins.filter((pin) => {
 });
 
 if (candidates.length > 0) {
-  const baseline = scanVulnerabilities();
+  try {
+    const baseline = scanVulnerabilities();
 
-  for (const pin of candidates) {
-    console.log(`Trying without ${pin.id} ${pin.version}`);
-    const withoutPin = props.replace(pin.element, "");
-    fs.writeFileSync(propsPath, withoutPin, "utf8");
+    for (const pin of candidates) {
+      console.log(`Trying without ${pin.id} ${pin.version}`);
+      const withoutPin = props.replace(pin.element, "");
+      fs.writeFileSync(propsPath, withoutPin, "utf8");
 
-    let reason;
-    try {
-      restore();
-    } catch (error) {
-      console.log(String(error.stdout ?? "").slice(-4000));
-      reason = `Restore failed without it: ${error.message.split("\n")[0]}`;
-    }
-
-    if (!reason) {
-      let vulnerable;
+      let reason;
       try {
-        vulnerable = scanVulnerabilities();
+        restore();
       } catch (error) {
-        // A scan that cannot run says nothing about this pin. Put it back and stop, so
-        // that a partial run never turns into a pull request.
-        fs.writeFileSync(propsPath, props, "utf8");
         console.log(String(error.stdout ?? "").slice(-4000));
-        try {
-          restore();
-        } catch {
-          // The scan failure is the error worth reporting.
+        reason = `Restore failed without it: ${error.message.split("\n")[0]}`;
+      }
+
+      if (!reason) {
+        const vulnerable = scanVulnerabilities();
+        const introduced = [...vulnerable].filter(
+          ([key]) => !baseline.has(key),
+        );
+        if (introduced.length > 0) {
+          reason = `Without it the scan reports ${introduced
+            .map(([key, urls]) => `${key} (${urls.join(", ")})`)
+            .join(", ")}`;
         }
-        throw error;
       }
-      const introduced = [...vulnerable].filter(([key]) => !baseline.has(key));
-      if (introduced.length > 0) {
-        reason = `Without it the scan reports ${introduced
-          .map(([key, urls]) => `${key} (${urls.join(", ")})`)
-          .join(", ")}`;
+
+      if (reason) {
+        console.log(`  keeping it. ${reason}`);
+        fs.writeFileSync(propsPath, props, "utf8");
+        kept.push({ ...pin, reason });
+        lockFilesMatchProps = false;
+      } else {
+        console.log(dryRun ? "  would be removed" : "  removed");
+        props = withoutPin;
+        removed.push(pin);
+        lockFilesMatchProps = true;
       }
     }
 
-    if (reason) {
-      console.log(`  keeping it. ${reason}`);
-      fs.writeFileSync(propsPath, props, "utf8");
-      kept.push({ ...pin, reason });
-      lockFilesMatchProps = false;
-    } else {
-      console.log("  removed");
-      props = withoutPin;
-      removed.push(pin);
-      lockFilesMatchProps = true;
+    // The last attempt may have been rolled back after its restore rewrote the lock files.
+    if (!lockFilesMatchProps) restore();
+
+    const lockAfter = readLockFiles();
+    for (const pin of removed) {
+      pin.resolvedAfter =
+        lockAfter.get(pin.id.toLowerCase())?.versions ?? new Set();
     }
+  } catch (error) {
+    // Anything that fails here, such as a scan that cannot run, says nothing about the
+    // pins. Put every file back and stop, so that a partial run never turns into a pull
+    // request and a dry run never leaves changes behind.
+    console.log(String(error.stdout ?? "").slice(-4000));
+    try {
+      putBack(original, originalLockFiles);
+    } catch {
+      // The first error is the one worth reporting.
+    }
+    throw error;
   }
 
-  // The last attempt may have been rolled back after its restore rewrote the lock files.
-  if (!lockFilesMatchProps) restore();
-
-  const lockAfter = readLockFiles();
-  for (const pin of removed) {
-    pin.resolvedAfter =
-      lockAfter.get(pin.id.toLowerCase())?.versions ?? new Set();
-  }
+  if (dryRun) putBack(original, originalLockFiles);
 }
 
 if (reportPath) {
-  fs.writeFileSync(reportPath, buildReport(removed, kept), "utf8");
+  fs.writeFileSync(reportPath, buildReport(pins, removed, kept), "utf8");
 }
-console.log(`Removed ${removed.length} pin(s), kept ${kept.length}.`);
+console.log(
+  dryRun
+    ? `Dry run: would remove ${removed.length} pin(s), keep ${kept.length}. Nothing was changed.`
+    : `Removed ${removed.length} pin(s), kept ${kept.length}.`,
+);

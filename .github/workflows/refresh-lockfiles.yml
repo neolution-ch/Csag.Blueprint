@@ -31,7 +31,14 @@ on:
   schedule:
     - cron: "0 8 1 * *"
   # Allow maintainers to trigger an on-demand refresh from the Actions tab.
-  workflow_dispatch: {}
+  # A dry run writes what each job would change to the run summary and opens
+  # no PR.
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Dry run: report the changes, open no pull request"
+        type: boolean
+        default: false
 
 concurrency:
   group: ${{ github.workflow }}
@@ -98,6 +105,21 @@ jobs:
           rm -f pnpm-lock.yaml
           pnpm install --no-frozen-lockfile
 
+      - name: Report changes (dry run)
+        if: inputs.dry-run == true
+        run: |
+          {
+            echo "## Lockfile refresh (dry run)"
+            echo
+            if [ -z "$(git status --porcelain)" ]; then
+              echo "No lock file changed."
+            else
+              echo '```text'
+              git diff --stat
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # -----------------------------------------------------------------------
       # Changeset
       #
@@ -111,6 +133,7 @@ jobs:
       # If the refresh does not change a file, this step does nothing.
       # -----------------------------------------------------------------------
       - name: Add changeset
+        if: inputs.dry-run != true
         env:
           PR_TITLE: "chore: refresh lockfiles (transitive dependency update)"
         run: |
@@ -134,6 +157,7 @@ jobs:
       # and revokes it at the end of the job. No step prints the token.
       # -----------------------------------------------------------------------
       - name: Generate App Token
+        if: inputs.dry-run != true
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -143,6 +167,7 @@ jobs:
           permission-pull-requests: write
 
       - name: Create Pull Request
+        if: inputs.dry-run != true
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -222,10 +247,13 @@ jobs:
 
       # One restore and one vulnerability scan per pin, about a minute each.
       - name: Prune transitive pins
-        run: node scripts/prune-transitive-pins.mjs "$RUNNER_TEMP/prune-report.md"
+        run: |
+          node scripts/prune-transitive-pins.mjs ${{ inputs.dry-run && '--dry-run' || '' }} "$RUNNER_TEMP/prune-report.md"
+          cat "$RUNNER_TEMP/prune-report.md" >> "$GITHUB_STEP_SUMMARY"
 
       # Same rules as the changeset step of the refresh job above.
       - name: Add changeset
+        if: inputs.dry-run != true
         env:
           PR_TITLE: "chore: remove transitive pins that are no longer needed"
         run: |
@@ -239,6 +267,7 @@ jobs:
           node scripts/generate-dependabot-changeset.mjs
 
       - name: Generate App Token
+        if: inputs.dry-run != true
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
@@ -249,6 +278,7 @@ jobs:
 
       # With no pin removed there is no diff, and the action opens no PR.
       - name: Create Pull Request
+        if: inputs.dry-run != true
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.app-token.outputs.token }}

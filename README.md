@@ -45,7 +45,9 @@ Requires the .NET SDK pinned in [global.json](global.json). Restore uses NuGet l
 
 To raise a package that only arrives through another dependency, usually for a security advisory, add a `PackageVersion` for it to `Directory.Packages.props`. Transitive pinning is enabled, so the version applies without a direct reference. Pack writes the pin into the nuspec of every package that resolves it, so consumers get the raised version too.
 
-Nobody has to remember to remove a pin. Once a month the **Refresh lockfiles** workflow tries each pin without it and opens a PR removing the pins whose absence leaves nothing vulnerable ([scripts/prune-transitive-pins.mjs](scripts/prune-transitive-pins.mjs)). Mark a pin held for another reason with `KeepPin="true"`. NuGet ignores metadata it does not know, so `Reason` and `RemoveWhen` can record why the pin exists for reviewers.
+Nobody has to remember to remove a pin. Once a month the **Refresh lockfiles** workflow tries each pin without it and opens a PR removing the pins whose absence leaves nothing vulnerable ([scripts/prune-transitive-pins.mjs](scripts/prune-transitive-pins.mjs)). The job only knows about advisories. Mark a pin held for another reason, such as a bug fix or a package family that must share one version, with `KeepPin="true"`. NuGet ignores metadata it does not know, so `Reason` and `RemoveWhen` can record why the pin exists for reviewers.
+
+To see what the job would remove without opening a PR, run the workflow from the Actions tab with **Dry run** ticked, or run `node scripts/prune-transitive-pins.mjs --dry-run` locally. Both try every pin and then put every file back. A run started on a branch uses that branch's version of the workflow.
 
 ## Release process
 

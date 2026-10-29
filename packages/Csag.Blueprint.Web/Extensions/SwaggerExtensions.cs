@@ -6,6 +6,7 @@ using FastEndpoints.Swagger;
 using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema;
 using NJsonSchema.Generation.TypeMappers;
+using NSwag.Generation.AspNetCore;
 
 /// <summary>
 /// Extension methods for Swagger/OpenAPI documentation registration.
@@ -16,8 +17,14 @@ public static class SwaggerExtensions
     /// Adds Swagger documentation with FastEndpoints configuration.
     /// </summary>
     /// <param name="services">The service collection.</param>
+    /// <param name="configureAdditionalDocumentSettings">
+    /// Optional callback to apply extra document settings after the Blueprint defaults (for example registering
+    /// additional <see cref="NSwag.Generation.Processors.IDocumentProcessor"/> instances).
+    /// </param>
     /// <returns>The service collection for chaining.</returns>
-    public static IServiceCollection AddSwaggerDocumentation(this IServiceCollection services)
+    public static IServiceCollection AddSwaggerDocumentation(
+        this IServiceCollection services,
+        Action<AspNetCoreOpenApiDocumentGeneratorSettings>? configureAdditionalDocumentSettings = null)
     {
         services.SwaggerDocument(o =>
         {
@@ -38,6 +45,8 @@ public static class SwaggerExtensions
                         schema.Type = JsonObjectType.Integer;
                         schema.Format = "int8";
                     }));
+
+                configureAdditionalDocumentSettings?.Invoke(s);
             };
 
             o.SerializerSettings = s => s.Converters.Add(new JsonStringEnumConverter());

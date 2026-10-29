@@ -79,9 +79,35 @@ public sealed class SwaggerEndpointTests(AppFixture app) : IntegrationTestBase(a
         var acquiredAt = schemas.GetProperty("CreateVehicleRequest").GetProperty("properties").GetProperty("acquiredAt");
 
         acquiredAt.GetProperty("type").GetString().ShouldBe("string");
-        acquiredAt.GetProperty("format").GetString().ShouldBe("local-date-time");
+        acquiredAt.GetProperty("format").GetString().ShouldBe("date-time-local");
         acquiredAt.GetProperty("pattern").GetString().ShouldBe(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$");
         acquiredAt.GetProperty("example").GetString().ShouldBe("2025-01-05T09:30:00", "examples are written as local readings too");
+    }
+
+    [Fact]
+    public async Task SwaggerJson_TimeOnlyProperty_IsDescribedAsTimeWithoutOffsetAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = this.App.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/swagger/v1/swagger.json", UriKind.Relative), ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var properties = document.RootElement.GetProperty("components").GetProperty("schemas")
+            .GetProperty("TimeOfDayMessage").GetProperty("properties");
+
+        foreach (var name in new[] { "opens", "closes" })
+        {
+            var property = properties.GetProperty(name);
+            property.GetProperty("type").GetString().ShouldBe("string");
+            property.GetProperty("format").GetString().ShouldBe("time-local");
+            property.GetProperty("pattern").GetString().ShouldBe(@"^\d{2}:\d{2}:\d{2}(\.\d{1,7})?$");
+        }
+
+        properties.GetProperty("closes").GetProperty("nullable").GetBoolean().ShouldBeTrue();
+        properties.GetProperty("opens").GetProperty("example").GetString().ShouldBe("09:30:00");
+        properties.GetProperty("closes").GetProperty("example").GetString().ShouldBe("17:00:00.5", "examples match the pattern too");
     }
 
     [Fact]

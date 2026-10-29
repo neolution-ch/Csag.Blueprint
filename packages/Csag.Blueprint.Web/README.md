@@ -182,9 +182,17 @@ its own schemes with `AuthSchemes()` keeps exactly those.
 Applications still own their endpoint classes, DTOs, validators, and policies.
 
 `AddSwaggerDocumentation` registers `TemporalSchemaProcessor`, so the OpenAPI document describes what the API sends:
-a `DateTime` (a local reading, see `LocalDateTimeJsonConverter` in `Csag.Blueprint.Application`) is
-`type: string, format: local-date-time, pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$`, and a `TimeSpan` is a string
-with the pattern of its constant (`c`) format, `[-][d.]hh:mm:ss[.fffffff]`, without `format: duration`.
+
+| CLR type | Schema |
+| --- | --- |
+| `DateTime`, `DateTime?` (a local reading, see `LocalDateTimeJsonConverter` in `Csag.Blueprint.Application`) | `type: string, format: date-time-local, pattern: ^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$` |
+| `TimeOnly`, `TimeOnly?` | `type: string, format: time-local, pattern: ^\d{2}:\d{2}:\d{2}(\.\d{1,7})?$` |
+| `TimeSpan`, `TimeSpan?` | `type: string`, the pattern of its constant (`c`) format `[-][d.]hh:mm:ss[.fffffff]`, no `format: duration` |
+
+`date-time-local` and `time-local` are the names the [OpenAPI Format Registry](https://spec.openapis.org/registry/format/)
+gives RFC 3339 date-times and times without the time zone component; NJsonSchema's defaults, `date-time` and `time`,
+promise an offset. System.Text.Json writes a `TimeOnly` as `HH:mm:ss`, with a seven-digit fraction when it has one;
+it also reads `HH:mm` and one-digit hours, which the pattern leaves out. The nullable forms add `nullable: true`.
 
 `UseFastEndpointsWithConventions` binds `DateTime` and `DateTime?` from query, route, form and header values with the
 same formats as a JSON body (`LocalDateTimeFormat`): a value with an offset, `Z`, a fraction, a culture format or nothing

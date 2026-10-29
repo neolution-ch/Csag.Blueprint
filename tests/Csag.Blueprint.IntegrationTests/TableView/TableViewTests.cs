@@ -296,16 +296,20 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         nameColumn.FilterOperator.ShouldBe(TableViewFilterOperator.Contains);
         nameColumn.FilterInputHint.ShouldBe(TableViewFilterInputHint.Text);
 
-        // Enum column. Column() auto-derives AllowedValues from the enum member names, and the
-        // fluent Filterable(operator) call keeps them unless a definition passes explicit values,
-        // so the wire metadata serves the selectable member names to the frontend.
+        // Enum column. Column() auto-derives AllowedValues from the enum members, and the fluent
+        // Filterable(operator) call keeps them unless a definition passes explicit values, so the
+        // wire metadata serves the selectable member names to the frontend. Each label is the
+        // humanized member name unless the host's catalog translates the member's convention key
+        // (Enums.TestVehicleKind.{Member}), which it does for Kayak only.
         var kindColumn = res.Columns.First(c => c.Name == "Kind");
         kindColumn.DataType.ShouldBe("enum");
         kindColumn.FilterOperator.ShouldBe(TableViewFilterOperator.Enum);
         kindColumn.FilterInputHint.ShouldBe(TableViewFilterInputHint.Select);
-        kindColumn.AllowedValues.ShouldBe(
+        var kindValues = kindColumn.AllowedValues.ShouldNotBeNull();
+        kindValues.Select(v => v.Value).ShouldBe(
             ["None", "Bicycle", "Scooter", "Kayak"],
             customMessage: "the auto-derived enum member names survive Filterable(operator) without explicit values");
+        kindValues.Select(v => v.Label).ShouldBe(["None", "Bicycle", "Scooter", "Sea kayak"]);
 
         // Range and boolean columns carry the matching input hints.
         res.Columns.First(c => c.Name == "PricePerHour").FilterInputHint.ShouldBe(TableViewFilterInputHint.NumberRange);
@@ -360,10 +364,84 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         worksheet.Cell(1, 5).GetString().ShouldBe("Price Per Hour");
         worksheet.Cell(1, 6).GetString().ShouldBe("Is Active");
 
-        // Data rows honour the requested sort and the enum filter.
+        // Data rows honour the requested sort and the enum filter, which matches on the raw member
+        // name; the enum cells carry the member's localized label.
         worksheet.Cell(2, 2).GetString().ShouldBe("Family Kayak");
         worksheet.Cell(3, 2).GetString().ShouldBe("Lake Kayak");
-        worksheet.Cell(2, 3).GetString().ShouldBe(nameof(TestVehicleKind.Kayak));
-        worksheet.Cell(3, 3).GetString().ShouldBe(nameof(TestVehicleKind.Kayak));
+        worksheet.Cell(2, 3).GetString().ShouldBe("Sea kayak");
+        worksheet.Cell(3, 3).GetString().ShouldBe("Sea kayak");
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_UnpaginatedExportOverTheCap_IsRefusedAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // The host's export endpoint caps an export one row below tenant A's seeded vehicles, so the
+        // unfiltered export matches more rows than it may hold.
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri, new TableViewExportRequest(), BlueprintJsonOptions.Default, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
+        response.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/problem+json");
+
+        var content = await response.Content.ReadAsStringAsync(ct);
+        content.ShouldContain($"more than the {SeedData.TenantAVehicleCount - 1} rows", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_UnpaginatedExportOfExactlyTheCap_IsExportedWholeAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Every vehicle but the 25.00 Family Kayak: exactly as many rows as the host's cap. The export reads
+        // one row past the cap to detect more, so a result that fills the cap must still be exported.
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri,
+            new TableViewExportRequest { Filters = new Dictionary<string, string> { ["PricePerHour"] = "0-20" } },
+            BlueprintJsonOptions.Default,
+            ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
+
+        using var stream = new MemoryStream(await response.Content.ReadAsByteArrayAsync(ct));
+        using var workbook = new XLWorkbook(stream);
+
+        // One header row plus one row per vehicle up to the cap.
+        workbook.Worksheet(1).RowsUsed().Count().ShouldBe(SeedData.TenantAVehicleCount - 1 + 1);
+    }
+
+    [Fact]
+    public async Task ExportEndpoint_PageExport_IsBoundedByThePageNotTheCapAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // One page holding every seeded vehicle: more rows than the cap, which applies to unpaginated
+        // exports only.
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri, new TableViewExportRequest { Page = 1, PageSize = 100 }, BlueprintJsonOptions.Default, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, cancellationToken: ct);
+
+        using var stream = new MemoryStream(await response.Content.ReadAsByteArrayAsync(ct));
+        using var workbook = new XLWorkbook(stream);
+
+        // One header row plus one row per seeded vehicle.
+        workbook.Worksheet(1).RowsUsed().Count().ShouldBe(SeedData.TenantAVehicleCount + 1);
+    }
+
+    [Theory]
+    [InlineData(1, int.MaxValue)]
+    [InlineData(0, 10)]
+    [InlineData(1, null)]
+    [InlineData(null, 10)]
+    public async Task ExportEndpoint_PageOutOfBoundsOrIncomplete_IsRefusedAsync(int? page, int? pageSize)
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var response = await this.App.ManagerAClient.PostAsJsonAsync(
+            ExportUri, new TableViewExportRequest { Page = page, PageSize = pageSize }, BlueprintJsonOptions.Default, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
     }
 }

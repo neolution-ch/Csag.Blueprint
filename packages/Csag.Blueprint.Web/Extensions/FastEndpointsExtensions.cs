@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Web.Extensions
 {
     using Csag.Blueprint.Application.Json;
+    using Csag.Blueprint.Infrastructure.Authentication;
     using FastEndpoints;
     using FastEndpoints.Swagger;
     using Microsoft.AspNetCore.Builder;
@@ -39,7 +40,10 @@ namespace Csag.Blueprint.Web.Extensions
         /// Use <see cref="FastEndpointsConventionOptions.CookieAuthMode"/> and
         /// <see cref="FastEndpointsConventionOptions.JwtAuthMode"/> to set each scheme to
         /// <see cref="AuthMode.OptOut"/> (applied globally) or <see cref="AuthMode.OptIn"/> (per-endpoint).
-        /// Both default to <see cref="AuthMode.OptIn"/> when not configured.
+        /// Both default to <see cref="AuthMode.OptIn"/> when not configured. Every authenticated endpoint that
+        /// declares no scheme of its own gets exactly one: the session cookie, <see cref="BlueprintAuthenticationSchemes.Bearer"/>,
+        /// or, with both modes <see cref="AuthMode.OptOut"/>, <see cref="BlueprintAuthenticationSchemes.SessionOrBearer"/>,
+        /// which picks one of the two per request.
         /// </param>
         public static WebApplication UseFastEndpointsWithConventions(this WebApplication app, Action<FastEndpointsConventionOptions>? configure = null)
         {
@@ -56,16 +60,15 @@ namespace Csag.Blueprint.Web.Extensions
             }
 
             var endpointsBaseNamespace = options.EndpointsBaseNamespace;
-            var schemes = new List<string>();
-            if (options.CookieAuthMode == AuthMode.OptOut)
-            {
-                schemes.Add(IdentityConstants.ApplicationScheme);
-            }
 
-            if (options.JwtAuthMode == AuthMode.OptOut)
+            // One scheme, never a list: each request is authenticated by exactly one scheme.
+            var defaultScheme = (options.CookieAuthMode, options.JwtAuthMode) switch
             {
-                schemes.Add("Bearer");
-            }
+                (AuthMode.OptOut, AuthMode.OptOut) => BlueprintAuthenticationSchemes.SessionOrBearer,
+                (AuthMode.OptOut, _) => IdentityConstants.ApplicationScheme,
+                (_, AuthMode.OptOut) => BlueprintAuthenticationSchemes.Bearer,
+                _ => null,
+            };
 
             app
                 .UseFastEndpoints(x =>
@@ -77,12 +80,12 @@ namespace Csag.Blueprint.Web.Extensions
                     {
                         ep.ApplyConventions(endpointsBaseNamespace);
 
-                        // Apply opt-out schemes to all authenticated endpoints.
-                        // AuthSchemes() has compounding behavior in the Configurator, so skip
-                        // anonymous endpoints to avoid adding unwanted schemes.
-                        if (schemes.Count > 0 && ep.AnonymousVerbs is null)
+                        // Apply the opt-out scheme to every authenticated endpoint that declares none.
+                        // AuthSchemes() adds to the schemes an endpoint already declared, so an endpoint
+                        // with its own is left alone, and anonymous endpoints get none.
+                        if (defaultScheme is not null && ep.AnonymousVerbs is null && ep.AuthSchemeNames is not { Count: > 0 })
                         {
-                            ep.AuthSchemes([.. schemes]);
+                            ep.AuthSchemes(defaultScheme);
                         }
                     };
 

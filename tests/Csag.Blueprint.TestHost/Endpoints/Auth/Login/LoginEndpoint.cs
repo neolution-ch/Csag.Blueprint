@@ -92,17 +92,8 @@ public sealed class LoginEndpoint : Endpoint<LoginRequest, LoginResponse>
 
         var principal = await this.principalBuilder.BuildAsync(user, currentTenantId, ct);
 
-        // IsPersistent is required: the cookie handler only sets the ticket's ExpiresUtc for
-        // persistent sign-ins, and the ticket store refuses tickets without an expiration.
-        await this.HttpContext.SignInAsync(
-            IdentityConstants.ApplicationScheme,
-            principal,
-            new AuthenticationProperties
-            {
-                IsPersistent = true,
-                ExpiresUtc = DateTimeOffset.UtcNow.AddHours(this.securitySettings.SessionExpirationHours),
-                AllowRefresh = true,
-            });
+        // The session infrastructure owns the session's lifetime and persistence, so the sign-in states neither.
+        await this.HttpContext.SignInAsync(IdentityConstants.ApplicationScheme, principal);
 
         // SignInAsync only writes the cookie for future requests; updating HttpContext.User binds
         // the antiforgery tokens generated below to the authenticated identity.

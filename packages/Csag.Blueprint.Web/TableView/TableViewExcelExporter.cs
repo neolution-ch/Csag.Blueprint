@@ -9,11 +9,13 @@ using Csag.Blueprint.Application.TableView;
 public static class TableViewExcelExporter
 {
     /// <summary>
-    /// Exports the given data to an Excel workbook as a byte array.
+    /// Exports the given data to an Excel workbook as a byte array. A text or enum cell whose value
+    /// matches one of the column's <see cref="TableViewColumnMetadata.AllowedValues"/> is written as
+    /// that allowed value's label, so pass localized metadata to get localized labels.
     /// </summary>
     /// <typeparam name="TDto">The DTO type.</typeparam>
     /// <param name="data">The data rows to export.</param>
-    /// <param name="metadata">The column metadata defining headers and data types.</param>
+    /// <param name="metadata">The column metadata defining headers, data types, and value labels.</param>
     /// <param name="sheetName">The worksheet name.</param>
     /// <returns>The Excel file as a byte array.</returns>
     public static byte[] Export<TDto>(IList<TDto> data, IList<TableViewColumnMetadata> metadata, string sheetName = "Export")
@@ -32,6 +34,7 @@ public static class TableViewExcelExporter
         }
 
         // Write data rows
+        var valueLabels = metadata.Select(CreateValueLabelLookup).ToArray();
         for (var row = 0; row < data.Count; row++)
         {
             var item = data[row];
@@ -42,7 +45,7 @@ public static class TableViewExcelExporter
                 var value = prop?.GetValue(item);
                 var cell = worksheet.Cell(row + 2, col + 1);
 
-                SetCellValue(cell, value, columnMeta.DataType);
+                SetCellValue(cell, value, columnMeta.DataType, valueLabels[col]);
             }
         }
 
@@ -61,7 +64,31 @@ public static class TableViewExcelExporter
         return Array.Find(properties, p => string.Equals(p.Name, columnName, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void SetCellValue(IXLCell cell, object? value, string dataType)
+    private static Dictionary<string, string>? CreateValueLabelLookup(TableViewColumnMetadata column)
+    {
+        if (column.AllowedValues is not { Count: > 0 } allowedValues)
+        {
+            return null;
+        }
+
+        var lookup = new Dictionary<string, string>(allowedValues.Count, StringComparer.Ordinal);
+        foreach (var allowedValue in allowedValues)
+        {
+            lookup.TryAdd(allowedValue.Value, allowedValue.Label);
+        }
+
+        return lookup;
+    }
+
+    private static string? ToCellText(object value, Dictionary<string, string>? valueLabels)
+    {
+        var text = value.ToString();
+        return text is not null && valueLabels is not null && valueLabels.TryGetValue(text, out var label)
+            ? label
+            : text;
+    }
+
+    private static void SetCellValue(IXLCell cell, object? value, string dataType, Dictionary<string, string>? valueLabels)
     {
         if (value == null)
         {
@@ -84,7 +111,7 @@ public static class TableViewExcelExporter
                 break;
 
             default:
-                cell.SetValue(value.ToString());
+                cell.SetValue(ToCellText(value, valueLabels));
                 break;
         }
     }

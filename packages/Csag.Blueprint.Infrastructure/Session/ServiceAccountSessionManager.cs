@@ -1,7 +1,7 @@
 namespace Csag.Blueprint.Infrastructure.Session;
 
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
-using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Domain.Entities;
 using Csag.Blueprint.Infrastructure.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +14,8 @@ using Neolution.Extensions.Caching.Abstractions;
 /// each request's authorization from the account's CURRENT database state.
 /// </summary>
 /// <typeparam name="TContext">The application database context type.</typeparam>
-public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSessionManager
+[SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by dependency injection.")]
+internal sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSessionManager
     where TContext : DbContext
 {
     // The distributed cache composes its key as "CacheId:ServiceAccountSession_" + Uri.EscapeDataString(key) and
@@ -127,6 +128,8 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         return new ServiceAccountSessionValidation
         {
             ServiceAccountId = account.Id,
+            ClientId = account.ClientId,
+            Name = account.Name,
             TenantId = account.TenantId,
             Roles = account.Roles.ToList(),
             Permissions = account.Permissions.ToList(),
@@ -245,18 +248,6 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
         return revoked;
     }
 
-    /// <inheritdoc/>
-    public async Task<int> CleanupExpiredSessionsAsync(CancellationToken cancellationToken = default)
-    {
-        await using var dbContext = await this.dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var now = this.timeProvider.GetUtcNow();
-
-        // Only the tracking table is cleaned here; the distributed-cache markers carry their own absolute expiry.
-        return await dbContext.Set<BlueprintServiceAccountSession>()
-            .Where(s => s.ExpiresAt <= now)
-            .ExecuteDeleteAsync(cancellationToken);
-    }
-
     /// <summary>
     /// Deletes a tracking row whose marker could not be written, so a failed issuance leaves nothing behind.
     /// </summary>
@@ -264,7 +255,7 @@ public sealed class ServiceAccountSessionManager<TContext> : IServiceAccountSess
     /// Runs uncancellable: the cache failure this compensates for may itself have been a cancellation, and the
     /// row still has to come out. A failure here is swallowed so the caller sees the original cache exception,
     /// which is the one that explains why issuance failed — the row is then left for the opportunistic reap on
-    /// this account's next issuance, or for <c>CleanupExpiredSessionsAsync</c>.
+    /// this account's next issuance, or for <see cref="ExpiredSessionCleanupService{TContext}"/>.
     /// </remarks>
     /// <param name="dbContext">The context the row was committed through.</param>
     /// <param name="sessionKey">The session key identifying the row to remove.</param>

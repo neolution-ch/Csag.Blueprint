@@ -64,9 +64,13 @@ public static class BlueprintAuditExtensions
         // provider still wins, which is what lets a test drive audit timestamps from a FakeTimeProvider.
         var timeProvider = app.Services.GetService<TimeProvider>() ?? TimeProvider.System;
 
+        // Resolve IHttpContextAccessor eagerly — it is a singleton that uses AsyncLocal internally,
+        // so capturing it here is safe and avoids accessing a disposed IServiceProvider later.
+        var httpContextAccessor = app.Services.GetService<IHttpContextAccessor>();
+
         ConfigureSqlServerDataProvider(connectionString, timeProvider);
-        ConfigureEntityFrameworkAudit<TContext, TUser, TRole>(options);
-        ConfigureHttpContextEnrichment(app.Services);
+        ConfigureEntityFrameworkAudit<TContext, TUser, TRole>(options, httpContextAccessor);
+        ConfigureHttpContextEnrichment(httpContextAccessor);
 
         return app;
     }
@@ -91,18 +95,21 @@ public static class BlueprintAuditExtensions
     }
 
     private static void ConfigureEntityFrameworkAudit<TContext, TUser, TRole>(
-        BlueprintAuditOptions<TContext> options)
+        BlueprintAuditOptions<TContext> options,
+        IHttpContextAccessor? httpContextAccessor)
         where TContext : DbContext
         where TUser : BlueprintUser
         where TRole : BlueprintRole
     {
         // OptOut mode: all entities are audited by default, except those explicitly ignored.
         // Standard blueprint entity field exclusions prevent sensitive data leakage into the audit log.
+        // Entity objects stay off: Audit.NET applies property ignores to ColumnValues and Changes only and
+        // serializes an included entity object whole, ignored properties and all.
         var contextConfig = Audit.EntityFramework.Configuration.Setup()
             .ForContext<TContext>(config =>
             {
                 config
-                    .IncludeEntityObjects()
+                    .IncludeEntityObjects(false)
                     .AuditEventType("{context}:{database}")
                     .ForEntity<TUser>(entity => entity
                         .Ignore(u => u.PasswordHash)
@@ -137,11 +144,20 @@ public static class BlueprintAuditExtensions
             .Ignore<IdentityUserRole<Guid>>()
             .Ignore<IdentityUserToken<Guid>>();
 
+        var tenantResolver = options.EntityChangeTenantResolver;
+
         Configuration.AddCustomAction(ActionType.OnScopeCreated, scope =>
         {
-            if (TenantContext.Current is Guid tenantId)
+            var tenantId = TenantContext.Current;
+
+            if (tenantResolver is not null && scope.Event is Audit.EntityFramework.AuditEventEntityFramework)
             {
-                scope.SetCustomField("TenantId", tenantId);
+                tenantId = tenantResolver(httpContextAccessor?.HttpContext, tenantId);
+            }
+
+            if (tenantId is Guid resolvedTenantId)
+            {
+                scope.SetCustomField("TenantId", resolvedTenantId);
             }
         });
     }
@@ -154,12 +170,8 @@ public static class BlueprintAuditExtensions
     /// This action connects an entity change event to the user and to the request that caused it.
     /// An application can then show the name of the user without a query on the user table.
     /// </summary>
-    private static void ConfigureHttpContextEnrichment(IServiceProvider serviceProvider)
+    private static void ConfigureHttpContextEnrichment(IHttpContextAccessor? httpContextAccessor)
     {
-        // Resolve IHttpContextAccessor eagerly — it is a singleton that uses AsyncLocal internally,
-        // so capturing it here is safe and avoids accessing a disposed IServiceProvider later.
-        var httpContextAccessor = serviceProvider.GetService<IHttpContextAccessor>();
-
         Configuration.AddCustomAction(ActionType.OnScopeCreated, scope =>
         {
             var httpContext = httpContextAccessor?.HttpContext;

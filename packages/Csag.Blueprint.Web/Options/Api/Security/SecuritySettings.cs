@@ -112,7 +112,8 @@ namespace Csag.Blueprint.Web.Options.Api.Security
         /// <summary>
         /// Gets or sets the number of hours before a user session expires.
         /// This single value drives both the authentication cookie <c>ExpireTimeSpan</c> and the sign-in
-        /// ticket <c>ExpiresUtc</c>, so the cookie and ticket lifetimes can never drift.
+        /// ticket <c>ExpiresUtc</c>, so the cookie and ticket lifetimes can never drift: the session
+        /// infrastructure applies it (see <c>AddBlueprintCookieSessions</c>), so sign-in code does not set an expiry.
         /// The session cookie is always persistent across browser restarts.
         /// Because sliding expiration is enabled, this is an <b>idle (inactivity) timeout</b>: the session
         /// is extended by this value on activity once more than half of the window has elapsed, and expires

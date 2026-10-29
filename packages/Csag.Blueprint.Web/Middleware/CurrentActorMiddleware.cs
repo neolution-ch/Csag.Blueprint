@@ -1,13 +1,14 @@
 namespace Csag.Blueprint.Web.Middleware;
 
 using System.Security.Claims;
+using Csag.Blueprint.Application.Claims;
 using Csag.Blueprint.Application.Services;
 using Microsoft.AspNetCore.Http;
 
 /// <summary>
 /// Middleware that sets the ambient current-actor context from the authenticated principal.
-/// Resolves a readable actor label — the user's email for real accounts, the <c>sa-{clientId}</c>
-/// for service accounts — and stores it in <see cref="CurrentActorContext"/> (AsyncLocal) for the
+/// Resolves a readable actor label — the user's email for real accounts, the client id for service
+/// accounts — and stores it in <see cref="CurrentActorContext"/> (AsyncLocal) for the
 /// duration of the request, so the audit save interceptor can stamp <c>CreatedByActor</c> /
 /// <c>UpdatedByActor</c> without holding a scoped dependency.
 /// <para>
@@ -50,7 +51,7 @@ public class CurrentActorMiddleware
 
     /// <summary>
     /// Resolves the actor label to stamp for the given principal: the user's email (a readable
-    /// point-in-time snapshot) for real accounts, or the <c>sa-{clientId}</c> for service accounts.
+    /// point-in-time snapshot) for real accounts, or the client id for service accounts.
     /// Returns null when neither is available.
     /// </summary>
     private static string? ResolveActor(ClaimsPrincipal user)
@@ -62,12 +63,11 @@ public class CurrentActorMiddleware
             return email;
         }
 
-        // Service accounts have no email; stamp them with their client id (already "sa-"-prefixed).
-        // The client id is the token's "sub"; fall back to the mapped NameIdentifier claim in case
-        // JWT inbound claim mapping renamed "sub".
-        if (string.Equals(user.FindFirstValue("type"), "ServiceAccount", StringComparison.Ordinal))
+        // Service accounts have no email; stamp them with their client id. The package's bearer scheme builds the
+        // principal with the raw claim names, so the client id is always under ServiceAccountClaimTypes.Subject.
+        if (string.Equals(user.FindFirstValue(ServiceAccountClaimTypes.Type), ServiceAccountClaimTypes.ServiceAccountType, StringComparison.Ordinal))
         {
-            return user.FindFirstValue("sub") ?? user.FindFirstValue(ClaimTypes.NameIdentifier);
+            return user.FindFirstValue(ServiceAccountClaimTypes.Subject);
         }
 
         return null;

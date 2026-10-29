@@ -4,6 +4,7 @@ using Csag.Blueprint.Web.Helpers;
 using Csag.Blueprint.Web.Options.Api.Security.OAuth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
@@ -95,6 +96,9 @@ internal static class FrontendRoutedCallbacks
 
     private static bool IsLocalPath(string path)
     {
-        return path.StartsWith('/') && (path.Length == 1 || (path[1] != '/' && path[1] != '\\'));
+        // IsLocalUrl rejects the protocol-relative and backslash forms and any control character, so a return address
+        // can neither point at another host nor break the Location header. Requiring the leading '/' also excludes the
+        // app-relative "~/" form it accepts, which a challenge's return address never takes.
+        return path.StartsWith('/') && RedirectHttpResult.IsLocalUrl(path);
     }
 }

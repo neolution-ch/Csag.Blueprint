@@ -9,6 +9,9 @@ using Microsoft.Extensions.Logging;
 /// Resolves the translation keys recorded on column metadata using the current request culture.
 /// Produces localized copies of the affected columns — the definition-owned metadata instances are
 /// never mutated, so the definition's DI lifetime cannot cause cross-request culture bleed.
+/// A key that cannot be resolved keeps the definition's text and is logged as a warning, except
+/// for allowed-value keys marked <see cref="TableViewAllowedValue.IsLabelKeyOptional"/> (the keys
+/// enum columns derive by convention), which fall back silently.
 /// </summary>
 public sealed class StringLocalizerTableViewMetadataLocalizer : ITableViewMetadataLocalizer
 {
@@ -47,7 +50,10 @@ public sealed class StringLocalizerTableViewMetadataLocalizer : ITableViewMetada
 
     private TableViewColumnMetadata LocalizeColumn(TableViewColumnMetadata column)
     {
-        if (string.IsNullOrEmpty(column.DisplayNameKey) && string.IsNullOrEmpty(column.DescriptionKey))
+        var localizedAllowedValues = this.LocalizeAllowedValues(column.AllowedValues, column.Name);
+        if (string.IsNullOrEmpty(column.DisplayNameKey)
+            && string.IsNullOrEmpty(column.DescriptionKey)
+            && localizedAllowedValues is null)
         {
             return column;
         }
@@ -55,7 +61,55 @@ public sealed class StringLocalizerTableViewMetadataLocalizer : ITableViewMetada
         var localized = column.Clone();
         localized.DisplayName = this.ResolveKey(column.DisplayNameKey, column.DisplayName, column.Name);
         localized.Description = this.ResolveKey(column.DescriptionKey, column.Description, column.Name);
+        if (localizedAllowedValues is not null)
+        {
+            localized.AllowedValues = localizedAllowedValues;
+        }
+
         return localized;
+    }
+
+    /// <summary>
+    /// Returns a new list with the label of every keyed allowed value resolved, or <c>null</c> when
+    /// no allowed value carries a key.
+    /// </summary>
+    private TableViewAllowedValue[]? LocalizeAllowedValues(IReadOnlyList<TableViewAllowedValue>? allowedValues, string columnName)
+    {
+        if (allowedValues is null || !allowedValues.Any(value => !string.IsNullOrEmpty(value.LabelKey)))
+        {
+            return null;
+        }
+
+        var localized = new TableViewAllowedValue[allowedValues.Count];
+        for (var i = 0; i < localized.Length; i++)
+        {
+            var value = allowedValues[i];
+            localized[i] = string.IsNullOrEmpty(value.LabelKey)
+                ? value
+                : value with { Label = this.ResolveLabelKey(value.LabelKey, value, columnName) };
+        }
+
+        return localized;
+    }
+
+    private string ResolveLabelKey(string labelKey, TableViewAllowedValue value, string columnName)
+    {
+        var translation = this.localizer[labelKey];
+        if (!translation.ResourceNotFound)
+        {
+            return translation.Value;
+        }
+
+        if (!value.IsLabelKeyOptional)
+        {
+            this.logger.LogWarning(
+                "Translation key '{TranslationKey}' for allowed value '{AllowedValue}' of table view column '{ColumnName}' was not found; serving the default label instead.",
+                labelKey,
+                value.Value,
+                columnName);
+        }
+
+        return value.Label;
     }
 
     private string ResolveKey(string? translationKey, string fallback, string columnName)

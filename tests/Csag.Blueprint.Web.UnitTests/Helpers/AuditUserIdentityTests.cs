@@ -2,13 +2,14 @@ namespace Csag.Blueprint.Web.UnitTests.Helpers;
 
 using System.Reflection;
 using System.Security.Claims;
+using Csag.Blueprint.Application.Claims;
 using Csag.Blueprint.Web.Middleware;
 
 /// <summary>
 /// Unit tests for <c>AuditUserIdentity.FromPrincipal</c> — the single claims-to-identity mapping both
 /// audit write paths (EF enrichment and <c>HttpAuditMiddleware</c>) share. The tests pin the claim
-/// priority: mapped <see cref="ClaimTypes"/> first, then the raw <c>sub</c>/<c>name</c> claims a
-/// service-account token carries when JWT inbound claim mapping is off.
+/// priority: mapped <see cref="ClaimTypes"/> first, then the raw <see cref="ServiceAccountClaimTypes"/>
+/// names a service-account principal carries.
 /// The type is internal and the package declares no <c>InternalsVisibleTo</c>, so it is reached via
 /// reflection on the Web assembly.
 /// </summary>
@@ -38,11 +39,11 @@ public sealed class AuditUserIdentityTests
     [Fact]
     public void FromPrincipal_ServiceAccountWithRawClaims_FallsBackToSubAndName()
     {
-        // A client-credentials token carries the client ID in a raw "sub" claim and the account name in
-        // a raw "name" claim, and has no email address.
+        // A service-account principal carries the client ID and the account name under the raw claim
+        // names, and has no email address.
         var principal = PrincipalWith(
-            new Claim("sub", "sa-client-id"),
-            new Claim("name", "Reporting Robot"));
+            new Claim(ServiceAccountClaimTypes.Subject, "sa-client-id"),
+            new Claim(ServiceAccountClaimTypes.Name, "Reporting Robot"));
 
         var identity = FromPrincipal(principal);
 
@@ -58,9 +59,9 @@ public sealed class AuditUserIdentityTests
         // provider's raw claims must not override them.
         var principal = PrincipalWith(
             new Claim(ClaimTypes.NameIdentifier, "mapped-id"),
-            new Claim("sub", "raw-sub"),
+            new Claim(ServiceAccountClaimTypes.Subject, "raw-sub"),
             new Claim(ClaimTypes.Name, "Mapped Name"),
-            new Claim("name", "Raw Name"));
+            new Claim(ServiceAccountClaimTypes.Name, "Raw Name"));
 
         var identity = FromPrincipal(principal);
 

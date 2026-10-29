@@ -1,5 +1,89 @@
 # @neolution-ch/csag-blueprint-domain
 
+## 0.7.0
+
+### Minor Changes
+
+- [#44](https://github.com/neolution-ch/Csag.Blueprint/pull/44) [`dbb4310`](https://github.com/neolution-ch/Csag.Blueprint/commit/dbb4310799f3cdf954e2f9247961670cc32a1652) Thanks [@neotob](https://github.com/neotob)! - Add entity contracts for soft deletion, active ranges, internal names and localized texts, with named global query filters
+  
+  New `Csag.Blueprint.Domain` contracts: `ISoftDeletable`, `IHasActiveRange`, `IHasInternalName`,
+  `ILocalizedText` and `IHasLocalizedTexts<T>`.
+  
+  `Csag.Blueprint.Infrastructure` gains the matching model conventions (`ConfigureEntityFiltering`,
+  `ConfigureLocalizedTextConventions`, `ConfigureContractConstraints`, `ConfigureGuidPrimaryKeyDefaults`)
+  and query extensions (`WhereNotDeleted`, `WhereActiveNow`, `IncludeCurrentLanguageText`,
+  `SelectWithCurrentLanguageText`, …). `BlueprintDbContext` applies the conventions automatically.
+  
+  - **Named query filters.** Both blueprint-owned global query filters are registered under a name
+    (`BlueprintQueryFilters.Tenant` and `BlueprintQueryFilters.SoftDelete`), so a query can opt out of
+    one without losing the other. Use `IgnoreSoftDeleteFilter()` / `OnlySoftDeleted()` to reach
+    soft-deleted rows; the parameterless `IgnoreQueryFilters()` also disables tenant isolation.
+  - **Soft deletion and active ranges.** `ISoftDeletable` entities get the soft-delete filter and an
+    `IX_{table}_DeletedAt` index. `IHasActiveRange` deliberately gets no filter, only a composite
+    `IX_{table}_ActiveRange` index: the point in time an active range is evaluated against is the
+    caller's choice, so use `WhereActiveNow()` / `WhereActiveAt()` / `WhereActiveInRange()`.
+  - **Inheritance.** The filters are registered on the root of an inheritance hierarchy, which is the
+    only place EF Core allows them, and derived types inherit them. A hierarchy that adopts
+    `ISoftDeletable` or `IMustHaveTenant` *below* its root cannot be filtered by EF Core and fails at
+    model build with an explanatory message.
+  - **Localized texts.** `ConfigureLocalizedTextConventions` cascades deletes from an entity to its
+    texts and adds a per-language unique index, using whatever foreign key the relationship has.
+    `IncludeCurrentLanguageText`, `WhereHasCurrentLanguageText`, `CurrentLanguageTextExpression` and
+    `SelectWithCurrentLanguageText` rank texts the same way, inside the EF Core query: exact current
+    language, then the same language in another region (including the bare code), then the exact
+    fallback, then the fallback's language. These, and the single-language helpers
+    (`IncludeTextsForLanguage`, `WhereHasTextForLanguage`, …), compare language codes
+    case-insensitively on every provider.
+  - **Language providers.** `ICurrentLanguageProvider` supplies the current and fallback language.
+    `DefaultLanguageProvider` reads `CultureInfo.CurrentUICulture` and falls back to a configured code
+    for the invariant culture; `ExplicitLanguageProvider` covers call sites that already know the
+    language, such as an endpoint taking it as a parameter.
+  - **Sequential keys on SQL Server.** `ConfigureGuidPrimaryKeyDefaults` gives every single-column
+    `Guid` primary key a `NEWSEQUENTIALID()` column default, for inserts that bypass EF Core. EF Core
+    keeps assigning keys client-side on `Add`, so an added entity's key is usable before `SaveChanges`.
+    Keys that declare a default or `ValueGeneratedNever()`, and keys that are also foreign keys (such as
+    an owned type's), are left alone. `BlueprintDbContext` applies it only on SQL Server, where the
+    function exists.
+  
+  **When upgrading:** generate an EF Core migration. On SQL Server, every single-column `Guid` primary
+  key gains the `NEWSEQUENTIALID()` default, and entities adopting the new contracts gain their columns
+  and indexes.
+
+## 0.6.0
+
+No changes in this release.
+
+## 0.5.0
+
+No changes in this release.
+
+## 0.4.0
+
+### Patch Changes
+
+- [#48](https://github.com/neolution-ch/Csag.Blueprint/pull/48) [`1e4037d`](https://github.com/neolution-ch/Csag.Blueprint/commit/1e4037d1733ed52f70b7851f136c561ee5e48674) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the nuget-ecosystem group with 18 updates
+  
+  | Package | From | To | Bump |
+  |---------|------|----|------|
+  | Audit.EntityFramework.Core | 32.3.1 | 33.0.0 | 🔴 major |
+  | Audit.NET | 32.3.1 | 33.0.0 | 🔴 major |
+  | Audit.NET.SqlServer | 32.3.1 | 33.0.0 | 🔴 major |
+  | Microsoft.AspNetCore.Authentication.OpenIdConnect | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.AspNetCore.DataProtection.EntityFrameworkCore | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.AspNetCore.Identity.EntityFrameworkCore | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Data.SqlClient | 7.0.2 | 7.0.3 | 🟢 patch |
+  | Microsoft.EntityFrameworkCore | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.EntityFrameworkCore.InMemory | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.EntityFrameworkCore.SqlServer | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Extensions.Caching.SqlServer | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Extensions.Caching.StackExchangeRedis | 10.0.11 | 10.0.12 | 🟢 patch |
+  | Microsoft.Extensions.TimeProvider.Testing | 10.9.0 | 10.10.0 | 🟡 minor |
+  | Microsoft.NET.Test.Sdk | 18.7.0 | 18.10.1 | 🟡 minor |
+  | NLog.Web.AspNetCore | 6.2.0 | 6.2.1 | 🟢 patch |
+  | Testcontainers.MsSql | 4.14.0 | 4.15.0 | 🟡 minor |
+  | xunit.runner.visualstudio | 3.1.5 | 4.0.0 | 🔴 major |
+  | xunit.v3.mtp-off | 4.0.0 | 4.0.1 | 🟢 patch |
+
 ## 0.3.0
 
 ### Minor Changes

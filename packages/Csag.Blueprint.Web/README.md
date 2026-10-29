@@ -24,7 +24,13 @@ Use:
 services.AddBlueprintDefaultValidatedOptions(configuration);
 ```
 
-This registers the package-owned validated options rooted under the `Blueprint` configuration section.
+This registers the package-owned validated options rooted under the `Blueprint` configuration section. It also
+sets the session lifetime of `Csag.Blueprint.Infrastructure` (`BlueprintSessionOptions.Lifetime`) from
+`Blueprint:Security:SessionExpirationHours`, the single setting the session cookie, its ticket and its tracking row
+expire by; see the Infrastructure package's *Cookie sessions*. In the same way it sets
+`BlueprintServiceAccountOptions` — signing key, issuer, audience, token lifetime and lockout — from
+`Blueprint:Security:Jwt` and `Blueprint:Security:ServiceAccountLockout`; see the Infrastructure package's
+*Service-account credentials*.
 
 ### Builder composition
 
@@ -52,6 +58,7 @@ app.UseBlueprintMiddleware();
 - HTTP audit logging
 - correlation ID middleware
 - CORS
+- the refusal of a request that carries both a session cookie and a bearer token (400 ProblemDetails)
 - authentication
 - tenant middleware
 - request localization
@@ -64,6 +71,7 @@ Applications may still append app-specific middleware before endpoint mapping.
 | Component | Purpose |
 | --- | --- |
 | `CorrelationIdMiddleware` | Adds/propagates correlation IDs per request. |
+| `SingleCredentialMiddleware` | Refuses a request that carries both the session cookie and a bearer token with a 400 ProblemDetails carrying the correlation ID, before authentication. Each request is authenticated by exactly one scheme. |
 | `TenantMiddleware` | Establishes the ambient tenant context for the request. Delegates *how* the tenant is determined to `ITenantResolver`. |
 | `HttpAuditMiddleware` | Records an audit event for a denied request (401 or 403 by default; configurable). `UseBlueprintMiddleware()` always registers it; `ConfigureBlueprintAuditLogging` turns it on. See [Audit enrichment](#audit-enrichment). |
 | `CorrelationIdDelegatingHandler` | Propagates correlation IDs to outbound HTTP requests. |
@@ -82,6 +90,12 @@ The provider writes `UserId`, `TenantId`, and `CorrelationId` to columns. The em
 display name stay in the `JsonData` column, at `$.UserEmail` and `$.UserDisplayName`. Reading either
 value requires parsing the JSON data of the row.
 
+Each EF entry records the entity's column values and its changes, not a copy of the entity object.
+A field exclusion — the standard `PasswordHash`, `SecurityStamp`, `ConcurrencyStamp` and
+`ClientSecretHash`, or one added through `BlueprintAuditOptions.EntityFieldConfigurator` — therefore
+keeps the field out of the stored entry entirely. Do not call `IncludeEntityObjects()` in that
+callback: Audit.NET serializes an included entity object whole, excluded fields and all.
+
 `UseBlueprintMiddleware()` always registers `HttpAuditMiddleware`, first, so that it wraps
 everything else in the pipeline: authentication and authorization, and also the exception handler
 and status code pages. The ASP.NET Core authorization middleware does not call the next middleware
@@ -90,6 +104,13 @@ registered after the exception handler would never see a status code that an unh
 produced, so it could never audit one. An app does not need to register `HttpAuditMiddleware`
 itself. Remove any manual `app.UseMiddleware<HttpAuditMiddleware>()` call; a duplicate registration
 records two events per audited request.
+
+An EF event's `TenantId` is the ambient `TenantContext.Current`, the tenant the actor has active, not
+necessarily the tenant that owns the rows changed. A platform administrator who changes a global row
+while a tenant is active therefore records the change under that tenant. Set
+`BlueprintAuditOptions.EntityChangeTenantResolver` to decide per save: it receives the request (null
+outside one) and the active tenant, and returns the tenant to record, or null for none. HTTP events
+keep the tenant their request resolves to.
 
 `ConfigureBlueprintAuditLogging` configures both audit features, the EF Core events and the HTTP
 request events, from this one call; both are on by default. Its configure callback exposes the same
@@ -151,6 +172,11 @@ The package owns:
 - conventional endpoint routing/naming helpers
 - Swagger/OpenAPI registration helpers
 
+`UseFastEndpointsWithConventions` gives every authenticated endpoint that declares no scheme of its own exactly one:
+the session cookie (`CookieAuthMode = OptOut`), `Bearer` (`JwtAuthMode = OptOut`), or, with both, `SessionOrBearer`,
+which picks the bearer token when the request carries one and the session cookie otherwise. An endpoint that declares
+its own schemes with `AuthSchemes()` keeps exactly those.
+
 Applications still own their endpoint classes, DTOs, validators, and policies.
 
 ### Rate limiting
@@ -164,7 +190,9 @@ fault), an RFC 9457 ProblemDetails body carrying the correlation ID, and `Retry-
 limiter reports it.
 
 `TryGetClientPartitionKey(header, out key)` resolves the caller: the named edge-stamped header when
-configured and parseable, else `Connection.RemoteIpAddress`, else nothing. It reports failure rather
+configured and parseable, else `Connection.RemoteIpAddress`, else nothing — the rule of
+`ClientAddressHttpContextExtensions.TryGetClientAddress` in `Csag.Blueprint.Infrastructure`, which session tracking
+records client addresses with too. It reports failure rather
 than inventing a key, and a caller it cannot identify must be routed to
 `RateLimitPartition.GetNoLimiter` — substituting a placeholder key puts every unidentifiable caller
 in one bucket, so the first of them to exceed the limit rejects them all.

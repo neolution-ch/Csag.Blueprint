@@ -9,7 +9,7 @@ using Csag.Blueprint.Domain.Entities;
 /// </summary>
 /// <typeparam name="TUser">The concrete user type, must derive from <see cref="BlueprintUser"/>.</typeparam>
 /// <typeparam name="TTenant">The concrete tenant type, must derive from <see cref="BlueprintTenant"/>.</typeparam>
-public interface ITenantManager<TUser, TTenant>
+public interface ITenantManager<TUser, TTenant> : ITenantMembershipChecker
     where TUser : BlueprintUser
     where TTenant : BlueprintTenant
 {
@@ -40,23 +40,14 @@ public interface ITenantManager<TUser, TTenant>
     Task<IReadOnlyList<BlueprintTenantMembership<TUser, TTenant>>> GetUserMembershipsAsync(Guid userId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the tenant for a user, or null if the user is not a member.
+    /// Gets the tenant for a user, or null if the user is not a member. For a pure existence check, prefer
+    /// <see cref="ITenantMembershipChecker.IsMemberAsync"/>, which does not load the tenant entity.
     /// </summary>
     /// <param name="userId">The user identifier.</param>
     /// <param name="tenantId">The tenant identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The tenant if the user is a member; otherwise <c>null</c>.</returns>
     Task<TTenant?> GetUserTenantAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Determines whether a user is a member of a tenant. Prefer this over
-    /// <see cref="GetUserTenantAsync"/> for pure existence checks — it does not load the tenant entity.
-    /// </summary>
-    /// <param name="userId">The user identifier.</param>
-    /// <param name="tenantId">The tenant identifier.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns><c>true</c> if the user is a member of the tenant; otherwise <c>false</c>.</returns>
-    Task<bool> IsMemberAsync(Guid userId, Guid tenantId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Adds a user to a tenant.

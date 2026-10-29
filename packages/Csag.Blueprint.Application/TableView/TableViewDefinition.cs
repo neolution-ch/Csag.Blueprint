@@ -557,7 +557,16 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
             return Expression.AndAlso(lowerExpr, upperExpr);
         }
 
-        return lowerExpr ?? upperExpr;
+        if (lowerExpr is not null || upperExpr is not null)
+        {
+            return lowerExpr ?? upperExpr;
+        }
+
+        // Only a range ending on the last representable date gets here: its bound, the day after that date,
+        // cannot be represented. Like every other range, it still matches only rows that have a value.
+        return Nullable.GetUnderlyingType(propertyAccess.Type) is null
+            ? Expression.Constant(true)
+            : Expression.NotEqual(propertyAccess, Expression.Constant(null, propertyAccess.Type));
     }
 
     private static BinaryExpression? BuildEnumExpression(Expression propertyAccess, string filterValue)

@@ -113,6 +113,47 @@ public sealed class TableViewExcelExporterTests
         worksheet.Cell(2, 3).Style.DateFormat.Format.ShouldStartWith("m/d/yyyy h:mm:ss");
     }
 
+    [Theory]
+    [InlineData("th-TH", null, "[$-1070000]")] // Thai Buddhist, th-TH's own calendar
+    [InlineData("ar-SA", null, "[$-1170000]")] // Um al-Qura, ar-SA's own calendar
+    [InlineData("fa-IR", null, "[$-1160000]")] // Persian, fa-IR's own calendar
+    [InlineData("ar-SA", typeof(HijriCalendar), "[$-1060000]")]
+    [InlineData("ja-JP", typeof(JapaneseCalendar), "[$-1030000]")]
+    [InlineData("ko-KR", typeof(KoreanCalendar), "[$-1050000]")]
+    [InlineData("he-IL", typeof(HebrewCalendar), "[$-1080000]")]
+    public void Export_CultureWithAnotherCalendar_FormatsDatesInThatCalendar(string cultureName, Type? calendarType, string calendarCode)
+    {
+        var culture = WithCalendar(cultureName, calendarType);
+        var data = new List<TemporalRow>
+        {
+            new()
+            {
+                PurchaseDate = new DateOnly(2026, 10, 21),
+                StartLocal = new DateTime(2026, 10, 26, 15, 0, 0, DateTimeKind.Unspecified),
+                CreatedAt = new DateTimeOffset(2026, 10, 25, 23, 30, 0, TimeSpan.Zero),
+            },
+        };
+
+        var worksheet = ExportTemporalRows(data, TimeZoneInfo.Utc, culture);
+
+        worksheet.Cell(2, 1).GetDateTime().ShouldBe(new DateTime(2026, 10, 21, 0, 0, 0, DateTimeKind.Unspecified), "the cell holds the date; its format picks the calendar");
+        worksheet.Cell(2, 1).Style.DateFormat.Format.ShouldStartWith(calendarCode);
+        worksheet.Cell(2, 2).Style.DateFormat.Format.ShouldStartWith(calendarCode);
+        worksheet.Cell(2, 3).Style.DateFormat.Format.ShouldStartWith(calendarCode);
+    }
+
+    [Theory]
+    [InlineData("de-CH", null)]
+    [InlineData("zh-TW", typeof(TaiwanCalendar))] // Excel shows Taiwan years as Gregorian ones
+    public void Export_GregorianOrUnsupportedCalendar_FormatsDatesWithoutCalendarCode(string cultureName, Type? calendarType)
+    {
+        var data = new List<TemporalRow> { new() { PurchaseDate = new DateOnly(2026, 10, 21) } };
+
+        var worksheet = ExportTemporalRows(data, TimeZoneInfo.Utc, WithCalendar(cultureName, calendarType));
+
+        worksheet.Cell(2, 1).Style.DateFormat.Format.ShouldNotStartWith("[");
+    }
+
     [Fact]
     public void Export_NullAndDefaultTemporalValues_AreEmptyCells()
     {
@@ -200,6 +241,17 @@ public sealed class TableViewExcelExporterTests
         var bytes = TableViewExcelExporter.Export(data, metadata, "Export", timeZone: timeZone, placeTimeZone: placeTimeZone, culture: culture);
         var workbook = new XLWorkbook(new MemoryStream(bytes));
         return workbook.Worksheet(1);
+    }
+
+    private static CultureInfo WithCalendar(string cultureName, Type? calendarType)
+    {
+        var culture = (CultureInfo)CultureInfo.GetCultureInfo(cultureName).Clone();
+        if (calendarType is not null)
+        {
+            culture.DateTimeFormat.Calendar = (Calendar)Activator.CreateInstance(calendarType)!;
+        }
+
+        return culture;
     }
 
     private static TimeZoneInfo FindZone(string id)

@@ -95,7 +95,7 @@ Column(dto => dto.OpensLocal)
 Column(dto => dto.TimeZoneId);                  // must be a column, so every row carries it
 ```
 
-The column's metadata names the zone column in `TimeZoneColumn` (`"TimeZoneId"`), so a client labels each reading with its row's zone. Filters are unaffected: local readings compare as they read. `WithTimeZoneFrom` is refused on a column that is not a local reading, and the definition's `Metadata` throws when the zone property is not a column.
+The column's metadata names the zone column in `TimeZoneColumn` (`"TimeZoneId"`), so a client labels each reading with its row's zone. Filters are unaffected: local readings compare as they read. `WithTimeZoneFrom` is refused on a column that is not a local reading and for a selector that does not name a property of the DTO itself (`dto => dto.Venue.TimeZoneId`), and the definition's `Metadata` throws when the zone property is not a column.
 
 An entity's time values (`PlaceTime`, `ZonedPlaceTime`, `ViewerTime` in `Csag.Blueprint.Domain.Time`) are not columns themselves. Give the DTO a flat property per member it shows and select the member; each column then has the data type of its kind and filters, sorts and exports in SQL like a column over a plain property:
 
@@ -126,6 +126,8 @@ A `DateRange` filter value is `from,to` in `yyyy-MM-dd`, either side optional. I
 - `date`: `from <= value <= to`.
 - `localDateTime`: `value >= from 00:00` and `value < (to + 1 day) 00:00`, on the reading as stored; no zone is involved.
 - `instant`: `value >= start of from` and `value < start of (to + 1 day)`, with the days as they begin in the effective zone (`ZonedTime.DayRange`), so a day can span 23 or 25 hours.
+
+A range never matches a row without a value, not even `,9999-12-31`, which has no bound because the day after it cannot be represented.
 
 The effective zone is `TableViewQueryRequest.TimeZone`; when it is null, the executor asks `ITenantTimeZoneProvider`, which answers UTC unless the application registers its own. `TableViewDataRequest` and `TableViewExportRequest` carry it as an optional `timeZone` field (an IANA id, normally the viewer's browser zone); a value without the IANA form is a 400 validation error, while a well-formed id this host's time zone data does not know (browsers can be ahead of the server) falls back to the tenant zone with a warning logged. An `Equals` or `In` filter on an instant column reads a value without an offset in the same zone; a reading that does not exist there (a spring-forward gap) matches no row.
 

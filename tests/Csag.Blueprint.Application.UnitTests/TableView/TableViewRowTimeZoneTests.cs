@@ -73,6 +73,22 @@ public sealed class TableViewRowTimeZoneTests
         Should.Throw<ArgumentException>(() => new NonPropertySelectorDefinition());
     }
 
+    [Fact]
+    public void WithTimeZoneFrom_PropertyOfANestedObject_Throws()
+    {
+        // The DTO also has a TimeZoneId column, so the selector's property name alone would name that one.
+        Should.Throw<ArgumentException>(() => new SelectorDefinition(dto => dto.Venue.TimeZoneId))
+            .Message.ShouldContain("dto => dto.TimeZoneId");
+    }
+
+    [Fact]
+    public void WithTimeZoneFrom_PropertyOfACapturedObject_Throws()
+    {
+        var venue = new VenueDto();
+
+        Should.Throw<ArgumentException>(() => new SelectorDefinition(_ => venue.TimeZoneId));
+    }
+
     [Theory]
     [InlineData("2026-10-24T23:59:59", "Europe/Zurich", false)]
     [InlineData("2026-10-25T00:00:00", "America/New_York", true)]
@@ -135,7 +151,14 @@ public sealed class TableViewRowTimeZoneTests
 
         public string TimeZoneId { get; set; } = string.Empty;
 
+        public VenueDto Venue { get; set; } = new();
+
         public string Label() => this.TimeZoneId;
+    }
+
+    private sealed class VenueDto
+    {
+        public string TimeZoneId { get; set; } = string.Empty;
     }
 
     private sealed class StandTableViewDefinition : TableViewDefinition<Stand, StandDto>
@@ -177,6 +200,15 @@ public sealed class TableViewRowTimeZoneTests
         public NonPropertySelectorDefinition()
         {
             this.Column(dto => dto.OpensLocal).WithTimeZoneFrom(dto => dto.Label());
+        }
+    }
+
+    private sealed class SelectorDefinition : TableViewDefinition<Stand, StandDto>
+    {
+        public SelectorDefinition(System.Linq.Expressions.Expression<Func<StandDto, string?>> timeZoneSelector)
+        {
+            this.Column(dto => dto.OpensLocal).WithTimeZoneFrom(timeZoneSelector);
+            this.Column(dto => dto.TimeZoneId);
         }
     }
 }

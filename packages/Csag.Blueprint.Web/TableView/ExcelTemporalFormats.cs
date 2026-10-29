@@ -4,9 +4,9 @@ using System.Globalization;
 using System.Text;
 
 /// <summary>
-/// Excel number formats for date cells, built from a culture's .NET date and time patterns so an export
-/// reads the way the UI formats dates for the same language, whatever the regional settings of the
-/// machine that opens it.
+/// Excel number formats for date cells, built from a culture's .NET date and time patterns and calendar so
+/// an export reads the way the UI formats dates for the same language, whatever the regional settings of
+/// the machine that opens it.
 /// </summary>
 /// <param name="Date">The format of a calendar date.</param>
 /// <param name="LocalDateTime">The format of a local reading: date and time to the minute.</param>
@@ -29,7 +29,8 @@ internal sealed record ExcelTemporalFormats(string Date, string LocalDateTime, s
     private const string DroppedSpecifiers = "fFgzK";
 
     /// <summary>
-    /// Builds the formats for a culture from its short date, short time and long time patterns.
+    /// Builds the formats for a culture from its short date, short time and long time patterns, showing
+    /// dates in the culture's calendar (Buddhist years for <c>th-TH</c>, Persian dates for <c>fa-IR</c>).
     /// </summary>
     /// <param name="culture">The culture.</param>
     /// <returns>The Excel number formats.</returns>
@@ -38,11 +39,33 @@ internal sealed record ExcelTemporalFormats(string Date, string LocalDateTime, s
         ArgumentNullException.ThrowIfNull(culture);
 
         var patterns = culture.DateTimeFormat;
-        var date = ToExcelFormat(patterns.ShortDatePattern, patterns);
+        var date = GetCalendarCode(patterns.Calendar) + ToExcelFormat(patterns.ShortDatePattern, patterns);
         return new ExcelTemporalFormats(
             date,
             $"{date} {ToExcelFormat(patterns.ShortTimePattern, patterns)}",
             $"{date} {ToExcelFormat(patterns.LongTimePattern, patterns)}");
+    }
+
+    /// <summary>
+    /// Gets the Excel locale code that makes a number format show dates in a calendar other than the
+    /// Gregorian one, which Excel uses without a code. The code is <c>[$-NNCCLLLL]</c>: the digits
+    /// <c>NN</c> (<c>01</c>: 0 to 9, as .NET writes them), the Windows calendar type <c>CC</c>, and the locale
+    /// <c>LLLL</c> (<c>0000</c>: the opener's, as for formats without a code). Excel shows the years of the
+    /// Taiwan calendar as Gregorian ones, so that calendar gets no code.
+    /// </summary>
+    private static string GetCalendarCode(Calendar calendar)
+    {
+        return calendar switch
+        {
+            JapaneseCalendar => "[$-1030000]",
+            KoreanCalendar => "[$-1050000]",
+            HijriCalendar => "[$-1060000]",
+            ThaiBuddhistCalendar => "[$-1070000]",
+            HebrewCalendar => "[$-1080000]",
+            PersianCalendar => "[$-1160000]",
+            UmAlQuraCalendar => "[$-1170000]",
+            _ => string.Empty,
+        };
     }
 
     /// <summary>

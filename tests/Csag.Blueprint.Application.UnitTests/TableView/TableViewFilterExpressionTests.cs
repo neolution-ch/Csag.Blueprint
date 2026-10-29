@@ -374,6 +374,35 @@ public sealed class TableViewFilterExpressionTests
     }
 
     [Theory]
+    [InlineData("RegisteredOn", ",2026-10-25")]
+    [InlineData("RegisteredOn", ",9999-12-31")]
+    [InlineData("ReturnLocal", ",2026-10-25")]
+    [InlineData("ReturnLocal", ",9999-12-31")]
+    [InlineData("SoldAt", ",2026-10-25")]
+    [InlineData("SoldAt", ",9999-12-31")]
+    public void GetFilterExpression_DateRangeOnNullableColumn_LeavesOutRowsWithoutAValue(string columnName, string filterValue)
+    {
+        var vehicle = CreateVehicle();
+
+        Matches(columnName, filterValue, vehicle, Zurich).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GetFilterExpression_DateRangeEndingOnLastDateWithoutStart_MatchesEveryValue()
+    {
+        var vehicle = CreateVehicle();
+        vehicle.NextServiceLocal = DateTime.MaxValue;
+        vehicle.RegisteredOn = DateOnly.MaxValue;
+        vehicle.ReturnLocal = DateTime.MaxValue;
+        vehicle.SoldAt = new DateTimeOffset(9999, 12, 31, 0, 0, 0, TimeSpan.Zero);
+
+        Matches("NextServiceLocal", ",9999-12-31", vehicle).ShouldBeTrue();
+        Matches("RegisteredOn", ",9999-12-31", vehicle).ShouldBeTrue();
+        Matches("ReturnLocal", ",9999-12-31", vehicle).ShouldBeTrue();
+        Matches("SoldAt", ",9999-12-31", vehicle, Zurich).ShouldBeTrue();
+    }
+
+    [Theory]
     [InlineData("2026-10-24T21:59:59Z", false)] // 23:59:59 on the 24th in Zurich
     [InlineData("2026-10-24T22:00:00Z", true)] // midnight starting the 25th in Zurich (+02:00)
     [InlineData("2026-10-25T22:59:59Z", true)] // 23:59:59 on the 25th in Zurich (+01:00): a 25-hour day
@@ -523,6 +552,12 @@ public sealed class TableViewFilterExpressionTests
 
         public DateTimeOffset InspectedAt { get; set; }
 
+        public DateOnly? RegisteredOn { get; set; }
+
+        public DateTime? ReturnLocal { get; set; }
+
+        public DateTimeOffset? SoldAt { get; set; }
+
         public string Notes { get; set; } = string.Empty;
     }
 
@@ -571,6 +606,12 @@ public sealed class TableViewFilterExpressionTests
 
         public DateTimeOffset InspectedAt { get; set; } = DateTimeOffset.MaxValue;
 
+        public DateOnly? RegisteredOn { get; set; } = DateOnly.MaxValue;
+
+        public DateTime? ReturnLocal { get; set; } = DateTime.MaxValue;
+
+        public DateTimeOffset? SoldAt { get; set; } = DateTimeOffset.MaxValue;
+
         public string Notes { get; set; } = string.Empty;
 
         public string Synthetic { get; set; } = string.Empty;
@@ -599,6 +640,9 @@ public sealed class TableViewFilterExpressionTests
             this.Column(d => d.NextServiceLocal).Filterable(TableViewFilterOperator.DateRange);
             this.Column(d => d.PickupLocal).Filterable(TableViewFilterOperator.Equals);
             this.Column(d => d.InspectedAt).Filterable(TableViewFilterOperator.In);
+            this.Column(d => d.RegisteredOn).Filterable(TableViewFilterOperator.DateRange);
+            this.Column(d => d.ReturnLocal).Filterable(TableViewFilterOperator.DateRange);
+            this.Column(d => d.SoldAt).Filterable(TableViewFilterOperator.DateRange);
             this.Column(d => d.Notes);
 
             // The DTO exposes Synthetic but the entity has no such property, so the column ends up

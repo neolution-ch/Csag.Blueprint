@@ -20,7 +20,8 @@ public static class TableViewExcelExporter
     /// <see cref="DateOnly"/> as a date, a local reading (<see cref="DateTime"/>) as the date and time it
     /// reads, and an instant (<see cref="DateTimeOffset"/>) as the date and time a clock in
     /// <paramref name="timeZone"/> showed at that instant. Their number formats follow the short date and
-    /// time patterns of <paramref name="culture"/>; instants also show seconds.
+    /// time patterns of <paramref name="culture"/> and show dates in its calendar (Buddhist years for
+    /// <c>th-TH</c>); instants also show seconds.
     /// <para>
     /// A cell with a time means nothing without its zone, so the headers of those columns name it, as
     /// the IANA id after the display name: <c>Created at (Europe/London)</c>. An instant column names
@@ -39,7 +40,7 @@ public static class TableViewExcelExporter
     /// The zone of the place whose clock the local readings come from, normally the tenant's zone; when null,
     /// local reading headers name no zone.
     /// </param>
-    /// <param name="culture">The culture whose date and time patterns format the cells; the current culture when null.</param>
+    /// <param name="culture">The culture whose date and time patterns and calendar format the cells; the current culture when null.</param>
     /// <returns>The Excel file as a byte array.</returns>
     public static byte[] Export<TDto>(
         IList<TDto> data,

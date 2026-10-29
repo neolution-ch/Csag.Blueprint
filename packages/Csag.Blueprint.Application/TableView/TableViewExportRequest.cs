@@ -19,7 +19,10 @@ public class TableViewExportRequest
     /// Gets or sets the IANA id of the zone that date filters on instant columns are evaluated in and that
     /// the workbook shows instants in, normally the viewer's zone (in a browser,
     /// <c>Intl.DateTimeFormat().resolvedOptions().timeZone</c>). Optional: when omitted, the tenant's zone is
-    /// used, and UTC when there is none. An id that is not a known IANA id is rejected as a validation error.
+    /// used, and UTC when there is none. A well-formed id that this server's time-zone data does not know
+    /// falls back the same way, with a warning in the log, and the column headers name the zone actually
+    /// used. An id that is not in the IANA form, or is longer than 64 characters, is rejected as a
+    /// validation error.
     /// </summary>
     public string? TimeZone { get; set; }
 

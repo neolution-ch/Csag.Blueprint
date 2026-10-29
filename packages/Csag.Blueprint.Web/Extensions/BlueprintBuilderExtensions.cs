@@ -21,8 +21,27 @@ public static class BlueprintBuilderExtensions
     /// <param name="builder">The web application builder.</param>
     /// <returns>The web application builder for chaining.</returns>
     public static WebApplicationBuilder AddBlueprintServices(this WebApplicationBuilder builder)
+        => AddBlueprintServices(builder, configure: null);
+
+    /// <summary>
+    /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
+    /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
+    /// session authentication, and anti-forgery protection.
+    /// </summary>
+    /// <param name="builder">The web application builder.</param>
+    /// <param name="configure">
+    /// Callback to customize Blueprint registration via <see cref="BlueprintServicesOptions"/>
+    /// (for example extra OpenAPI document settings or additional FastEndpoints discovery assemblies).
+    /// </param>
+    /// <returns>The web application builder for chaining.</returns>
+    public static WebApplicationBuilder AddBlueprintServices(
+        this WebApplicationBuilder builder,
+        Action<BlueprintServicesOptions>? configure)
     {
         ArgumentNullException.ThrowIfNull(builder);
+
+        var options = new BlueprintServicesOptions();
+        configure?.Invoke(options);
 
         var securitySettings = builder.Configuration.GetValidatedSecuritySettings();
         var cacheOptions = builder.Configuration.GetValidatedCacheOptions();
@@ -57,8 +76,8 @@ public static class BlueprintBuilderExtensions
                 };
             })
             .AddOidcAuthentication(securitySettings)
-            .AddFastEndpointsWithConfiguration()
-            .AddSwaggerDocumentation()
+            .AddFastEndpointsWithConfiguration(options.FastEndpointsAdditionalAssemblies)
+            .AddSwaggerDocumentation(options.ConfigureOpenApiDocument)
             .AddConfigurableDistributedCache(cacheOptions, builder.Configuration)
             .AddAntiForgeryProtection(securitySettings);
 

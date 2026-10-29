@@ -25,4 +25,9 @@ public sealed class TestDbContext : BlueprintDbContext<TestTenant, TestUser, Tes
     /// Gets the tenant-owned sample vehicles.
     /// </summary>
     public DbSet<TestVehicle> Vehicles => this.Set<TestVehicle>();
+
+    /// <summary>
+    /// Gets the tenant-owned sample appointments, which hold time values.
+    /// </summary>
+    public DbSet<TestAppointment> Appointments => this.Set<TestAppointment>();
 }

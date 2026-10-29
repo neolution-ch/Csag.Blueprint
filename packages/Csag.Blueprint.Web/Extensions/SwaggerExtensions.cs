@@ -27,6 +27,7 @@ public static class SwaggerExtensions
             {
                 s.MarkNonNullablePropsAsRequired();
                 s.SchemaSettings.SchemaProcessors.Add(new RequiredStringMinLengthProcessor());
+                s.SchemaSettings.SchemaProcessors.Add(new TemporalSchemaProcessor());
                 s.OperationProcessors.Add(new ProblemDetailsOperationProcessor());
                 s.DocumentProcessors.Add(new UnifiedProblemDetailsDocumentProcessor());
 
@@ -41,6 +42,10 @@ public static class SwaggerExtensions
             };
 
             o.SerializerSettings = s => s.Converters.Add(new JsonStringEnumConverter());
+
+            // Request and response examples are written to the document through Newtonsoft.Json, so a
+            // DateTime example needs this converter to match the pattern TemporalSchemaProcessor declares.
+            o.NewtonsoftSettings = s => s.Converters.Add(new LocalDateTimeExampleConverter());
         });
 
         return services;

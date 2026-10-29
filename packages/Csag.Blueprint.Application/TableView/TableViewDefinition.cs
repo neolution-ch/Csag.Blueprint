@@ -18,6 +18,10 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
     private readonly List<TableViewColumnDefinition<TEntity, TDto>> columnDefinitions = [];
 
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">
+    /// A column takes its time zone (<see cref="TableViewColumnDefinition{TEntity, TDto}.WithTimeZoneFrom"/>)
+    /// from a property that is not a column of this definition.
+    /// </exception>
     public IList<TableViewColumnMetadata> Metadata
     {
         get
@@ -29,6 +33,7 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
                 metadata.Add(definition.Metadata);
             }
 
+            EnsureTimeZoneColumnsExist(metadata);
             return metadata;
         }
     }
@@ -61,9 +66,28 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         }
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Gets the filter expression for a specific column, evaluating zone-dependent filter values in UTC.
+    /// </summary>
+    /// <remarks>
+    /// Only filters on instant (<see cref="DateTimeOffset"/>) columns depend on a zone: a date range on one
+    /// spans whole UTC days here, and an instant given without an offset is read as UTC. Request handling
+    /// uses <see cref="GetFilterExpression(string, string, TimeZoneInfo)"/> with the request's effective
+    /// zone instead.
+    /// </remarks>
+    /// <param name="columnName">The column name.</param>
+    /// <param name="filterValue">The filter value as a string.</param>
+    /// <returns>The filter expression, or null if the column is not filterable or the value is malformed.</returns>
     public Expression<Func<TEntity, bool>>? GetFilterExpression(string columnName, string filterValue)
     {
+        return this.GetFilterExpression(columnName, filterValue, TimeZoneInfo.Utc);
+    }
+
+    /// <inheritdoc/>
+    public Expression<Func<TEntity, bool>>? GetFilterExpression(string columnName, string filterValue, TimeZoneInfo timeZone)
+    {
+        ArgumentNullException.ThrowIfNull(timeZone);
+
         var config = this.columnDefinitions.FirstOrDefault(c => c.Metadata.Name == columnName);
         if (config?.Metadata.IsFilterable != true || config.EntityExpression == null || config.Metadata.FilterOperator == null)
         {
@@ -82,11 +106,11 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         switch (config.Metadata.FilterOperator.Value)
         {
             case TableViewFilterOperator.Equals:
-                filterExpression = BuildEqualsExpression(typedAccess, filterValue, config.Metadata.DataType);
+                filterExpression = BuildEqualsExpression(typedAccess, filterValue, config.Metadata.DataType, timeZone);
                 break;
 
             case TableViewFilterOperator.Contains:
-                if (config.Metadata.DataType == "string")
+                if (config.Metadata.DataType == TableViewDataTypes.String)
                 {
                     var containsMethod = typeof(string).GetMethod(nameof(string.Contains), [typeof(string)])!;
                     var valueExpr = Expression.Constant(filterValue);
@@ -108,11 +132,11 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
                 break;
 
             case TableViewFilterOperator.In:
-                filterExpression = BuildInExpression(typedAccess, filterValue, config.Metadata.DataType);
+                filterExpression = BuildInExpression(typedAccess, filterValue, config.Metadata.DataType, timeZone);
                 break;
 
             case TableViewFilterOperator.DateRange:
-                filterExpression = BuildDateRangeExpression(typedAccess, filterValue);
+                filterExpression = BuildDateRangeExpression(typedAccess, filterValue, timeZone);
                 break;
 
             case TableViewFilterOperator.Enum:
@@ -173,7 +197,7 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
             dtoPropertySelector,
             isComputed: false);
 
-        if (dataType == "enum")
+        if (dataType == TableViewDataTypes.Enum)
         {
             var property = GetProperty(dtoPropertySelector);
             var enumType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
@@ -245,6 +269,23 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         return expression.Type;
     }
 
+    /// <summary>
+    /// Fails when a column takes its time zone from a property that is not a column: only columns are
+    /// projected, so its rows would carry no zone.
+    /// </summary>
+    private static void EnsureTimeZoneColumnsExist(List<TableViewColumnMetadata> metadata)
+    {
+        foreach (var column in metadata)
+        {
+            if (column.TimeZoneColumn is { } zoneColumn && !metadata.Exists(c => c.Name == zoneColumn))
+            {
+                throw new InvalidOperationException(
+                    $"Column '{column.Name}' takes its time zone from '{zoneColumn}', which is not a column of the " +
+                    $"table view. Configure it with Column(dto => dto.{zoneColumn}) so every row carries its zone.");
+            }
+        }
+    }
+
     private static IEnumerable<TableViewAllowedValue> CreateEnumAllowedValues(Type enumType)
     {
         return Enum.GetNames(enumType).Select(memberName =>
@@ -290,43 +331,47 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         var property = GetProperty(expression);
         var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
 
-        const string stringType = "string";
-        const string numberType = "number";
-        const string booleanType = "boolean";
-        const string dateType = "date";
-        const string enumType = "enum";
-
         if (type == typeof(string))
         {
-            return stringType;
+            return TableViewDataTypes.String;
         }
 
         if (type == typeof(bool))
         {
-            return booleanType;
+            return TableViewDataTypes.Boolean;
         }
 
-        if (type == typeof(DateTime) || type == typeof(DateTimeOffset) || type == typeof(DateOnly))
+        if (type == typeof(DateOnly))
         {
-            return dateType;
+            return TableViewDataTypes.Date;
+        }
+
+        if (type == typeof(DateTime))
+        {
+            return TableViewDataTypes.LocalDateTime;
+        }
+
+        if (type == typeof(DateTimeOffset))
+        {
+            return TableViewDataTypes.Instant;
         }
 
         if (type.IsEnum)
         {
-            return enumType;
+            return TableViewDataTypes.Enum;
         }
 
         if (IsNumericType(type))
         {
-            return numberType;
+            return TableViewDataTypes.Number;
         }
 
         if (type == typeof(Guid))
         {
-            return "guid";
+            return TableViewDataTypes.Guid;
         }
 
-        return stringType;
+        return TableViewDataTypes.String;
     }
 
     private static LambdaExpression? CreateEntityExpression(string propertyName)
@@ -351,30 +396,51 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
             ?? throw new InvalidOperationException("Failed to rewrite lambda expression body.");
     }
 
-    private static BinaryExpression? BuildEqualsExpression(Expression propertyAccess, string filterValue, string dataType)
+    private static Expression? BuildEqualsExpression(Expression propertyAccess, string filterValue, string dataType, TimeZoneInfo timeZone)
     {
-        return dataType switch
+        object? value = null;
+        var parsed = false;
+
+        if (dataType == TableViewDataTypes.String)
         {
-            "string" => Expression.Equal(propertyAccess, Expression.Constant(filterValue)),
-            "boolean" => bool.TryParse(filterValue, out var boolValue)
-                ? Expression.Equal(propertyAccess, Expression.Constant(boolValue, propertyAccess.Type))
-                : null,
-            "number" => TryParseNumeric(filterValue, propertyAccess.Type, out var numValue)
-                ? Expression.Equal(propertyAccess, Expression.Constant(numValue, propertyAccess.Type))
-                : null,
-            "date" => TryParseDate(filterValue, propertyAccess.Type, out var dateValue)
-                ? Expression.Equal(propertyAccess, Expression.Constant(dateValue, propertyAccess.Type))
-                : null,
-            "guid" => Guid.TryParse(filterValue, CultureInfo.InvariantCulture, out var guidValue)
-                ? Expression.Equal(propertyAccess, Expression.Constant(guidValue, propertyAccess.Type))
-                : null,
-            _ => null,
-        };
+            (value, parsed) = (filterValue, true);
+        }
+        else if (dataType == TableViewDataTypes.Boolean)
+        {
+            parsed = bool.TryParse(filterValue, out var boolValue);
+            value = boolValue;
+        }
+        else if (dataType == TableViewDataTypes.Number)
+        {
+            parsed = TryParseNumeric(filterValue, propertyAccess.Type, out value);
+        }
+        else if (dataType == TableViewDataTypes.Date || dataType == TableViewDataTypes.LocalDateTime || dataType == TableViewDataTypes.Instant)
+        {
+            parsed = TableViewTemporalFilterValues.TryParseValue(filterValue, propertyAccess.Type, timeZone, out value, out var namesNoInstant);
+
+            // A reading in a spring-forward gap is well-formed but no instant equals it: match nothing,
+            // rather than dropping the filter and matching every row.
+            if (namesNoInstant)
+            {
+                return Expression.Constant(false);
+            }
+        }
+        else if (dataType == TableViewDataTypes.Guid)
+        {
+            parsed = Guid.TryParse(filterValue, CultureInfo.InvariantCulture, out var guidValue);
+            value = guidValue;
+        }
+        else
+        {
+            // Other data types support no equality filter, so the value is left unparsed.
+        }
+
+        return parsed ? Expression.Equal(propertyAccess, Expression.Constant(value, propertyAccess.Type)) : null;
     }
 
     private static BinaryExpression? BuildRangeExpression(Expression propertyAccess, string filterValue, string dataType)
     {
-        if (dataType != "number")
+        if (dataType != TableViewDataTypes.Number)
         {
             return null;
         }
@@ -432,7 +498,7 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         return null;
     }
 
-    private static Expression? BuildInExpression(Expression propertyAccess, string filterValue, string dataType)
+    private static Expression? BuildInExpression(Expression propertyAccess, string filterValue, string dataType, TimeZoneInfo timeZone)
     {
         var values = filterValue.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (values.Length == 0)
@@ -443,7 +509,7 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         Expression? result = null;
         foreach (var value in values)
         {
-            var equalsExpr = BuildEqualsExpression(propertyAccess, value, dataType);
+            var equalsExpr = BuildEqualsExpression(propertyAccess, value, dataType, timeZone);
             if (equalsExpr != null)
             {
                 result = result == null ? equalsExpr : Expression.OrElse(result, equalsExpr);
@@ -453,7 +519,11 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
         return result;
     }
 
-    private static BinaryExpression? BuildDateRangeExpression(Expression propertyAccess, string filterValue)
+    /// <summary>
+    /// Builds a date range filter from <c>from,to</c> calendar dates, either side optional, with the
+    /// semantics of the column's kind (see <see cref="TableViewTemporalFilterValues.TryGetDayBounds"/>).
+    /// </summary>
+    private static Expression? BuildDateRangeExpression(Expression propertyAccess, string filterValue, TimeZoneInfo timeZone)
     {
         var parts = filterValue.Split(',', 2);
         if (parts.Length != 2)
@@ -461,29 +531,42 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
             return null;
         }
 
-        object? startDate = null;
-        object? endDate = null;
-        var hasStart = !string.IsNullOrWhiteSpace(parts[0]) && TryParseDate(parts[0], propertyAccess.Type, out startDate);
-        var hasEnd = !string.IsNullOrWhiteSpace(parts[1]) && TryParseDate(parts[1], propertyAccess.Type, out endDate);
-
-        if (hasStart && hasEnd)
+        DateOnly? from = TableViewTemporalFilterValues.TryParseDate(parts[0], out var fromDate) ? fromDate : null;
+        DateOnly? to = TableViewTemporalFilterValues.TryParseDate(parts[1], out var toDate) ? toDate : null;
+        if ((from is null && to is null)
+            || !TableViewTemporalFilterValues.TryGetDayBounds(propertyAccess.Type, from, to, timeZone, out var bounds))
         {
-            var startExpr = Expression.GreaterThanOrEqual(propertyAccess, Expression.Constant(startDate, propertyAccess.Type));
-            var endExpr = Expression.LessThanOrEqual(propertyAccess, Expression.Constant(endDate, propertyAccess.Type));
-            return Expression.AndAlso(startExpr, endExpr);
+            return null;
         }
 
-        if (hasStart)
+        var lowerExpr = bounds.Lower is null
+            ? null
+            : Expression.GreaterThanOrEqual(propertyAccess, Expression.Constant(bounds.Lower, propertyAccess.Type));
+
+        Expression? upperExpr = null;
+        if (bounds.Upper is not null)
         {
-            return Expression.GreaterThanOrEqual(propertyAccess, Expression.Constant(startDate, propertyAccess.Type));
+            var upperConstant = Expression.Constant(bounds.Upper, propertyAccess.Type);
+            upperExpr = bounds.IsUpperInclusive
+                ? Expression.LessThanOrEqual(propertyAccess, upperConstant)
+                : Expression.LessThan(propertyAccess, upperConstant);
         }
 
-        if (hasEnd)
+        if (lowerExpr is not null && upperExpr is not null)
         {
-            return Expression.LessThanOrEqual(propertyAccess, Expression.Constant(endDate, propertyAccess.Type));
+            return Expression.AndAlso(lowerExpr, upperExpr);
         }
 
-        return null;
+        if (lowerExpr is not null || upperExpr is not null)
+        {
+            return lowerExpr ?? upperExpr;
+        }
+
+        // Only a range ending on the last representable date gets here: its bound, the day after that date,
+        // cannot be represented. Like every other range, it still matches only rows that have a value.
+        return Nullable.GetUnderlyingType(propertyAccess.Type) is null
+            ? Expression.Constant(true)
+            : Expression.NotEqual(propertyAccess, Expression.Constant(null, propertyAccess.Type));
     }
 
     private static BinaryExpression? BuildEnumExpression(Expression propertyAccess, string filterValue)
@@ -573,39 +656,6 @@ public abstract class TableViewDefinition<TEntity, TDto> : ITableViewDefinition<
             Type t when t == typeof(ushort) => true,
             _ => false,
         };
-    }
-
-    /// <summary>
-    /// Tries to parse a date string into the appropriate date type (<see cref="DateOnly"/>, <see cref="DateTimeOffset"/>, or <see cref="DateTime"/>).
-    /// </summary>
-    /// <param name="value">The string to parse.</param>
-    /// <param name="targetType">The target property type.</param>
-    /// <param name="result">The parsed value if successful.</param>
-    /// <returns>True if parsing succeeded; otherwise, false.</returns>
-    private static bool TryParseDate(string value, Type targetType, out object? result)
-    {
-        result = null;
-        var type = Nullable.GetUnderlyingType(targetType) ?? targetType;
-
-        if (type == typeof(DateOnly) && DateOnly.TryParse(value, CultureInfo.InvariantCulture, out var dateOnly))
-        {
-            result = dateOnly;
-            return true;
-        }
-
-        if (type == typeof(DateTimeOffset) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, out var dto))
-        {
-            result = dto;
-            return true;
-        }
-
-        if (type == typeof(DateTime) && DateTime.TryParse(value, CultureInfo.InvariantCulture, out var dt))
-        {
-            result = dt;
-            return true;
-        }
-
-        return false;
     }
 
     private sealed class ParameterReplaceVisitor(ParameterExpression from, ParameterExpression to) : ExpressionVisitor

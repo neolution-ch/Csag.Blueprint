@@ -1,8 +1,10 @@
 namespace Csag.Blueprint.Infrastructure.TableView;
 
 using System.Reflection;
+using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Application.TableView;
 using Csag.Blueprint.Domain.Entities;
+using Csag.Blueprint.Infrastructure.Tenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -16,7 +18,8 @@ public static class ServiceCollectionExtensions
     /// Adds shared table view core services required by blueprint infrastructure.
     /// Registers a no-op <see cref="ITableViewMetadataLocalizer"/> so table views work without any
     /// localization package; <c>AddBlueprintDbLocalization</c> replaces it with a localizer-backed
-    /// implementation when database localization is enabled.
+    /// implementation when database localization is enabled. Registers the UTC
+    /// <see cref="ITenantTimeZoneProvider"/> fallback too, unless one is already registered.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The service collection for chaining.</returns>
@@ -25,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITableViewExecutor, TableViewExecutor>();
         services.AddScoped<ITableViewCatalogService, TableViewCatalogService>();
         services.TryAddSingleton<ITableViewMetadataLocalizer, NoOpTableViewMetadataLocalizer>();
+        services.TryAddSingleton<ITenantTimeZoneProvider, UtcTenantTimeZoneProvider>();
 
         return services;
     }

@@ -7,6 +7,10 @@ using FastEndpoints;
 /// Generic base endpoint for table view data queries with filtering, sorting, and pagination.
 /// Derived endpoints only need to override <see cref="BuildQuery(TableViewDataRequest)"/> to provide the entity-specific
 /// <see cref="IQueryable{TEntity}"/> and the Configure method for routing/permissions.
+/// Date filters on instant columns are evaluated in the request's <see cref="TableViewDataRequest.TimeZone"/>,
+/// else in the zone of the registered <see cref="Application.Abstractions.Services.ITenantTimeZoneProvider"/>.
+/// A request zone this host's time zone data does not know falls back to that zone too, with a warning logged;
+/// a value that is no IANA id at all is a validation error.
 /// </summary>
 /// <typeparam name="TEntity">The entity type.</typeparam>
 /// <typeparam name="TDto">The DTO type for projection.</typeparam>
@@ -52,6 +56,11 @@ public abstract class TableViewDataEndpointBase<TEntity, TDto, TDefinition>
     /// <inheritdoc/>
     public override async Task HandleAsync(TableViewDataRequest req, CancellationToken ct)
     {
+        if (!TableViewRequestTimeZone.TryFindRequested(req.TimeZone, this.Logger, out var timeZone))
+        {
+            this.ThrowError(r => r.TimeZone, TableViewRequestTimeZone.InvalidMessage);
+        }
+
         var query = this.BuildQuery(req);
 
         var request = new TableViewQueryRequest<TEntity, TDto>
@@ -60,6 +69,7 @@ public abstract class TableViewDataEndpointBase<TEntity, TDto, TDefinition>
             Definition = this.definition,
             Filters = req.Filters,
             SortColumns = req.SortColumns,
+            TimeZone = timeZone,
             Page = req.Page,
             PageSize = req.PageSize,
         };

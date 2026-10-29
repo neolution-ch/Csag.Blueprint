@@ -150,11 +150,11 @@ public class BlueprintDbContext<TAppTenant, TAppUser, TAppRole> : IdentityDbCont
         builder.ApplyConfiguration(new BlueprintTranslationConfiguration());
         builder.ApplyConfiguration(new BlueprintUserConfiguration<TAppUser>());
 
-        // The contract-driven conventions (multi-tenancy, contract constraints, localized texts,
-        // soft-delete filtering, sequential Guid keys) are NOT applied here. They run at model
-        // finalization via BlueprintModelFinalizingConvention, registered in ConfigureConventions,
-        // so entity types an application registers after calling base.OnModelCreating are covered
-        // as well. See that convention for why.
+        // The blueprint model conventions (multi-tenancy, contract constraints, localized texts,
+        // soft-delete filtering, time value columns, sequential Guid keys) are NOT applied here. They
+        // run at model finalization via BlueprintModelFinalizingConvention, registered in
+        // ConfigureConventions, so entity types an application registers after calling
+        // base.OnModelCreating are covered as well. See that convention for why.
     }
 
     /// <summary>

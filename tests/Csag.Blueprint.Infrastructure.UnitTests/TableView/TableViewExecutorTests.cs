@@ -1,7 +1,10 @@
 namespace Csag.Blueprint.Infrastructure.UnitTests.TableView;
 
+using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Application.TableView;
+using Csag.Blueprint.Domain.Time;
 using Csag.Blueprint.Infrastructure.TableView;
+using Csag.Blueprint.Infrastructure.Tenancy;
 using Csag.Blueprint.Tests.Shared.Database;
 using Csag.Blueprint.Tests.Shared.Entities;
 using Csag.Blueprint.Tests.Shared.Helpers;
@@ -18,7 +21,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -45,7 +48,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -72,7 +75,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -99,7 +102,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
         var filters = new Dictionary<string, string> { { "Name", "Cargo" } };
@@ -128,7 +131,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
         var filters = new Dictionary<string, string> { { "IsActive", "true" } };
@@ -157,7 +160,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
         var filters = new Dictionary<string, string> { { "Kind", "Scooter" } };
@@ -186,7 +189,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
         var filters = new Dictionary<string, string> { { "Capacity", "4-6" } };
@@ -215,7 +218,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -243,7 +246,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -271,7 +274,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
         var filters = new Dictionary<string, string> { { "IsActive", "true" } };
@@ -303,7 +306,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
         var filters = new Dictionary<string, string> { { "IsActive", "true" } };
@@ -331,7 +334,7 @@ public sealed class TableViewExecutorTests
         // Arrange — two Scooter vehicles with the same Kind but different PricePerHour.
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -367,7 +370,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -399,7 +402,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -430,7 +433,7 @@ public sealed class TableViewExecutorTests
         // Arrange
         using var scope = TestDbContextFactory.CreateInMemoryDbContext();
         SeedTestData(scope.Context);
-        var executor = new TableViewExecutor();
+        var executor = new TableViewExecutor(new UtcTenantTimeZoneProvider());
         var definition = new TestVehicleTableViewDefinition();
         var query = scope.Context.Vehicles.AsNoTracking();
 
@@ -449,6 +452,146 @@ public sealed class TableViewExecutorTests
         // Assert
         totalCount.ShouldBe(5);
         data.Count.ShouldBe(5);
+    }
+
+    [Theory]
+    [InlineData("Europe/Zurich", 1)] // 00:30 on the 22nd in Zurich
+    [InlineData("UTC", 0)] // 22:30 on the 21st in UTC
+    public async Task ExecuteAsync_InstantDateRangeWithoutRequestZone_EvaluatesInTenantZone(string tenantZoneId, int expectedCount)
+    {
+        // Arrange
+        using var scope = TestDbContextFactory.CreateInMemoryDbContext();
+        SeedVehicleCreatedAt(scope.Context, new DateTimeOffset(2026, 10, 21, 22, 30, 0, TimeSpan.Zero));
+        var tenantZone = new RecordingTenantTimeZoneProvider(FindZone(tenantZoneId));
+        var executor = new TableViewExecutor(tenantZone);
+
+        // Act
+        var request = new TableViewQueryRequest<TestVehicle, TestVehicleTableViewDto>
+        {
+            Query = scope.Context.Vehicles.AsNoTracking(),
+            Definition = new TestVehicleTableViewDefinition(),
+            Filters = new Dictionary<string, string> { ["CreatedAt"] = "2026-10-22,2026-10-22" },
+        };
+        var (_, totalCount) = await executor.ExecuteAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        totalCount.ShouldBe(expectedCount);
+        tenantZone.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_RequestZone_WinsOverTenantZone()
+    {
+        // Arrange
+        using var scope = TestDbContextFactory.CreateInMemoryDbContext();
+        SeedVehicleCreatedAt(scope.Context, new DateTimeOffset(2026, 10, 21, 22, 30, 0, TimeSpan.Zero));
+        var tenantZone = new RecordingTenantTimeZoneProvider(FindZone("Europe/Zurich"));
+        var executor = new TableViewExecutor(tenantZone);
+
+        // Act
+        var request = new TableViewQueryRequest<TestVehicle, TestVehicleTableViewDto>
+        {
+            Query = scope.Context.Vehicles.AsNoTracking(),
+            Definition = new TestVehicleTableViewDefinition(),
+            Filters = new Dictionary<string, string> { ["CreatedAt"] = "2026-10-21,2026-10-21" },
+            TimeZone = FindZone("America/New_York"),
+        };
+        var (_, totalCount) = await executor.ExecuteAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert — 18:30 on the 21st in New York
+        totalCount.ShouldBe(1);
+        tenantZone.Calls.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WithoutFilterValues_DoesNotLookUpTenantZone()
+    {
+        // Arrange
+        using var scope = TestDbContextFactory.CreateInMemoryDbContext();
+        SeedTestData(scope.Context);
+        var tenantZone = new RecordingTenantTimeZoneProvider(TimeZoneInfo.Utc);
+        var executor = new TableViewExecutor(tenantZone);
+
+        // Act
+        var request = new TableViewQueryRequest<TestVehicle, TestVehicleTableViewDto>
+        {
+            Query = scope.Context.Vehicles.AsNoTracking(),
+            Definition = new TestVehicleTableViewDefinition(),
+            Filters = new Dictionary<string, string> { ["Name"] = " " },
+        };
+        var (_, totalCount) = await executor.ExecuteAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        totalCount.ShouldBe(5);
+        tenantZone.Calls.ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData("Europe/Zurich")]
+    [InlineData("America/New_York")]
+    public async Task ExecuteAsync_LocalReadingDateRange_IgnoresZone(string zoneId)
+    {
+        // Arrange
+        using var scope = TestDbContextFactory.CreateInMemoryDbContext();
+        SeedTestData(scope.Context);
+        var executor = new TableViewExecutor(new RecordingTenantTimeZoneProvider(FindZone(zoneId)));
+
+        // Act
+        var request = new TableViewQueryRequest<TestVehicle, TestVehicleTableViewDto>
+        {
+            Query = scope.Context.Vehicles.AsNoTracking(),
+            Definition = new TestVehicleTableViewDefinition(),
+            Filters = new Dictionary<string, string> { ["AcquiredAt"] = "2023-03-20,2023-03-20" },
+        };
+        var (data, _) = await executor.ExecuteAsync(request, TestContext.Current.CancellationToken);
+
+        // Assert
+        data.Select(d => d.Name).ShouldBe(["City Scooter"]);
+    }
+
+    [Fact]
+    public async Task ExecuteWithoutPaginationAsync_WithZone_EvaluatesInIt()
+    {
+        // Arrange
+        using var scope = TestDbContextFactory.CreateInMemoryDbContext();
+        SeedVehicleCreatedAt(scope.Context, new DateTimeOffset(2026, 10, 21, 22, 30, 0, TimeSpan.Zero));
+        var tenantZone = new RecordingTenantTimeZoneProvider(TimeZoneInfo.Utc);
+        var executor = new TableViewExecutor(tenantZone);
+        var filters = new Dictionary<string, string> { ["CreatedAt"] = "2026-10-22,2026-10-22" };
+
+        // Act
+        var inZurich = await executor.ExecuteWithoutPaginationAsync(
+            scope.Context.Vehicles.AsNoTracking(), new TestVehicleTableViewDefinition(), filters, null, FindZone("Europe/Zurich"), TestContext.Current.CancellationToken);
+        var inTenantZone = await executor.ExecuteWithoutPaginationAsync(
+            scope.Context.Vehicles.AsNoTracking(), new TestVehicleTableViewDefinition(), filters, null, TestContext.Current.CancellationToken);
+
+        // Assert
+        inZurich.Count.ShouldBe(1);
+        inTenantZone.Count.ShouldBe(0);
+        tenantZone.Calls.ShouldBe(1);
+    }
+
+    private static TimeZoneInfo FindZone(string id)
+    {
+        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+            ? zone
+            : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
+    }
+
+    private static void SeedVehicleCreatedAt(TestDbContext context, DateTimeOffset createdAt)
+    {
+        context.Vehicles.Add(new TestVehicle
+        {
+            Id = Guid.NewGuid(),
+            TenantId = TestDbContextFactory.TestTenantId,
+            Name = "Night Shift Bike",
+            Kind = TestVehicleKind.Bicycle,
+            Capacity = 1,
+            PricePerHour = 10m,
+            AcquiredAt = new DateTime(2026, 10, 21, 0, 0, 0, DateTimeKind.Unspecified),
+            CreatedAt = createdAt,
+        });
+        context.SaveChanges();
     }
 
     private static void SeedTestData(TestDbContext context)
@@ -515,5 +658,16 @@ public sealed class TableViewExecutorTests
 
         context.Vehicles.AddRange(vehicles);
         context.SaveChanges();
+    }
+
+    private sealed class RecordingTenantTimeZoneProvider(TimeZoneInfo zone) : ITenantTimeZoneProvider
+    {
+        public int Calls { get; private set; }
+
+        public ValueTask<TimeZoneInfo> GetTimeZoneAsync(CancellationToken cancellationToken = default)
+        {
+            this.Calls++;
+            return ValueTask.FromResult(zone);
+        }
     }
 }

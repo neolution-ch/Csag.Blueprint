@@ -1,6 +1,8 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- The Refresh lockfiles workflow removes transitive pins that are no longer needed. A pin
+    marked KeepPin="true" is left alone. See scripts/prune-transitive-pins.mjs. -->
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>

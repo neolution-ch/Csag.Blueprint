@@ -812,7 +812,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[0.7.0, )",
+          "Csag.Blueprint.Domain": "[0.8.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.13, )"
         }
       },
@@ -825,8 +825,8 @@
       "csag.blueprint.infrastructure": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Application": "[0.7.0, )",
-          "Csag.Blueprint.Domain": "[0.7.0, )",
+          "Csag.Blueprint.Application": "[0.8.0, )",
+          "Csag.Blueprint.Domain": "[0.8.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.13, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.13, )",
           "Microsoft.EntityFrameworkCore": "[10.0.13, )",

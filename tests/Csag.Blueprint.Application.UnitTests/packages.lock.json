@@ -394,7 +394,7 @@
       "csag.blueprint.application": {
         "type": "Project",
         "dependencies": {
-          "Csag.Blueprint.Domain": "[0.7.0, )",
+          "Csag.Blueprint.Domain": "[0.8.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.13, )"
         }
       },

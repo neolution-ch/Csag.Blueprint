@@ -1,5 +1,11 @@
 # @neolution-ch/csag-blueprint-infrastructure
 
+## 0.8.1
+
+### Patch Changes
+
+- [#79](https://github.com/neolution-ch/Csag.Blueprint/pull/79) [`0f01c10`](https://github.com/neolution-ch/Csag.Blueprint/commit/0f01c10bd3f5edbcefb59e0ca8c46fef35a2e4d4) Thanks [@csag-changesets-bot](https://github.com/apps/csag-changesets-bot)! - chore: refresh lockfiles (transitive dependency update)
+
 ## 0.8.0
 
 ### Patch Changes

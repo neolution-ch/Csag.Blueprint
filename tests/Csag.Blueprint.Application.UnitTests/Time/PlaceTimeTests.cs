@@ -4,7 +4,7 @@ using Csag.Blueprint.Domain.Time;
 
 /// <summary>
 /// Pins <see cref="PlaceTime"/>: the reading is kept as written and the instant derived from it with the
-/// zone the caller passes, following <see cref="ZonedTime.TryToInstant"/>. Every zone is named explicitly,
+/// zone the caller passes, following <see cref="TimeZones.TryToInstant"/>. Every zone is named explicitly,
 /// so the results do not depend on the machine's own zone.
 /// </summary>
 public sealed class PlaceTimeTests
@@ -155,7 +155,7 @@ public sealed class PlaceTimeTests
 
     private static TimeZoneInfo FindZone(string id)
     {
-        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+        return TimeZones.TryFindIanaTimeZone(id, out var zone)
             ? zone
             : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
     }

@@ -125,7 +125,7 @@ public sealed class TimeValueTableViewTests(AppFixture app) : IntegrationTestBas
 
     private static TimeZoneInfo FindZone(string id)
     {
-        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+        return TimeZones.TryFindIanaTimeZone(id, out var zone)
             ? zone
             : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
     }
@@ -138,8 +138,8 @@ public sealed class TimeValueTableViewTests(AppFixture app) : IntegrationTestBas
             TenantId = SeedData.TenantAId,
             Title = title,
             Start = PlaceTime.Create(start, Zurich),
-            StandOpens = ZonedPlaceTime.Create(standOpens, standTimeZoneId),
-            Briefing = ViewerTime.Create(start, "Europe/Zurich"),
+            StandOpens = ZonedTime.Create(standOpens, standTimeZoneId),
+            Briefing = ZonedTime.Create(start, "Europe/Zurich"),
         };
     }
 

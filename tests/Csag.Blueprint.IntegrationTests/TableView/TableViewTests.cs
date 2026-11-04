@@ -489,7 +489,7 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
         // vehicle with that zone and misses it with the other, whenever the seed ran.
         var createdAt = await this.GetCreatedAtAsync("City Bike");
         var kiritimati = FindZone("Pacific/Kiritimati");
-        var date = DateOnly.FromDateTime(ZonedTime.ToLocalReading(createdAt, kiritimati)).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var date = DateOnly.FromDateTime(TimeZones.ToLocalReading(createdAt, kiritimati)).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
 
         var inKiritimati = await this.QueryNamesAsync("City Bike", date, "Pacific/Kiritimati");
         var inPagoPago = await this.QueryNamesAsync("City Bike", date, "Pacific/Pago_Pago");
@@ -534,7 +534,7 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
 
         worksheet.Cell(1, 8).GetString().ShouldBe("Created At (Pacific/Kiritimati)");
         worksheet.Cell(2, 8).DataType.ShouldBe(XLDataType.DateTime);
-        var expected = ZonedTime.ToLocalReading(createdAt, FindZone("Pacific/Kiritimati"));
+        var expected = TimeZones.ToLocalReading(createdAt, FindZone("Pacific/Kiritimati"));
         worksheet.Cell(2, 8).GetDateTime().ShouldBe(expected, TimeSpan.FromSeconds(1));
     }
 
@@ -570,7 +570,7 @@ public sealed class TableViewTests(AppFixture app) : IntegrationTestBase(app)
 
     private static TimeZoneInfo FindZone(string id)
     {
-        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+        return TimeZones.TryFindIanaTimeZone(id, out var zone)
             ? zone
             : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
     }

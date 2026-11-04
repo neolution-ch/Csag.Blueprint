@@ -4,8 +4,8 @@ using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 /// <summary>
-/// Derives instants from local readings for <see cref="PlaceTime"/>, <see cref="ZonedPlaceTime"/> and
-/// <see cref="ViewerTime"/>, so all three follow the daylight saving rules of <see cref="ZonedTime.TryToInstant"/>.
+/// Derives instants from local readings for <see cref="PlaceTime"/> and <see cref="ZonedTime"/>, so both follow
+/// the daylight saving rules of <see cref="TimeZones.TryToInstant"/>.
 /// </summary>
 internal static class LocalReadings
 {
@@ -20,7 +20,7 @@ internal static class LocalReadings
     public static bool TryDerive(DateTime local, TimeZoneInfo zone, out DateTime reading, out DateTimeOffset at)
     {
         reading = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
-        return ZonedTime.TryToInstant(reading, zone, out at);
+        return TimeZones.TryToInstant(reading, zone, out at);
     }
 
     /// <summary>
@@ -31,12 +31,12 @@ internal static class LocalReadings
     /// <param name="reading">The reading, with <see cref="DateTimeKind.Unspecified"/>.</param>
     /// <param name="at">The instant, in UTC, when this method returns <see langword="true"/>.</param>
     /// <returns>
-    /// <see langword="true"/> when <see cref="ZonedTime.TryFindIanaTimeZone"/> resolves the id and the reading
+    /// <see langword="true"/> when <see cref="TimeZones.TryFindIanaTimeZone"/> resolves the id and the reading
     /// exists in its zone.
     /// </returns>
     public static bool TryDerive(DateTime local, [NotNullWhen(true)] string? timeZoneId, out DateTime reading, out DateTimeOffset at)
     {
-        if (!ZonedTime.TryFindIanaTimeZone(timeZoneId, out var zone))
+        if (!TimeZones.TryFindIanaTimeZone(timeZoneId, out var zone))
         {
             reading = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
             at = default;
@@ -85,13 +85,13 @@ internal static class LocalReadings
 
         // The clocks jumped from the start of the gap straight to its end. Moving the reading by the jump keeps
         // its distance from the transition: 02:30 in a gap from 02:00 to 03:00 becomes 03:30.
-        var transition = ZonedTime.FindGapTransition(reading, zone);
+        var transition = TimeZones.FindGapTransition(reading, zone);
         if (transition > DateTimeOffset.MinValue)
         {
             var gap = zone.GetUtcOffset(transition) - zone.GetUtcOffset(transition.AddTicks(-1));
             if (gap > TimeSpan.Zero
                 && reading.Ticks <= DateTime.MaxValue.Ticks - gap.Ticks
-                && ZonedTime.TryToInstant(reading + gap, zone, out at))
+                && TimeZones.TryToInstant(reading + gap, zone, out at))
             {
                 return (reading + gap, at, true);
             }
@@ -108,7 +108,7 @@ internal static class LocalReadings
     /// <returns>The zone.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="timeZoneId"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// <paramref name="timeZoneId"/> is not an IANA id this host can resolve (<see cref="ZonedTime.TryFindIanaTimeZone"/>).
+    /// <paramref name="timeZoneId"/> is not an IANA id this host can resolve (<see cref="TimeZones.TryFindIanaTimeZone"/>).
     /// </exception>
     public static TimeZoneInfo FindZone(string timeZoneId, string parameterName)
     {
@@ -117,7 +117,7 @@ internal static class LocalReadings
             throw new ArgumentNullException(parameterName);
         }
 
-        return ZonedTime.TryFindIanaTimeZone(timeZoneId, out var zone)
+        return TimeZones.TryFindIanaTimeZone(timeZoneId, out var zone)
             ? zone
             : throw new ArgumentException("The time zone id is not an IANA time zone id this host can resolve.", parameterName);
     }
@@ -130,7 +130,7 @@ internal static class LocalReadings
     /// <exception cref="TimeZoneNotFoundException">This host cannot resolve the id.</exception>
     public static TimeZoneInfo FindStoredZone(string timeZoneId)
     {
-        return ZonedTime.TryFindIanaTimeZone(timeZoneId, out var zone)
+        return TimeZones.TryFindIanaTimeZone(timeZoneId, out var zone)
             ? zone
             : throw new TimeZoneNotFoundException($"The time zone '{timeZoneId}' is not an IANA time zone id this host can resolve.");
     }

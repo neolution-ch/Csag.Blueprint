@@ -480,7 +480,7 @@ public sealed class TableViewFilterExpressionTests
 
     private static TimeZoneInfo FindZone(string id)
     {
-        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+        return TimeZones.TryFindIanaTimeZone(id, out var zone)
             ? zone
             : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
     }

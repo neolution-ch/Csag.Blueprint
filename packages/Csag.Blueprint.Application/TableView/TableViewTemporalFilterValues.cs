@@ -117,8 +117,8 @@ internal static class TableViewTemporalFilterValues
         else if (type == typeof(DateTimeOffset))
         {
             bounds = new TableViewDayBounds(
-                from is { } first ? ZonedTime.DayRange(first, timeZone).Start : null,
-                dayAfterTo is { } next ? ZonedTime.DayRange(next, timeZone).Start : null,
+                from is { } first ? TimeZones.DayRange(first, timeZone).Start : null,
+                dayAfterTo is { } next ? TimeZones.DayRange(next, timeZone).Start : null,
                 IsUpperInclusive: false);
         }
         else
@@ -139,7 +139,7 @@ internal static class TableViewTemporalFilterValues
             return true;
         }
 
-        return LocalDateTimeFormat.TryParse(text, out var reading) && ZonedTime.TryToInstant(reading, timeZone, out instant);
+        return LocalDateTimeFormat.TryParse(text, out var reading) && TimeZones.TryToInstant(reading, timeZone, out instant);
     }
 }
 

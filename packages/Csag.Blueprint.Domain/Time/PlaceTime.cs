@@ -10,12 +10,13 @@ using System.Diagnostics.CodeAnalysis;
 /// <remarks>
 /// <para>
 /// The zone is not stored. It is the zone of the place, which the caller knows: the tenant's zone
-/// (<c>ITenantTimeZoneProvider</c>), or the zone of a place the entity belongs to. A place that stores its
-/// own zone with each reading uses <see cref="ZonedPlaceTime"/>.
+/// (<c>ITenantTimeZoneProvider</c>), or the zone of a place the entity belongs to. A time whose zone is stored
+/// with each reading (a place with its own zone, or a time an organiser sets in theirs) is a
+/// <see cref="ZonedTime"/>.
 /// </para>
 /// <para>
 /// The only way to get a value is <see cref="Create"/> or <see cref="TryCreate"/>, which derive the instant
-/// with <see cref="ZonedTime.TryToInstant"/>: a reading in a spring-forward gap has no instant, and a reading
+/// with <see cref="TimeZones.TryToInstant"/>: a reading in a spring-forward gap has no instant, and a reading
 /// in a fall-back overlap denotes its earlier occurrence. When the rules of the zone change (new time zone
 /// data) or the place moves to another zone, the stored instant is out of date; <see cref="Rederive"/>
 /// keeps the reading and derives the instant again.

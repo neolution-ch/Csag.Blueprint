@@ -11,7 +11,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.DependencyInjection;
 
 /// <summary>
-/// Time values (<see cref="PlaceTime"/>, <see cref="ZonedPlaceTime"/>, <see cref="ViewerTime"/>) on SQL Server:
+/// Time values (<see cref="PlaceTime"/>, <see cref="ZonedTime"/>) on SQL Server:
 /// stored in the columns the blueprint conventions name, read back, queried through their members in SQL,
 /// updated in bulk, derived again by a maintenance job, and indexed through a migration.
 /// </summary>
@@ -34,7 +34,7 @@ public sealed class TimeValuePersistenceTests(AppFixture app) : IntegrationTestB
             .SqlQuery<ColumnInfo>($"""
                 SELECT COLUMN_NAME AS Name, DATA_TYPE AS DataType, CHARACTER_MAXIMUM_LENGTH AS MaxLength, IS_NULLABLE AS IsNullable
                 FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_NAME = 'Appointments' AND COLUMN_NAME NOT IN ('Id', 'TenantId', 'Title')
+                WHERE TABLE_NAME = 'Appointments' AND COLUMN_NAME NOT IN ('Id', 'TenantId', 'Title', 'ConfirmedAt')
                 """)
             .ToListAsync(ct);
 
@@ -59,8 +59,8 @@ public sealed class TimeValuePersistenceTests(AppFixture app) : IntegrationTestB
         // 02:30 on 2026-10-25 happens twice in Zurich; the stored instant is the earlier occurrence.
         var appointment = NewAppointment("Round trip");
         appointment.End = PlaceTime.Create(new DateTime(2026, 10, 25, 4, 0, 0, DateTimeKind.Unspecified), Zurich);
-        appointment.StandCloses = ZonedPlaceTime.Create(new DateTime(2026, 11, 14, 18, 0, 0, DateTimeKind.Unspecified), NewYork);
-        appointment.Debriefing = ViewerTime.Create(new DateTime(2026, 11, 20, 17, 30, 0, DateTimeKind.Unspecified), ZurichId);
+        appointment.StandCloses = ZonedTime.Create(new DateTime(2026, 11, 14, 18, 0, 0, DateTimeKind.Unspecified), NewYork);
+        appointment.Debriefing = ZonedTime.Create(new DateTime(2026, 11, 20, 17, 30, 0, DateTimeKind.Unspecified), ZurichId);
         await this.AddAsync(appointment);
 
         using var scope = this.App.CreateDbContextScope(SeedData.TenantAId);
@@ -108,7 +108,7 @@ public sealed class TimeValuePersistenceTests(AppFixture app) : IntegrationTestB
         appointment.End = PlaceTime.Create(new DateTime(2026, 10, 25, 4, 0, 0, DateTimeKind.Unspecified), Zurich);
         await this.AddAsync(appointment);
         var newStart = PlaceTime.Create(new DateTime(2026, 12, 1, 9, 0, 0, DateTimeKind.Unspecified), Zurich);
-        var debriefing = ViewerTime.Create(new DateTime(2026, 12, 2, 15, 0, 0, DateTimeKind.Unspecified), NewYork);
+        var debriefing = ZonedTime.Create(new DateTime(2026, 12, 2, 15, 0, 0, DateTimeKind.Unspecified), NewYork);
 
         using (var scope = this.App.CreateDbContextScope(SeedData.TenantAId))
         {
@@ -245,7 +245,7 @@ public sealed class TimeValuePersistenceTests(AppFixture app) : IntegrationTestB
         appointment.End = PlaceTime.Create(new DateTime(2026, 10, 25, 4, 0, 0, DateTimeKind.Unspecified), Zurich);
         await this.AddAsync(appointment);
         var newStart = PlaceTime.Create(new DateTime(2026, 12, 1, 9, 0, 0, DateTimeKind.Unspecified), Zurich);
-        var newStand = ZonedPlaceTime.Create(new DateTime(2026, 12, 3, 8, 0, 0, DateTimeKind.Unspecified), "Asia/Tokyo");
+        var newStand = ZonedTime.Create(new DateTime(2026, 12, 3, 8, 0, 0, DateTimeKind.Unspecified), "Asia/Tokyo");
 
         using (var scope = this.App.CreateDbContextScope(SeedData.TenantAId))
         {
@@ -319,7 +319,7 @@ public sealed class TimeValuePersistenceTests(AppFixture app) : IntegrationTestB
         using var verify = this.App.CreateDbContextScope(SeedData.TenantAId);
         var loaded = await verify.Context.Appointments.AsNoTracking().SingleAsync(a => a.Id == appointment.Id, ct);
         loaded.Start.ShouldBe(PlaceTime.Create(new DateTime(2027, 3, 28, 3, 30, 0, DateTimeKind.Unspecified), Zurich));
-        loaded.Briefing.ShouldBe(ViewerTime.Create(new DateTime(2027, 3, 28, 3, 30, 0, DateTimeKind.Unspecified), ZurichId));
+        loaded.Briefing.ShouldBe(ZonedTime.Create(new DateTime(2027, 3, 28, 3, 30, 0, DateTimeKind.Unspecified), ZurichId));
     }
 
     [Fact]
@@ -354,14 +354,14 @@ public sealed class TimeValuePersistenceTests(AppFixture app) : IntegrationTestB
             TenantId = SeedData.TenantAId,
             Title = title,
             Start = PlaceTime.Create(start ?? new DateTime(2026, 10, 25, 2, 30, 0, DateTimeKind.Unspecified), Zurich),
-            StandOpens = ZonedPlaceTime.Create(new DateTime(2026, 11, 14, 10, 0, 0, DateTimeKind.Unspecified), NewYork),
-            Briefing = ViewerTime.Create(new DateTime(2026, 11, 2, 9, 0, 0, DateTimeKind.Unspecified), ZurichId),
+            StandOpens = ZonedTime.Create(new DateTime(2026, 11, 14, 10, 0, 0, DateTimeKind.Unspecified), NewYork),
+            Briefing = ZonedTime.Create(new DateTime(2026, 11, 2, 9, 0, 0, DateTimeKind.Unspecified), ZurichId),
         };
     }
 
     private static TimeZoneInfo FindZone(string id)
     {
-        return ZonedTime.TryFindIanaTimeZone(id, out var zone)
+        return TimeZones.TryFindIanaTimeZone(id, out var zone)
             ? zone
             : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
     }

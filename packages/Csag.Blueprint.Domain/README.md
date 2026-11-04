@@ -73,7 +73,7 @@ This is the line to hold when extending the packages. If a new type would need t
 
 ### Time zones
 
-`ZonedTime` converts between instants (`DateTimeOffset`, always returned in UTC) and the local readings of a place
+`TimeZones` converts between instants (`DateTimeOffset`, always returned in UTC) and the local readings of a place
 (`DateTime`, the clock reading on a wall there) using `TimeZoneInfo` zones with IANA ids. It lives in Domain so
 entities can derive an instant from a local reading themselves.
 
@@ -90,30 +90,32 @@ entities can derive an instant from a local reading themselves.
 
 A time that is set as a clock reading but also needed as an instant (to sort, compare or show in another zone)
 is stored as both. The time values keep the two in step: the reading is the truth, the instant is derived from it,
-and the only way to get a value is a factory that derives it, so an entity cannot hold a pair that disagrees. One
-type per kind, all immutable records with value equality in `Csag.Blueprint.Domain.Time`:
+and the only way to get a value is a factory that derives it, so an entity cannot hold a pair that disagrees. Two
+types, told apart by where the zone comes from, both immutable records with value equality in
+`Csag.Blueprint.Domain.Time`:
 
 | Type | Members | Holds |
 | --- | --- | --- |
 | `PlaceTime` | `Local`, `At` | A place time: the reading at a place whose zone the caller knows, normally the tenant's (`ITenantTimeZoneProvider`) or that of a place the entity belongs to. The zone is not stored. |
-| `ZonedPlaceTime` | `Local`, `TimeZoneId`, `At` | A place time at a place with its own zone, stored with it: a stand at a boat show in Miami for a tenant in Zurich. |
-| `ViewerTime` | `Local`, `TimeZoneId`, `At` | A viewer time: the reading an organiser set in their own zone, shown to each viewer in theirs (an online briefing). |
+| `ZonedTime` | `Local`, `TimeZoneId`, `At` | A reading stored with its zone. Either a place time at a place with its own zone (a stand at a boat show in Miami, `America/New_York`, for a tenant in Zurich), shown as the clock time there and labelled with its zone; or a viewer time an organiser sets in their own zone (an online briefing at 10:00 `Europe/Zurich`), shown to each viewer in theirs. |
 
 `Local` is a `DateTime` with `DateTimeKind.Unspecified` (the `Kind` of the reading passed in is ignored), `At` a
-`DateTimeOffset` in UTC, `TimeZoneId` an IANA id that `ZonedTime.TryFindIanaTimeZone` resolves.
+`DateTimeOffset` in UTC, `TimeZoneId` an IANA id that `TimeZones.TryFindIanaTimeZone` resolves. Which display rule a
+`ZonedTime` follows belongs to the entity property and its DTO, not to the type: a stand's opening and a briefing hold
+the same members.
 
 | Member | Purpose |
 | --- | --- |
-| `TryCreate(local, zone, out value)` / `Create(local, zone)` | `PlaceTime` from a reading and the zone of its place. `false` (or `ArgumentException`) when the reading falls in a spring-forward gap; a reading in a fall-back overlap denotes its earlier occurrence, as in `ZonedTime.TryToInstant`. |
-| `TryCreate(local, timeZoneId, out value)` / `Create(local, timeZoneId)` | `ZonedPlaceTime` and `ViewerTime`; also `false` (or `ArgumentException`) for an id that is no IANA id this host resolves. |
-| `Rederive(zone)` (`PlaceTime`), `Rederive()` (zoned types) | Keeps the reading and derives the instant again: after a time zone data update, or for a `PlaceTime` whose place now has another zone. Returns `(Value, Shifted)`. |
-| `WithTimeZone(timeZoneId)` (zoned types) | Keeps the reading in another zone and derives its instant there. Returns `(Value, Shifted)`. |
+| `TryCreate(local, zone, out value)` / `Create(local, zone)` | `PlaceTime` from a reading and the zone of its place. `false` (or `ArgumentException`) when the reading falls in a spring-forward gap; a reading in a fall-back overlap denotes its earlier occurrence, as in `TimeZones.TryToInstant`. |
+| `TryCreate(local, timeZoneId, out value)` / `Create(local, timeZoneId)` | `ZonedTime`; also `false` (or `ArgumentException`) for an id that is no IANA id this host resolves. |
+| `Rederive(zone)` (`PlaceTime`), `Rederive()` (`ZonedTime`) | Keeps the reading and derives the instant again: after a time zone data update, or for a `PlaceTime` whose place now has another zone. Returns `(Value, Shifted)`. |
+| `WithTimeZone(timeZoneId)` (`ZonedTime`) | Keeps the reading in another zone and derives its instant there. Returns `(Value, Shifted)`. |
 
 When the new rules put a reading into a spring-forward gap, `Rederive` and `WithTimeZone` move it forward by the length
 of the gap (02:30 in a gap from 02:00 to 03:00 becomes 03:30, 02:15 in Lord Howe's half-hour gap 02:45) and return
 `Shifted: true`, so the job that calls them can tell whoever relies on the reading.
 
-DTOs stay flat: a request carries the reading (and a `TimeZoneId` for the zoned types) and the endpoint builds the value
+DTOs stay flat: a request carries the reading (and a `TimeZoneId` for a `ZonedTime`) and the endpoint builds the value
 with the factory; a response or table view row carries the members it needs (`StartLocal`, `StartAt`). EF Core maps the
 types as complex types (they carry `[ComplexType]`); `Csag.Blueprint.Infrastructure` names their columns.
 

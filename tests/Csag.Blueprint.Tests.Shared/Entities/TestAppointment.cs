@@ -5,7 +5,8 @@ using Csag.Blueprint.Domain.Time;
 
 /// <summary>
 /// Tenant-owned sample entity holding each kind of time value, once required and once optional: a place
-/// time in the tenant's zone, a place time at a stand with its own zone, and a viewer time an organiser set.
+/// time in the tenant's zone, a place time at a stand with its own zone, and a viewer time an organiser set;
+/// and a plain instant.
 /// </summary>
 public sealed class TestAppointment : IMustHaveTenant
 {
@@ -37,20 +38,25 @@ public sealed class TestAppointment : IMustHaveTenant
     /// <summary>
     /// Gets or sets when the stand at a venue with its own zone opens.
     /// </summary>
-    public ZonedPlaceTime StandOpens { get; set; } = null!;
+    public ZonedTime StandOpens { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets when the stand closes, if it has a fixed closing time.
     /// </summary>
-    public ZonedPlaceTime? StandCloses { get; set; }
+    public ZonedTime? StandCloses { get; set; }
 
     /// <summary>
     /// Gets or sets when the online briefing an organiser set starts.
     /// </summary>
-    public ViewerTime Briefing { get; set; } = null!;
+    public ZonedTime Briefing { get; set; } = null!;
 
     /// <summary>
     /// Gets or sets when the online debriefing starts, if one is planned.
     /// </summary>
-    public ViewerTime? Debriefing { get; set; }
+    public ZonedTime? Debriefing { get; set; }
+
+    /// <summary>
+    /// Gets or sets when the organiser confirmed the appointment, if they have.
+    /// </summary>
+    public DateTimeOffset? ConfirmedAt { get; set; }
 }

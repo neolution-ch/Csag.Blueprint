@@ -18,7 +18,7 @@ It contains the reusable EF Core persistence backbone, session/auth infrastructu
 | `EntityFilteringModelBuilderExtensions` | Registers the named soft-delete query filter and creates the supporting `IX_{table}_DeletedAt` and composite `IX_{table}_ActiveRange` indexes for `ISoftDeletable` / `IHasActiveRange`. |
 | `LocalizationModelBuilderExtensions` | Wires `IHasLocalizedTexts` entities to their `ILocalizedText` side, with the per-language unique constraint and indexes. |
 | `ContractModelBuilderExtensions` | Applies the model conventions the domain contracts imply (`IHasInternalName` constraints, localized text constraints). |
-| `TimeValueModelBuilderExtensions` | Names the columns of `PlaceTime`, `ZonedPlaceTime` and `ViewerTime` properties after the property (`StartLocal`, `StartAt`, `StartTimeZoneId`). See [Time value columns](#time-value-columns). |
+| `TimeValueModelBuilderExtensions` | Names the columns of `PlaceTime` and `ZonedTime` properties after the property (`StartLocal`, `StartAt`, `StartTimeZoneId`), and stores every `DateTimeOffset` at offset zero. See [Time value columns](#time-value-columns) and [Instants are stored at UTC](#instants-are-stored-at-utc). |
 | `KeyConventionModelBuilderExtensions` | On SQL Server, gives every single-column `Guid` primary key a `NEWSEQUENTIALID()` column default. This applies to **all** entities, not only contract adopters. EF Core still assigns the key client-side on `Add`; the default serves inserts that bypass EF Core. |
 
 ### Data isolation topology
@@ -125,7 +125,7 @@ wins.
 
 ### Time value columns
 
-EF Core maps a `PlaceTime`, `ZonedPlaceTime` or `ViewerTime` property (`Csag.Blueprint.Domain.Time`) as a complex
+EF Core maps a `PlaceTime` or `ZonedTime` property (`Csag.Blueprint.Domain.Time`) as a complex
 type without any configuration, since the types carry `[ComplexType]`. The blueprint conventions name its columns
 after the property, so an entity needs no configuration of its own:
 
@@ -133,12 +133,12 @@ after the property, so an entity needs no configuration of its own:
 | --- | --- | --- |
 | `Local` | `{Property}Local` | `datetime2` |
 | `At` | `{Property}At` | `datetimeoffset` |
-| `TimeZoneId` (`ZonedPlaceTime`, `ViewerTime`) | `{Property}TimeZoneId` | `nvarchar(100)` |
+| `TimeZoneId` (`ZonedTime`) | `{Property}TimeZoneId` | `nvarchar(100)` |
 
 ```csharp
 public PlaceTime Start { get; set; } = null!;            // StartLocal, StartAt: NOT NULL
 public PlaceTime? End { get; set; }                      // EndLocal, EndAt: NULL
-public ZonedPlaceTime StandOpens { get; set; } = null!;  // StandOpensLocal, StandOpensTimeZoneId, StandOpensAt
+public ZonedTime StandOpens { get; set; } = null!;       // StandOpensLocal, StandOpensTimeZoneId, StandOpensAt
 ```
 
 An optional property (`PlaceTime?`) gets nullable columns, all null when the value is. Inside another complex type or
@@ -175,6 +175,24 @@ Checked against SQL Server with EF Core 10.0.12:
 
 Rows are read back as stored; nothing is derived on load. After a time zone data update (or when the tenant's zone
 changes), a job derives the stored values again with `Rederive` and logs the ones it reports as `Shifted`.
+
+### Instants are stored at UTC
+
+Every `DateTimeOffset` property in the model, of an entity, an owned type or a complex type (a time value's `At`
+included), gets a value converter that writes `value.ToUniversalTime()` and reads the stored value unchanged. An instant
+saved as `2026-07-01T10:00:00+02:00` is stored and read back as `2026-07-01T08:00:00+00:00`, the same instant. Query
+parameters compared with such a property are converted the same way, so `Where(r => r.ConfirmedAt >= from)` with a
+`+02:00` `from` still finds the rows it should.
+
+- **PostgreSQL.** Npgsql writes a `DateTimeOffset` to a `timestamptz` column only at offset zero and throws for any
+  other, so without the converter every instant with a local offset would fail to save.
+- **SQL Server.** `datetimeoffset` keeps whatever offset a value was written with; with the converter every stored
+  instant is `+00:00`, the way instants travel in the API.
+
+A property with a value converter of its own (`HasConversion(...)`, including `HasConversion<string>()`) keeps it.
+`BlueprintDbContext` applies the converter at model finalization, like the column names; a context that does not derive
+from it gets it from `ConfigureTimeValueColumns()`, called last in `OnModelCreating`. An entity that is already tracked
+keeps the offset it was given until it is read again.
 
 ### Query extensions for the domain contracts
 

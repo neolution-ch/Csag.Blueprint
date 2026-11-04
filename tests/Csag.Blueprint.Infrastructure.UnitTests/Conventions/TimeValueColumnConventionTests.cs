@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 
 /// <summary>
-/// A <see cref="PlaceTime"/>, <see cref="ZonedPlaceTime"/> or <see cref="ViewerTime"/> property is mapped as
+/// A <see cref="PlaceTime"/> or <see cref="ZonedTime"/> property is mapped as
 /// a complex type without any configuration, and the blueprint conventions name its columns after the
 /// property: <c>StartLocal</c>, <c>StartAt</c>, <c>StartTimeZoneId</c>.
 /// </summary>

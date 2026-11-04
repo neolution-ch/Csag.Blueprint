@@ -75,14 +75,14 @@ public sealed class TimeZoneDataHealthCheck : IHealthCheck
     /// <inheritdoc/>
     public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        if (!ZonedTime.TryFindIanaTimeZone(this.probeZoneId, out _))
+        if (!TimeZones.TryFindIanaTimeZone(this.probeZoneId, out _))
         {
             return Task.FromResult(new HealthCheckResult(
                 context?.Registration?.FailureStatus ?? HealthStatus.Unhealthy,
                 $"The time zone data cannot resolve the IANA zone '{this.probeZoneId}'. Install the tzdata package in the image."));
         }
 
-        if (!ZonedTime.TryFindIanaTimeZone(this.legacyProbeZoneId, out _))
+        if (!TimeZones.TryFindIanaTimeZone(this.legacyProbeZoneId, out _))
         {
             return Task.FromResult(HealthCheckResult.Degraded(
                 $"The time zone data resolves '{this.probeZoneId}' but not the legacy name '{this.legacyProbeZoneId}', which " +

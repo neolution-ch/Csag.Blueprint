@@ -45,12 +45,12 @@ public static class TableViewRequestTimeZone
             return true;
         }
 
-        if (!ZonedTime.IsWellFormedIanaTimeZoneId(id))
+        if (!TimeZones.IsWellFormedIanaTimeZoneId(id))
         {
             return false;
         }
 
-        if (!ZonedTime.TryFindIanaTimeZone(id, out zone))
+        if (!TimeZones.TryFindIanaTimeZone(id, out zone))
         {
             LogUnknown(id, logger);
         }

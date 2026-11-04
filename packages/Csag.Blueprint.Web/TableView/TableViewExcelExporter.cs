@@ -209,7 +209,7 @@ public static class TableViewExcelExporter
         {
             DateOnly date => (date.ToDateTime(TimeOnly.MinValue), temporalFormats.Date),
             DateTime localReading => (DateTime.SpecifyKind(localReading, DateTimeKind.Unspecified), temporalFormats.LocalDateTime),
-            DateTimeOffset instant when instant.UtcDateTime.Year > 1 => (ZonedTime.ToLocalReading(instant, timeZone), temporalFormats.Instant),
+            DateTimeOffset instant when instant.UtcDateTime.Year > 1 => (TimeZones.ToLocalReading(instant, timeZone), temporalFormats.Instant),
             _ => (DateTime.MinValue, string.Empty),
         };
 

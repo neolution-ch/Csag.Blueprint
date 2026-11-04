@@ -97,7 +97,7 @@ Column(dto => dto.TimeZoneId);                  // must be a column, so every ro
 
 The column's metadata names the zone column in `TimeZoneColumn` (`"TimeZoneId"`), so a client labels each reading with its row's zone. Filters are unaffected: local readings compare as they read. `WithTimeZoneFrom` is refused on a column that is not a local reading and for a selector that does not name a property of the DTO itself (`dto => dto.Venue.TimeZoneId`), and the definition's `Metadata` throws when the zone property is not a column.
 
-An entity's time values (`PlaceTime`, `ZonedPlaceTime`, `ViewerTime` in `Csag.Blueprint.Domain.Time`) are not columns themselves. Give the DTO a flat property per member it shows and select the member; each column then has the data type of its kind and filters, sorts and exports in SQL like a column over a plain property:
+An entity's time values (`PlaceTime`, `ZonedTime` in `Csag.Blueprint.Domain.Time`) are not columns themselves. Give the DTO a flat property per member it shows and select the member; each column then has the data type of its kind and filters, sorts and exports in SQL like a column over a plain property. The members a DTO picks decide how a `ZonedTime` shows: a stand's opening as its reading in its own zone, an online briefing as an instant in each viewer's zone:
 
 ```csharp
 Column(dto => dto.StartLocal, e => e.Start.Local);                // localDateTime, in the tenant's zone
@@ -105,6 +105,7 @@ Column(dto => dto.StartAt, e => e.Start.At);                      // instant
 Column(dto => dto.StandOpensLocal, e => e.StandOpens.Local)       // localDateTime, in the stand's zone
     .WithTimeZoneFrom(dto => dto.StandOpensTimeZoneId);
 Column(dto => dto.StandOpensTimeZoneId, e => e.StandOpens.TimeZoneId);
+Column(dto => dto.BriefingAt, e => e.Briefing.At);                // instant, in the viewer's zone
 ```
 
 ### Filter operators
@@ -125,7 +126,7 @@ A `DateRange` filter value is `from,to` in `yyyy-MM-dd`, either side optional. I
 
 - `date`: `from <= value <= to`.
 - `localDateTime`: `value >= from 00:00` and `value < (to + 1 day) 00:00`, on the reading as stored; no zone is involved.
-- `instant`: `value >= start of from` and `value < start of (to + 1 day)`, with the days as they begin in the effective zone (`ZonedTime.DayRange`), so a day can span 23 or 25 hours.
+- `instant`: `value >= start of from` and `value < start of (to + 1 day)`, with the days as they begin in the effective zone (`TimeZones.DayRange`), so a day can span 23 or 25 hours.
 
 A range never matches a row without a value, not even `,9999-12-31`, which has no bound because the day after it cannot be represented.
 

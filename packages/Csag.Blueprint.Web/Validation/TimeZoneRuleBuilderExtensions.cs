@@ -46,7 +46,7 @@ public static class TimeZoneRuleBuilderExtensions
 
     /// <summary>
     /// Requires an IANA time zone id this host can resolve, such as <c>Europe/Zurich</c>, and rejects Windows
-    /// ids such as <c>W. Europe Standard Time</c> (see <see cref="ZonedTime.TryFindIanaTimeZone"/>). Meant for
+    /// ids such as <c>W. Europe Standard Time</c> (see <see cref="TimeZones.TryFindIanaTimeZone"/>). Meant for
     /// zones that are stored, such as a tenant's or a venue's. A null value passes, so the rule fits optional
     /// fields; add <c>NotEmpty</c> to require one.
     /// </summary>
@@ -58,12 +58,12 @@ public static class TimeZoneRuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(rule);
 
         return rule
-            .Must(id => id is null || ZonedTime.TryFindIanaTimeZone(id, out _))
+            .Must(id => id is null || TimeZones.TryFindIanaTimeZone(id, out _))
             .WithMessage("'{PropertyName}' must be an IANA time zone id, such as Europe/Zurich.");
     }
 
     /// <summary>
-    /// Requires a value with the form of an IANA zone id (see <see cref="ZonedTime.IsWellFormedIanaTimeZoneId"/>),
+    /// Requires a value with the form of an IANA zone id (see <see cref="TimeZones.IsWellFormedIanaTimeZoneId"/>),
     /// whether or not this host's time zone data knows it. Meant for a zone a request names for the request
     /// alone, such as the viewer's browser zone: browsers can know zones the server's data does not yet, so
     /// the server falls back to another zone for an unknown id instead of refusing the request. A zone that
@@ -78,7 +78,7 @@ public static class TimeZoneRuleBuilderExtensions
         ArgumentNullException.ThrowIfNull(rule);
 
         return rule
-            .Must(id => id is null || ZonedTime.IsWellFormedIanaTimeZoneId(id))
+            .Must(id => id is null || TimeZones.IsWellFormedIanaTimeZoneId(id))
             .WithMessage("'{PropertyName}' must be an IANA time zone id, such as Europe/Zurich.");
     }
 
@@ -102,7 +102,7 @@ public static class TimeZoneRuleBuilderExtensions
 
         return rule
             .MustAsync(async (instance, date, cancellationToken) =>
-                date <= ZonedTime.Today(timeProvider, await timeZone(instance, cancellationToken)))
+                date <= TimeZones.Today(timeProvider, await timeZone(instance, cancellationToken)))
             .WithMessage(NotAfterTodayMessage);
     }
 
@@ -125,14 +125,14 @@ public static class TimeZoneRuleBuilderExtensions
 
         return rule
             .MustAsync(async (instance, date, cancellationToken) =>
-                date is not { } value || value <= ZonedTime.Today(timeProvider, await timeZone(instance, cancellationToken)))
+                date is not { } value || value <= TimeZones.Today(timeProvider, await timeZone(instance, cancellationToken)))
             .WithMessage(NotAfterTodayMessage);
     }
 
     /// <summary>
     /// Requires a local reading that exists in the zone: one that does not fall in the hour clocks skip when
     /// daylight saving time starts. A reading that happens twice when clocks fall back passes; it resolves to
-    /// its earlier occurrence (see <see cref="ZonedTime.TryToInstant"/>).
+    /// its earlier occurrence (see <see cref="TimeZones.TryToInstant"/>).
     /// </summary>
     /// <typeparam name="T">The type being validated.</typeparam>
     /// <param name="rule">The rule builder for the local reading property.</param>
@@ -147,7 +147,7 @@ public static class TimeZoneRuleBuilderExtensions
 
         return rule
             .MustAsync(async (instance, reading, cancellationToken) =>
-                ZonedTime.TryToInstant(reading, await timeZone(instance, cancellationToken), out _))
+                TimeZones.TryToInstant(reading, await timeZone(instance, cancellationToken), out _))
             .WithMessage(ExistsInTimeZoneMessage);
     }
 
@@ -167,7 +167,7 @@ public static class TimeZoneRuleBuilderExtensions
 
         return rule
             .MustAsync(async (instance, reading, cancellationToken) =>
-                reading is not { } value || ZonedTime.TryToInstant(value, await timeZone(instance, cancellationToken), out _))
+                reading is not { } value || TimeZones.TryToInstant(value, await timeZone(instance, cancellationToken), out _))
             .WithMessage(ExistsInTimeZoneMessage);
     }
 }

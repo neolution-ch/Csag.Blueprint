@@ -218,6 +218,38 @@ public sealed class ProblemDetailsErrorFormatTests(AppFixture app) : Integration
         nameErrors.Count.ShouldBeGreaterThanOrEqualTo(2, errorDetail);
     }
 
+    [Theory]
+    [InlineData("2025-01-05T00:00:00Z")]
+    [InlineData("2025-01-05T00:00:00+01:00")]
+    public async Task LocalReadingWithOffset_Returns400NamingTheFieldAsync(string acquiredAt)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var payload = new { name = "Offset Bike", kind = "Bicycle", capacity = 1, pricePerHour = 5m, isActive = true, acquiredAt };
+
+        using var response = await this.App.ManagerAClient.PostAsJsonAsync(VehiclesUri, payload, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.BadRequest, cancellationToken: ct);
+        using var problemDetails = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        var error = problemDetails.RootElement.GetProperty("errors").EnumerateArray().ShouldHaveSingleItem();
+        error.GetProperty("name").GetString().ShouldBe("acquiredAt");
+        error.GetProperty("reason").GetString().ShouldNotBeNull().ShouldContain("without a UTC offset or 'Z'");
+    }
+
+    [Theory]
+    [InlineData("2025-01-05T09:30")]
+    [InlineData("2025-01-05T09:30:00")]
+    public async Task LocalReading_IsStoredAndReturnedAsItReadsAsync(string acquiredAt)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var payload = new { name = $"Reading Bike {acquiredAt}", kind = "Bicycle", capacity = 1, pricePerHour = 5m, isActive = true, acquiredAt };
+
+        using var response = await this.App.ManagerAClient.PostAsJsonAsync(VehiclesUri, payload, ct);
+
+        await response.ShouldHaveStatusCodeAsync(HttpStatusCode.Created, cancellationToken: ct);
+        using var created = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        created.RootElement.GetProperty("acquiredAt").GetString().ShouldBe("2025-01-05T09:30:00");
+    }
+
     [Fact]
     public async Task ProblemDetails_Deserialization_WorksCorrectly()
     {
@@ -238,7 +270,8 @@ public sealed class ProblemDetailsErrorFormatTests(AppFixture app) : Integration
     /// <summary>
     /// Builds a create-vehicle payload violating four validator rules: empty name, undefined enum
     /// value, non-positive capacity, and negative price. Sent as an anonymous object so the
-    /// out-of-range kind can be expressed as a raw number.
+    /// out-of-range kind can be expressed as a raw number, and the local reading as the string
+    /// the API expects.
     /// </summary>
     private static object InvalidVehiclePayload() => new
     {
@@ -247,7 +280,7 @@ public sealed class ProblemDetailsErrorFormatTests(AppFixture app) : Integration
         capacity = 0,
         pricePerHour = -1m,
         isActive = true,
-        acquiredAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+        acquiredAt = "2024-01-01T00:00:00",
     };
 
     /// <summary>

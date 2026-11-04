@@ -1,5 +1,7 @@
 namespace Csag.Blueprint.Web.TableView;
 
+using System.Globalization;
+using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Application.TableView;
 using FastEndpoints;
 using Microsoft.EntityFrameworkCore;
@@ -7,6 +9,12 @@ using Microsoft.EntityFrameworkCore;
 /// <summary>
 /// Generic base endpoint for exporting table view data as an Excel file.
 /// Derived endpoints only need to override <see cref="BuildQuery"/> and Configure for routing/permissions.
+/// The request's <see cref="TableViewExportRequest.TimeZone"/>, else the zone of the registered
+/// <see cref="ITenantTimeZoneProvider"/>, decides both how date filters on instant columns are evaluated and
+/// in which zone the workbook shows instants; dates and times are formatted for the request culture. The
+/// headers of instant columns name that zone, and the headers of local reading columns name the tenant's, unless
+/// their zone comes from the row. A request zone this host's time zone data does not know falls back to the
+/// tenant's zone, with a warning logged, and the headers name the zone actually used.
 /// </summary>
 /// <typeparam name="TContext">The database context type.</typeparam>
 /// <typeparam name="TEntity">The entity type.</typeparam>
@@ -78,6 +86,14 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
     /// <inheritdoc/>
     public override async Task HandleAsync(TableViewExportRequest req, CancellationToken ct)
     {
+        if (!TableViewRequestTimeZone.TryFindRequested(req.TimeZone, this.Logger, out var requestedTimeZone))
+        {
+            this.ThrowError(r => r.TimeZone, TableViewRequestTimeZone.InvalidMessage);
+        }
+
+        var tenantTimeZone = await this.Resolve<ITenantTimeZoneProvider>().GetTimeZoneAsync(ct);
+        var timeZone = requestedTimeZone ?? tenantTimeZone;
+
         // The validator requires Page and PageSize together. Without them the export reads one page of
         // MaxExportRows rows plus one, which bounds the query. The count and the page are separate reads, so
         // a row matching between them can be missing from the count; the extra row still reveals it.
@@ -90,6 +106,7 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
             Definition = this.definition,
             Filters = req.Filters,
             SortColumns = req.SortColumns,
+            TimeZone = timeZone,
             Page = req.Page ?? 1,
             PageSize = req.PageSize ?? (maxExportRows == int.MaxValue ? maxExportRows : maxExportRows + 1),
         };
@@ -102,7 +119,13 @@ public abstract class TableViewExportEndpointBase<TContext, TEntity, TDto, TDefi
                 $"The export matches more than the {maxExportRows} rows an export may hold. Narrow the filters or export one page.");
         }
 
-        var excelBytes = TableViewExcelExporter.Export(data, this.LocalizedMetadata, this.ExportFileName);
+        var excelBytes = TableViewExcelExporter.Export(
+            data,
+            this.LocalizedMetadata,
+            this.ExportFileName,
+            timeZone: timeZone,
+            placeTimeZone: tenantTimeZone,
+            culture: CultureInfo.CurrentCulture);
 
         await this.Send.BytesAsync(
             excelBytes,

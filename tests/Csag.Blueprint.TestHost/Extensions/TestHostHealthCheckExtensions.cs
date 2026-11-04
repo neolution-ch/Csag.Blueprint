@@ -5,9 +5,9 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 /// <summary>
-/// Registers and maps the host's health probes: a trivial liveness check and a readiness check
+/// Registers and maps the host's health probes: a trivial liveness check, a readiness check
 /// gated on the one-shot startup flag flipped by <c>TestHostStartupService</c> once the schema is
-/// created and the seed data is in place.
+/// created and the seed data is in place, and the package's time zone data readiness check.
 /// </summary>
 public static class TestHostHealthCheckExtensions
 {
@@ -23,7 +23,8 @@ public static class TestHostHealthCheckExtensions
 
         services.AddHealthChecks()
             .AddCheck("live_check", () => HealthCheckResult.Healthy("The host process is responsive."), tags: ["live"])
-            .AddCheck<StartupCompletedHealthCheck>("ready_check", tags: ["ready"]);
+            .AddCheck<StartupCompletedHealthCheck>("ready_check", tags: ["ready"])
+            .AddBlueprintTimeZoneDataCheck();
 
         return services;
     }

@@ -13,14 +13,16 @@ namespace Csag.Blueprint.Domain.Contracts;
 public interface IAuditable
 {
     /// <summary>
-    /// Gets or sets the timestamp when the entity was created.
-    /// Automatically set to <see cref="DateTimeOffset.UtcNow"/> on insert.
+    /// Gets or sets the instant the entity was created, in UTC.
+    /// Automatically set on insert to <see cref="TimeProvider.GetUtcNow"/> of the <see cref="TimeProvider"/>
+    /// registered in the container, so a test that registers a fake clock controls it.
     /// </summary>
     DateTimeOffset CreatedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the timestamp when the entity was last updated.
-    /// Automatically set to <see cref="DateTimeOffset.UtcNow"/> on update.
+    /// Gets or sets the instant the entity was last updated, in UTC; null until the row is first modified.
+    /// Automatically set on update to <see cref="TimeProvider.GetUtcNow"/> of the <see cref="TimeProvider"/>
+    /// registered in the container.
     /// </summary>
     DateTimeOffset? UpdatedAt { get; set; }
 

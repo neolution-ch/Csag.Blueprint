@@ -1,5 +1,58 @@
 # @neolution-ch/csag-blueprint-application
 
+## 0.8.0
+
+### Patch Changes
+
+- [#76](https://github.com/neolution-ch/Csag.Blueprint/pull/76) [`ba77ed4`](https://github.com/neolution-ch/Csag.Blueprint/commit/ba77ed4f0708084b43417fb5c9ab1ee0a5d0fe48) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump the nuget-ecosystem group with 9 updates
+  
+  | Package | From | To | Bump |
+  |---------|------|----|------|
+  | coverlet.collector | 10.0.1 | 10.1.0 | 🟡 minor |
+  | FluentValidation | 12.1.1 | 12.2.0 | 🟡 minor |
+  | Microsoft.Data.SqlClient | 7.0.3 | 7.1.1 | 🟡 minor |
+  | Microsoft.Extensions.TimeProvider.Testing | 10.10.0 | 10.11.0 | 🟡 minor |
+  | Microsoft.NET.Test.Sdk | 18.10.1 | 18.11.0 | 🟡 minor |
+  | Testcontainers.MsSql | 4.15.0 | 4.16.0 | 🟡 minor |
+  | WireMock.Net.Testcontainers | 2.15.0 | 2.19.0 | 🟡 minor |
+  | xunit.runner.visualstudio | 4.0.0 | 4.0.1 | 🟢 patch |
+  | xunit.v3.mtp-off | 4.0.1 | 4.0.2 | 🟢 patch |
+
+- [#70](https://github.com/neolution-ch/Csag.Blueprint/pull/70) [`d6ba798`](https://github.com/neolution-ch/Csag.Blueprint/commit/d6ba798344ed41169f0af77f25d1dfd6fc890843) Thanks [@neotrow](https://github.com/neotrow)! - Raise vulnerable dependencies to patched versions
+  
+  The ASP.NET Core and EF Core packages move to the 10.0.13 servicing release. It brings
+  `System.Security.Cryptography.Xml` 10.0.13 (GHSA-7hqp-7c5m-4vq6, GHSA-c399-9853-6jmj,
+  GHSA-r955-8q5j-3h83) and `System.Security.Cryptography.Pkcs` 10.0.13 (GHSA-846f-f764-76mx,
+  GHSA-2fmv-rv2c-59x7).
+  
+  `Csag.Blueprint.Infrastructure`, `Csag.Blueprint.Web` and `Csag.Blueprint.Testing` now also depend
+  on `System.Security.Cryptography.Pkcs` 10.0.13. The package that pulls it in,
+  `Microsoft.Data.SqlClient`, still asks for a vulnerable version. Upgrading the blueprint packages is
+  enough to get the patched version, without a pin of your own.
+  
+  **When upgrading:**
+  
+  - Your own `Microsoft.AspNetCore.*` and `Microsoft.EntityFrameworkCore.*` references must be 10.0.13
+    or later, or restore fails with a package downgrade error (NU1605, or NU1109 under central package
+    management).
+  - Run your applications on the .NET 10.0.13 runtime or later. Microsoft fixes these advisories in
+    the runtime as well as in the packages, and the Xml advisory also covers `System.Private.Xml`,
+    which only ships with the runtime. Update the installed runtime or the container base image, and
+    rebuild and redeploy self-contained applications.
+
+- [#75](https://github.com/neolution-ch/Csag.Blueprint/pull/75) [`5872a19`](https://github.com/neolution-ch/Csag.Blueprint/commit/5872a19d6296c06a325f24d2be0fd64d5a685a44) Thanks [@neoscie](https://github.com/neoscie)! - Update `Neolution.Extensions.Caching.Distributed` to 3.0.0
+  
+  `Csag.Blueprint.Infrastructure`, `Csag.Blueprint.Web` and `Csag.Blueprint.Testing` now depend on
+  `Neolution.Extensions.Caching.Distributed` 3.0.0. This version depends on
+  `Foundatio.MessagePack` 13.0.5. `Foundatio.MessagePack` 13.0.5 requires `MessagePack` 3.1.12, which
+  fixes GHSA-qhrr-8q5h-9q3h. Thus, the blueprint packages do not pin `MessagePack` now.
+  
+  **When you upgrade:**
+  
+  - If your central package versions set `Neolution.Extensions.Caching.Distributed`, set it to
+    3.0.0 or later. If you do not, restore fails with a package downgrade error (NU1605, or
+    NU1109 with central package management).
+
 ## 0.7.0
 
 No changes in this release.

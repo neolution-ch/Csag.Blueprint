@@ -36,3 +36,8 @@ for (const dir of fs.readdirSync(packagesDir)) {
     console.log(`Updated ${csproj} to version ${version}`);
   }
 }
+
+// Each packages.lock.json records the version of every project it references. Neither a
+// locked nor a plain restore notices when that version is out of date, so only a forced
+// re-evaluation brings the lock files up to the new versions.
+execSync("dotnet restore --force-evaluate", { stdio: "inherit" });

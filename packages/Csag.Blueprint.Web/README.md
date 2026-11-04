@@ -34,7 +34,7 @@ expire by; see the Infrastructure package's *Cookie sessions*. In the same way i
 
 ### Builder composition
 
-`AddBlueprintServices(this WebApplicationBuilder)` wires shared web services such as:
+`AddBlueprintServices(this WebApplicationBuilder, Action<BlueprintServicesOptions>? = null)` wires shared web services such as:
 
 - HTTPS redirection / HSTS / security headers setup
 - CORS configuration
@@ -44,6 +44,19 @@ expire by; see the Infrastructure package's *Cookie sessions*. In the same way i
 - distributed cache registration
 - anti-forgery services
 - the `TimeProvider` and the UTC `ITenantTimeZoneProvider` fallback, each with `TryAdd`
+
+The optional `BlueprintServicesOptions` callback gives the application two hooks.
+`FastEndpointsAdditionalAssemblies` finds endpoints and command/event handlers outside the entry
+assembly. `ConfigureOpenApiDocument` sets extra OpenAPI document settings on top of the Blueprint
+defaults, for example a custom `IDocumentProcessor`:
+
+```csharp
+builder.AddBlueprintServices(o =>
+{
+    o.FastEndpointsAdditionalAssemblies = [typeof(MyInfrastructureMarker).Assembly];
+    o.ConfigureOpenApiDocument = s => s.DocumentProcessors.Add(new MyDocumentProcessor());
+});
+```
 
 ### Middleware composition
 

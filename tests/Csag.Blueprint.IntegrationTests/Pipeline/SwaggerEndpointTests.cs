@@ -2,6 +2,7 @@ namespace Csag.Blueprint.IntegrationTests.Pipeline;
 
 using System.Net;
 using System.Text.Json;
+using Csag.Blueprint.TestHost.Swagger;
 
 /// <summary>
 /// End-to-end tests for the runtime Swagger surface when it is enabled. The shared fixture runs
@@ -63,6 +64,24 @@ public sealed class SwaggerEndpointTests(AppFixture app) : IntegrationTestBase(a
         CollectSchemaReferences(document.RootElement, referenced);
 
         referenced.Except(declared, StringComparer.Ordinal).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task SwaggerJson_IncludesCustomProcessor_RunningAfterBlueprintDefaultsAsync()
+    {
+        // TestHost registers TestMarkerDocumentProcessor through
+        // BlueprintServicesOptions.ConfigureOpenApiDocument. Its presence here proves the callback
+        // ran. Its summary proves it ran after UnifiedProblemDetailsDocumentProcessor. That is a
+        // Blueprint default, added to the same document-processor list before the callback runs.
+        var ct = TestContext.Current.CancellationToken;
+        using var client = this.App.CreateClient();
+
+        using var response = await client.GetAsync(new Uri("/swagger/v1/swagger.json", UriKind.Relative), ct);
+        var json = await response.Content.ReadAsStringAsync(ct);
+        using var document = JsonDocument.Parse(json);
+
+        var operation = document.RootElement.GetProperty("paths").GetProperty(TestMarkerDocumentProcessor.MarkerPath).GetProperty("get");
+        operation.GetProperty("summary").GetString().ShouldBe(TestMarkerDocumentProcessor.BlueprintDefaultsAppliedMarker);
     }
 
     [Fact]

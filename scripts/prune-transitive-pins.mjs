@@ -25,10 +25,11 @@
  *   node scripts/prune-transitive-pins.mjs [--dry-run] [report.md]
  *
  * Leaves Directory.Packages.props and every packages.lock.json matching the pins that
- * remain. With --dry-run it tries the pins the same way and then puts both back as they
- * were, so only the output says what a normal run would remove. When a report path is
- * given, writes a Markdown report there (the body of the pull request opened by the
- * Refresh lockfiles workflow, and its run summary).
+ * remain. When no pin can be removed, both stay exactly as they were. With --dry-run it
+ * tries the pins the same way and then puts both back as they were, so only the output
+ * says what a normal run would remove. When a report path is given, writes a Markdown
+ * report there (the body of the pull request opened by the Refresh lockfiles workflow,
+ * and its run summary).
  */
 
 import fs from "node:fs";
@@ -330,7 +331,9 @@ if (candidates.length > 0) {
     throw error;
   }
 
-  if (dryRun) putBack(original, originalLockFiles);
+  // A restore also rewrites anything else that is out of date in the lock files, such as
+  // the version of a project reference. Without a removal that must not open a pull request.
+  if (dryRun || removed.length === 0) putBack(original, originalLockFiles);
 }
 
 if (reportPath) {

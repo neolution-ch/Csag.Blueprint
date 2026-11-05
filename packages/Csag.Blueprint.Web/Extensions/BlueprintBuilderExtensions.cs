@@ -1,5 +1,6 @@
 namespace Csag.Blueprint.Web.Extensions;
 
+using Csag.Blueprint.Infrastructure.Countries;
 using Csag.Blueprint.Web.Tenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
@@ -16,7 +17,7 @@ public static class BlueprintBuilderExtensions
     /// <summary>
     /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
     /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
-    /// session authentication, and anti-forgery protection.
+    /// session authentication, anti-forgery protection, and the country catalog.
     /// </summary>
     /// <param name="builder">The web application builder.</param>
     /// <returns>The web application builder for chaining.</returns>
@@ -26,7 +27,7 @@ public static class BlueprintBuilderExtensions
     /// <summary>
     /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
     /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
-    /// session authentication, and anti-forgery protection.
+    /// session authentication, anti-forgery protection, and the country catalog.
     /// </summary>
     /// <param name="builder">The web application builder.</param>
     /// <param name="configure">
@@ -88,6 +89,8 @@ public static class BlueprintBuilderExtensions
         // Clock seam: everything blueprint-side reads time through TimeProvider so tests can supply a
         // fake. TryAdd, so a TimeProvider registered before this call (a FakeTimeProvider in tests) wins.
         builder.Services.TryAddSingleton(TimeProvider.System);
+
+        builder.Services.AddBlueprintCountries();
 
         return builder;
     }

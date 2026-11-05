@@ -34,6 +34,7 @@ This is the line to hold when extending the packages. If a new type would need t
 | Tenant data isolation | `IMustHaveTenant` + `ConfigureBlueprintMultiTenancy` | how rows are isolated. Pass `addTenantForeignKey: false` when tenant-owned data lives in a different database from the tenant table |
 | Session revocation | `ISessionRevocationParticipant` *(in `Csag.Blueprint.Application`)* | which of the application's own credentials end when sessions are revoked |
 | Session eligibility | `ISessionEligibility` *(in `Csag.Blueprint.Application`)* | which accounts may hold a session at all — asked at sign-in and at every sliding renewal |
+| Country codes | `ICountryCatalog` *(in `Csag.Blueprint.Application`)* | which country codes the application accepts and where the list comes from |
 
 ## What this package owns
 

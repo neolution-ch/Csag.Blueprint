@@ -43,6 +43,7 @@ expire by; see the Infrastructure package's *Cookie sessions*. In the same way i
 - Swagger/OpenAPI registration
 - distributed cache registration
 - anti-forgery services
+- the country catalog (`AddBlueprintCountries`)
 
 The optional `BlueprintServicesOptions` callback gives the application two hooks.
 `FastEndpointsAdditionalAssemblies` finds endpoints and command/event handlers outside the entry
@@ -191,6 +192,15 @@ which picks the bearer token when the request carries one and the session cookie
 its own schemes with `AuthSchemes()` keeps exactly those.
 
 Applications still own their endpoint classes, DTOs, validators, and policies.
+
+### Validation rules
+
+The package ships FluentValidation rules that applications use in their own validators:
+
+- `WithStrongPasswordRules` checks a password against the configured password settings.
+- `MustBeCountryCode` requires a country code from `ICountryCatalog`. A null or empty value passes, so add
+  `NotEmpty()` when the field is required. The application defines the `Validation.InvalidCountry` message
+  with a `{FieldName}` placeholder.
 
 ### Rate limiting
 

@@ -1099,6 +1099,7 @@
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.13, )",
           "Microsoft.EntityFrameworkCore": "[10.0.13, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.13, )",
+          "Nager.Country": "[4.8.0, )",
           "Neolution.Extensions.Caching.Distributed": "[3.0.0, )"
         }
       },
@@ -1346,6 +1347,12 @@
         "dependencies": {
           "StackExchange.Redis": "2.7.27"
         }
+      },
+      "Nager.Country": {
+        "type": "CentralTransitive",
+        "requested": "[4.8.0, )",
+        "resolved": "4.8.0",
+        "contentHash": "p57dyLWFnqXHf/9sFCcQSo5Cy5Y+gzZEtjuEr9tTyORK73XXqvk29G6vwMisn8rsXIGeEiIe5bgfIhXaLP1xbg=="
       },
       "Neolution.Extensions.Caching.Distributed": {
         "type": "CentralTransitive",

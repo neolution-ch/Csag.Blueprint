@@ -116,7 +116,7 @@ public sealed class AuditTenantResolverTests(AppFixture app) : IntegrationTestBa
         Capacity = 1,
         PricePerHour = 9.50m,
         IsActive = true,
-        AcquiredAt = new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+        AcquiredAt = new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Unspecified),
     };
 
     private static string GetCorrelationId(HttpResponseMessage response)

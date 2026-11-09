@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Infrastructure.Extensions;
 
 using Csag.Blueprint.Domain.Contracts;
+using Csag.Blueprint.Domain.Time;
 
 /// <summary>
 /// Extension methods for filtering entities that implement soft deletion and active range contracts.
@@ -47,19 +48,21 @@ public static class EntityFilteringExtensions
     }
 
     /// <summary>
-    /// Filters the query to include only entities that are active at the current UTC time.
+    /// Filters the query to include only entities that are active at the current instant of the clock.
     /// An entity is considered active if:
     /// - ActiveFrom is null or less than or equal to current time
     /// - ActiveUntil is null or greater than current time
     /// </summary>
     /// <typeparam name="T">The entity type that implements <see cref="IHasActiveRange"/>.</typeparam>
     /// <param name="query">The query to filter.</param>
+    /// <param name="timeProvider">The clock that says what "now" is.</param>
     /// <returns>A filtered query that includes only currently active entities.</returns>
-    public static IQueryable<T> WhereActiveNow<T>(this IQueryable<T> query)
+    public static IQueryable<T> WhereActiveNow<T>(this IQueryable<T> query, TimeProvider timeProvider)
         where T : class, IHasActiveRange
     {
-        var now = DateTimeOffset.UtcNow;
-        return query.WhereActiveAt(now);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        return query.WhereActiveAt(timeProvider.GetUtcNow());
     }
 
     /// <summary>
@@ -80,23 +83,26 @@ public static class EntityFilteringExtensions
     }
 
     /// <summary>
-    /// Filters the query to include only entities that are active at the start of the current UTC day
-    /// (midnight), not at the current instant. Use this for day-granular validity such as "valid on
-    /// today's date"; use <see cref="WhereActiveNow{T}"/> when the exact instant matters.
+    /// Filters the query to include only entities that are active at the start of today in
+    /// <paramref name="timeZone"/>, not at the current instant. Use this for day-granular validity such as
+    /// "valid on today's date"; use <see cref="WhereActiveNow{T}"/> when the exact instant matters.
     /// <para>
-    /// Because the comparison happens at midnight, an entity whose <c>ActiveFrom</c> falls later today
-    /// is <b>not</b> active for this query — use <see cref="WhereActiveNow{T}"/> or
-    /// <see cref="WhereActiveAt{T}"/> if it should be. The day boundary is UTC, not the caller's local
-    /// timezone.
+    /// Today is the date a clock in the zone shows now (<see cref="TimeZones.Today"/>), and its start is the
+    /// first instant of that date in the zone (<see cref="TimeZones.DayRange"/>), not midnight UTC. Because
+    /// the comparison happens at the start of the day, an entity whose <c>ActiveFrom</c> falls later today is
+    /// <b>not</b> active for this query — use <see cref="WhereActiveNow{T}"/> or
+    /// <see cref="WhereActiveAt{T}"/> if it should be.
     /// </para>
     /// </summary>
     /// <typeparam name="T">The entity type that implements <see cref="IHasActiveRange"/>.</typeparam>
     /// <param name="query">The query to filter.</param>
-    /// <returns>A filtered query that includes only entities active at the start of the current UTC day.</returns>
-    public static IQueryable<T> WhereActiveToday<T>(this IQueryable<T> query)
+    /// <param name="timeProvider">The clock that says what "now" is.</param>
+    /// <param name="timeZone">The zone whose calendar day counts, normally the tenant's.</param>
+    /// <returns>A filtered query that includes only entities active at the start of today in the zone.</returns>
+    public static IQueryable<T> WhereActiveToday<T>(this IQueryable<T> query, TimeProvider timeProvider, TimeZoneInfo timeZone)
         where T : class, IHasActiveRange
     {
-        var todayStart = new DateTimeOffset(DateTimeOffset.UtcNow.Date, TimeSpan.Zero);
+        var (todayStart, _) = TimeZones.DayRange(TimeZones.Today(timeProvider, timeZone), timeZone);
         return query.WhereActiveAt(todayStart);
     }
 
@@ -117,18 +123,21 @@ public static class EntityFilteringExtensions
     }
 
     /// <summary>
-    /// Filters the query to include only entities that are currently inactive.
+    /// Filters the query to include only entities that are inactive at the current instant of the clock.
     /// An entity is considered inactive if:
     /// - ActiveFrom is greater than current time, OR
     /// - ActiveUntil is less than or equal to current time
     /// </summary>
     /// <typeparam name="T">The entity type that implements <see cref="IHasActiveRange"/>.</typeparam>
     /// <param name="query">The query to filter.</param>
+    /// <param name="timeProvider">The clock that says what "now" is.</param>
     /// <returns>A filtered query that includes only currently inactive entities.</returns>
-    public static IQueryable<T> WhereInactiveNow<T>(this IQueryable<T> query)
+    public static IQueryable<T> WhereInactiveNow<T>(this IQueryable<T> query, TimeProvider timeProvider)
         where T : class, IHasActiveRange
     {
-        var now = DateTimeOffset.UtcNow;
+        ArgumentNullException.ThrowIfNull(timeProvider);
+
+        var now = timeProvider.GetUtcNow();
         return query.Where(x => (x.ActiveFrom != null && x.ActiveFrom > now) ||
             (x.ActiveUntil != null && x.ActiveUntil <= now));
     }
@@ -139,10 +148,11 @@ public static class EntityFilteringExtensions
     /// </summary>
     /// <typeparam name="T">The entity type that implements both <see cref="ISoftDeletable"/> and <see cref="IHasActiveRange"/>.</typeparam>
     /// <param name="query">The query to filter.</param>
+    /// <param name="timeProvider">The clock that says what "now" is.</param>
     /// <returns>A filtered query that includes only non-deleted and currently active entities.</returns>
-    public static IQueryable<T> WhereActiveAndNotDeleted<T>(this IQueryable<T> query)
+    public static IQueryable<T> WhereActiveAndNotDeleted<T>(this IQueryable<T> query, TimeProvider timeProvider)
         where T : class, ISoftDeletable, IHasActiveRange
     {
-        return query.WhereNotDeleted().WhereActiveNow();
+        return query.WhereNotDeleted().WhereActiveNow(timeProvider);
     }
 }

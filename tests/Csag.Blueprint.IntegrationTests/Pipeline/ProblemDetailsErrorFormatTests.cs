@@ -194,7 +194,7 @@ public sealed class ProblemDetailsErrorFormatTests(AppFixture app) : Integration
             Capacity = 2,
             PricePerHour = 10.00m,
             IsActive = true,
-            AcquiredAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            AcquiredAt = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Unspecified),
         };
 
         using var response = await this.App.ManagerAClient.PostAsJsonAsync(VehiclesUri, request, BlueprintJsonOptions.Default, ct);

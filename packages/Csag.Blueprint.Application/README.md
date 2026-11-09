@@ -6,7 +6,11 @@ This package provides **application-layer abstractions** for CSAG Blueprint-base
 
 ## JSON
 
-`BlueprintJsonOptions` holds the shared System.Text.Json conventions: camelCase names, string enums, and `LocalDateTimeJsonConverter`, which writes a `DateTime` as a local reading `yyyy-MM-ddTHH:mm:ss` (no fraction, no offset) and reads `yyyy-MM-ddTHH:mm[:ss]`. A value with a UTC offset or `Z` is refused with a `JsonException`, which the API answers with 400. `DateTimeOffset` is unaffected. `LocalDateTimeFormat` holds that text form (`Format`, `TryParse`, `GetInvalidMessage`), so query binding and table view filters accept exactly the same values.
+`BlueprintJsonOptions` holds the shared System.Text.Json conventions: camelCase names, string enums, `LocalDateTimeJsonConverter` and `InstantJsonConverter`.
+
+`LocalDateTimeJsonConverter` writes a `DateTime` as a local reading `yyyy-MM-ddTHH:mm:ss` (no fraction, no offset) and reads `yyyy-MM-ddTHH:mm[:ss]`. A value with a UTC offset or `Z` is refused with a `JsonException`, which the API answers with 400. Writing a `DateTime` whose `Kind` is `Utc` or `Local` throws an `InvalidOperationException`: such a value holds an instant or the server's clock, not a reading. EF Core reads `datetime2` columns as `Unspecified`, and `TimeZones` and the time values return readings with that kind. `LocalDateTimeFormat` holds the reading's text form (`Format`, `TryParse`, `GetInvalidMessage`), so query binding and table view filters accept exactly the same values.
+
+`InstantJsonConverter` reads a `DateTimeOffset` with System.Text.Json's own ISO 8601 parser, but only when it carries a UTC offset or `Z`: a value without one, which that parser reads in the server's zone, and a date on its own are refused with a `JsonException` (400). Writing is System.Text.Json's. It applies to `DateTimeOffset?` and to dictionary keys too. `InstantFormat.TryParse` holds the rule, so query binding accepts exactly the same instants.
 
 ## Claims
 

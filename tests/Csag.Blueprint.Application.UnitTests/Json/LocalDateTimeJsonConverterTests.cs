@@ -5,22 +5,41 @@ using Csag.Blueprint.Application.Json;
 
 /// <summary>
 /// Pins the wire format of <see cref="DateTime"/> under <see cref="BlueprintJsonOptions.Default"/>: a local
-/// reading <c>yyyy-MM-ddTHH:mm:ss</c> with no offset, read back with <see cref="DateTimeKind.Unspecified"/>.
-/// Uses the production options so the tests fail if the converter is ever unregistered.
+/// reading <c>yyyy-MM-ddTHH:mm:ss</c> with no offset, read back with <see cref="DateTimeKind.Unspecified"/>, and
+/// never written from a <see cref="DateTime"/> that holds an instant or the server's clock. Uses the production
+/// options so the tests fail if the converter is ever unregistered.
 /// </summary>
 public sealed class LocalDateTimeJsonConverterTests
 {
     private static readonly JsonSerializerOptions Options = BlueprintJsonOptions.Default;
 
+    [Fact]
+    public void Serialize_UnspecifiedKind_WritesReadingWithoutOffset()
+    {
+        var value = new Reading { At = new DateTime(2026, 10, 26, 10, 0, 0, DateTimeKind.Unspecified) };
+
+        JsonSerializer.Serialize(value, Options).ShouldBe("""{"at":"2026-10-26T10:00:00","optional":null}""");
+    }
+
     [Theory]
-    [InlineData(DateTimeKind.Unspecified)]
     [InlineData(DateTimeKind.Utc)]
     [InlineData(DateTimeKind.Local)]
-    public void Serialize_WritesReadingWithoutOffsetWhateverTheKind(DateTimeKind kind)
+    public void Serialize_UtcOrLocalKind_ThrowsNamingTheKind(DateTimeKind kind)
     {
         var value = new Reading { At = new DateTime(2026, 10, 26, 10, 0, 0, kind) };
 
-        JsonSerializer.Serialize(value, Options).ShouldBe("""{"at":"2026-10-26T10:00:00","optional":null}""");
+        var exception = Should.Throw<InvalidOperationException>(() => JsonSerializer.Serialize(value, Options));
+
+        exception.Message.ShouldBe(
+            $"A DateTime with Kind {kind} is not a local reading. Use DateTimeOffset for an instant, or TimeZones.ToLocalReading(instant, zone) for the reading at a place.");
+    }
+
+    [Fact]
+    public void Serialize_NullableWithUtcKind_Throws()
+    {
+        var value = new Reading { At = new DateTime(2026, 10, 26, 10, 0, 0, DateTimeKind.Unspecified), Optional = new DateTime(2026, 10, 26, 10, 0, 0, DateTimeKind.Utc) };
+
+        Should.Throw<InvalidOperationException>(() => JsonSerializer.Serialize(value, Options));
     }
 
     [Fact]
@@ -105,12 +124,15 @@ public sealed class LocalDateTimeJsonConverterTests
         JsonSerializer.Deserialize<Dictionary<DateTime, int>>(json, Options).ShouldBe(value);
     }
 
-    [Fact]
-    public void DateTimeOffset_IsUnaffected()
+    [Theory]
+    [InlineData(DateTimeKind.Utc)]
+    [InlineData(DateTimeKind.Local)]
+    public void DictionaryKeys_WithUtcOrLocalKind_Throw(DateTimeKind kind)
     {
-        var instant = new DateTimeOffset(2026, 10, 26, 9, 0, 0, TimeSpan.Zero);
+        var value = new Dictionary<DateTime, int> { [new DateTime(2026, 10, 26, 10, 0, 0, kind)] = 1 };
 
-        JsonSerializer.Serialize(instant, Options).ShouldBe("\"2026-10-26T09:00:00+00:00\"");
+        Should.Throw<InvalidOperationException>(() => JsonSerializer.Serialize(value, Options))
+            .Message.ShouldContain($"Kind {kind} is not a local reading");
     }
 
     private sealed class Reading

@@ -209,9 +209,11 @@ it also reads `HH:mm` and one-digit hours, which the pattern leaves out. The nul
 
 `UseFastEndpointsWithConventions` binds `DateTime` and `DateTime?` from query, route, form and header values with the
 same formats as a JSON body (`LocalDateTimeFormat`): a value with an offset, `Z`, a fraction, a culture format or nothing
-is a 400. An omitted `DateTime?` binds null; an empty `DateTime?` query or form value binds `default(DateTime)`, because
-FastEndpoints' `UseDefaultValuesForNullableProps` (on by default) assigns empty nullable values without consulting the
-parser.
+is a 400. It binds `DateTimeOffset` and `DateTimeOffset?` with the same rule as a JSON body too (`InstantFormat`): an
+instant must carry a UTC offset or `Z`, and a value without one, a date on its own or nothing is a 400. These 400s carry
+FastEndpoints' binding failure message. An omitted nullable value binds null; an empty `DateTime?` or `DateTimeOffset?`
+query or form value binds `default`, because FastEndpoints' `UseDefaultValuesForNullableProps` (on by default) assigns
+empty nullable values without consulting the parser.
 
 ### Time zone validation
 

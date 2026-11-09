@@ -202,13 +202,16 @@ the `Csag.Blueprint.Domain` contracts:
 | Contract | Extensions |
 | --- | --- |
 | `ISoftDeletable` | `WhereNotDeleted()`, `WhereDeleted()`, `WhereDeletedBefore()` |
-| `IHasActiveRange` | `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveToday()`, `WhereActiveInRange()`, `WhereInactiveNow()`, `WhereActiveAndNotDeleted()` |
+| `IHasActiveRange` | `WhereActiveNow(timeProvider)`, `WhereActiveAt(at)`, `WhereActiveToday(timeProvider, timeZone)`, `WhereActiveInRange(start, end)`, `WhereInactiveNow(timeProvider)`, `WhereActiveAndNotDeleted(timeProvider)` |
 | `IHasLocalizedTexts` / `ILocalizedText` | `SelectWithCurrentLanguageText()`, `CurrentLanguageTextExpression()`, `IncludeCurrentLanguageText()`, `WhereHasCurrentLanguageText()`, `GetCurrentLanguageText()`, `GetCurrentLanguageTextValue()` |
 
 `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveInRange()` and `WhereInactiveNow()` compare against
-an instant. `WhereActiveToday()` deliberately compares against **midnight of the current UTC day**, so
-an entity whose range starts later today does **not** yet count as active — use `WhereActiveNow()` when
-you need instant precision.
+an instant; the ones that mean "now" read it from the `TimeProvider` they are given, so a test can pin it.
+`WhereActiveToday()` deliberately compares against **the start of today in the given zone** (normally the
+tenant's, from `ITenantTimeZoneProvider`): today is the date a clock there shows now (`TimeZones.Today`), and
+its start the first instant of that date there (`TimeZones.DayRange`), not midnight UTC. An entity whose
+range starts later today does **not** yet count as active — use `WhereActiveNow()` when you need instant
+precision.
 
 **`IHasActiveRange` is deliberately not a global query filter.** An active range is evaluated against
 a point in time chosen by the caller, and "now" is only one of them — availability searches look at a
@@ -231,7 +234,7 @@ translation is resolved by the database rather than in memory:
 
 ```csharp
 var cards = await context.Pedalos
-    .WhereActiveNow()
+    .WhereActiveNow(timeProvider)
     .SelectWithCurrentLanguageText<Pedalo, PedaloText, PedaloCard>(
         languageProvider,
         (pedalo, name) => new PedaloCard(pedalo.PedaloId, name ?? pedalo.InternalName))

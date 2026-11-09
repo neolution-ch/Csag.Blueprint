@@ -1,0 +1,5 @@
+P:System.DateTime.Now;Read "now" from the injected TimeProvider (GetUtcNow()), so applications and tests can pin it.
+P:System.DateTime.UtcNow;Read "now" from the injected TimeProvider (GetUtcNow()), so applications and tests can pin it.
+P:System.DateTime.Today;Today depends on a zone: TimeZones.Today(timeProvider, zone).
+P:System.DateTimeOffset.Now;Read "now" from the injected TimeProvider (GetUtcNow()), so applications and tests can pin it.
+P:System.DateTimeOffset.UtcNow;Read "now" from the injected TimeProvider (GetUtcNow()), so applications and tests can pin it.

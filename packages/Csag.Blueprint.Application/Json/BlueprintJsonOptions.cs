@@ -19,9 +19,10 @@ public static class BlueprintJsonOptions
     /// <summary>
     /// Applies the shared JSON conventions to an existing options instance:
     /// camelCase property names, string-form enum values (case-insensitive on read,
-    /// PascalCase on write — matching the wider .NET enum convention), and
+    /// PascalCase on write — matching the wider .NET enum convention),
     /// <see cref="DateTime"/> as a local reading without an offset
-    /// (<see cref="LocalDateTimeJsonConverter"/>).
+    /// (<see cref="LocalDateTimeJsonConverter"/>), and <see cref="DateTimeOffset"/> as an
+    /// instant that always carries one (<see cref="InstantJsonConverter"/>).
     /// </summary>
     /// <param name="options">The options to configure.</param>
     public static void Configure(JsonSerializerOptions options)
@@ -31,6 +32,7 @@ public static class BlueprintJsonOptions
         options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
         options.Converters.Add(new JsonStringEnumConverter());
         options.Converters.Add(new LocalDateTimeJsonConverter());
+        options.Converters.Add(new InstantJsonConverter());
     }
 
     private static JsonSerializerOptions CreateDefault()

@@ -17,9 +17,12 @@ using System.Text.Json.Serialization;
 /// <see cref="DateTimeKind.Unspecified"/>.
 /// </para>
 /// <para>
-/// Writing ignores <see cref="DateTime.Kind"/> and drops fractional seconds, so a
-/// <see cref="DateTime"/> that holds an instant (such as <see cref="DateTime.UtcNow"/>) loses its
-/// meaning on the wire. Use <see cref="DateTimeOffset"/> for those.
+/// Writing drops fractional seconds and throws an <see cref="InvalidOperationException"/> for a
+/// <see cref="DateTime"/> whose <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Utc"/> or
+/// <see cref="DateTimeKind.Local"/>: such a value holds an instant or the server's clock, and written
+/// without an offset it would read as a clock reading at the place. Local readings have
+/// <see cref="DateTimeKind.Unspecified"/>, as EF Core reads <c>datetime2</c> columns and as
+/// <c>TimeZones</c> and the time values return them. Use <see cref="DateTimeOffset"/> for an instant.
 /// </para>
 /// </remarks>
 public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
@@ -40,7 +43,7 @@ public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
     {
         ArgumentNullException.ThrowIfNull(writer);
 
-        writer.WriteStringValue(LocalDateTimeFormat.Format(value));
+        writer.WriteStringValue(Format(value));
     }
 
     /// <inheritdoc/>
@@ -54,7 +57,18 @@ public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
     {
         ArgumentNullException.ThrowIfNull(writer);
 
-        writer.WritePropertyName(LocalDateTimeFormat.Format(value));
+        writer.WritePropertyName(Format(value));
+    }
+
+    private static string Format(DateTime value)
+    {
+        if (value.Kind != DateTimeKind.Unspecified)
+        {
+            throw new InvalidOperationException(
+                $"A DateTime with Kind {value.Kind} is not a local reading. Use DateTimeOffset for an instant, or TimeZones.ToLocalReading(instant, zone) for the reading at a place.");
+        }
+
+        return LocalDateTimeFormat.Format(value);
     }
 
     private static DateTime Parse(string? text)

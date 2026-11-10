@@ -300,8 +300,20 @@ package's. A scheme that sets `EventsType`, or whose events object overrides the
 when its options are built.
 
 The tracking row records the client address with the rule the rate limiter uses: `ClientIpHeader` when present and
-parseable, otherwise the connection's remote address. A sign-in on a request that still carries a live session cookie
-reuses that cookie's key; the row is then attributed to the signing-in account.
+parseable, otherwise the connection's remote address.
+
+Sign in with `HttpContext.SignInNewSessionAsync(principal)`:
+
+```csharp
+var principal = await principalBuilder.BuildAsync(user, tenantId, ct);
+await HttpContext.SignInNewSessionAsync(principal);
+```
+
+It ends a session the request still holds and stores the new one under a new key, so a copy of the old cookie stops
+working. A plain `HttpContext.SignInAsync` on a request that still carries a live session cookie keeps that cookie's
+key, because the cookie handler renews the ticket under the key it read
+([dotnet/aspnetcore#22135](https://github.com/dotnet/aspnetcore/issues/22135)). The ticket store then attributes the
+row to the signing-in account, and a copy of the old cookie reaches the new session.
 
 Applications report what happened through `ISessionLifecycle`, after their database commit:
 
@@ -313,6 +325,10 @@ Applications report what happened through `ISessionLifecycle`, after their datab
 | `TenantRemovedAsync` | tenant deleted |
 | `SwitchTenantAsync` | the caller switches tenant |
 | `ListMySessionsAsync` / `RevokeMySessionAsync` | the caller's own session management; `RevokeMySessionAsync` returns `false` when the caller's account has no session with that id, for the application to answer 404 |
+
+`CredentialsChangedAsync` ends every session of the account. When the caller's own session belongs to that account,
+the caller continues in a new session with the same claims and tenant, through `SignInNewSessionAsync`: the person who
+changed the credentials stays signed in, and a stolen copy of their cookie does not.
 
 Hooks the application keeps: `ISessionRevocationParticipant`s for its own credentials, an `ISessionEligibility`, the
 cookie callback, its own cookie event handlers, and decorators around `ITicketStore` or `IActiveSessionTracker`

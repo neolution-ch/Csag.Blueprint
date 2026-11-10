@@ -32,31 +32,57 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
     private static readonly Uri SessionsUri = new("/api/auth/sessions", UriKind.Relative);
 
     [Fact]
-    public async Task CredentialsChanged_FromTheAccountsOwnSession_KeepsThatSessionAndEndsTheOthersAsync()
+    public async Task CredentialsChanged_FromTheAccountsOwnSession_ContinuesItUnderANewKeyAndEndsTheOthersAsync()
     {
-        // Arrange — one account signed in on three devices.
+        // Arrange — one account signed in on three devices, and someone holds a copy of the changing browser's cookie.
         var user = await this.CreateTestUserAsync("credentials_changed_test@test.local", SeedData.TenantAId);
-        using var changingClient = await this.SignInAsync(user.Email!);
+        var (browser, copy) = await this.SignInWithCopiedCookieAsync(user.Email!);
+        using var changingClient = browser;
+        using var copiedCookie = copy;
+        var original = await this.GetSingleSessionAsync(user.Id);
         using var otherClient1 = await this.SignInAsync(user.Email!);
         using var otherClient2 = await this.SignInAsync(user.Email!);
+        await ShouldAuthenticateAsync(copiedCookie, HttpStatusCode.OK, "the copy works until the credentials change");
 
         // Act — the password change reports the credential change once committed.
         var (rsp, _) = await changingClient.POSTAsync<ChangePasswordEndpoint, ChangePasswordRequest, EmptyResponse>(
             new ChangePasswordRequest { CurrentPassword = SeedData.DefaultPassword, NewPassword = "Changed@456" });
         await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.NoContent, cancellationToken: TestContext.Current.CancellationToken);
 
-        // Assert
-        await ShouldAuthenticateAsync(changingClient, HttpStatusCode.OK, "the session that changed the password stays signed in");
+        // Assert — the browser that changed the password stays signed in, in a new session in the same tenant.
+        await ShouldAuthenticateAsync(changingClient, HttpStatusCode.OK, "the session that changed the password continues");
+        await ShouldAuthenticateAsync(copiedCookie, HttpStatusCode.Unauthorized, "a copy of the old cookie must not reach the new session");
         await ShouldAuthenticateAsync(otherClient1, HttpStatusCode.Unauthorized);
         await ShouldAuthenticateAsync(otherClient2, HttpStatusCode.Unauthorized);
 
-        using (var scope = this.App.CreateDbContextScope())
-        {
-            (await scope.Context.ActiveSessions.CountAsync(s => s.UserId == user.Id, TestContext.Current.CancellationToken)).ShouldBe(1);
-        }
+        var session = await this.GetSingleSessionAsync(user.Id);
+        session.SessionKey.ShouldNotBe(original.SessionKey);
+        session.CurrentTenantId.ShouldBe(SeedData.TenantAId);
 
         var revocation = this.RevocationsFor(user.Id).ShouldHaveSingleItem();
         revocation.Reason.ShouldBe(SessionRevocationReason.CredentialsChanged);
+    }
+
+    [Fact]
+    public async Task CredentialsChanged_ForAnAccountThatMayNoLongerHoldASession_SignsTheCallerOutAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // Arrange — the host's eligibility rule refuses a locked-out account. The lock-out reaches the session only when
+        // it slides, so the request below still authenticates.
+        var user = await this.CreateTestUserAsync("credentials_changed_ineligible_test@test.local", SeedData.TenantAId);
+        using var changingClient = await this.SignInAsync(user.Email!);
+        await this.LockOutAsync(user.Id);
+
+        // Act
+        var (rsp, _) = await changingClient.POSTAsync<ChangePasswordEndpoint, ChangePasswordRequest, EmptyResponse>(
+            new ChangePasswordRequest { CurrentPassword = SeedData.DefaultPassword, NewPassword = "Changed@456" });
+
+        // Assert — the old session ended and no new one was started.
+        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.NoContent, cancellationToken: ct);
+        await ShouldAuthenticateAsync(changingClient, HttpStatusCode.Unauthorized);
+        using var scope = this.App.CreateDbContextScope();
+        (await scope.Context.ActiveSessions.AnyAsync(s => s.UserId == user.Id, ct)).ShouldBeFalse();
     }
 
     [Fact]
@@ -448,6 +474,15 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
     {
         var lifetime = TimeSpan.FromHours(this.App.Services.GetRequiredService<IOptions<SecuritySettings>>().Value.SessionExpirationHours);
         return this.App.Services.GetRequiredService<PinnableTimeProvider>().Pin(session.CreatedAt + (lifetime * 0.6));
+    }
+
+    private async Task LockOutAsync(Guid userId)
+    {
+        using var scope = this.App.Services.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<TestUser>>();
+        var user = (await userManager.FindByIdAsync(userId.ToString())).ShouldNotBeNull();
+        (await userManager.SetLockoutEnabledAsync(user, true)).Succeeded.ShouldBeTrue();
+        (await userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue)).Succeeded.ShouldBeTrue();
     }
 
     private async Task SetPreferredLanguageAsync(Guid userId, string language)

@@ -4,12 +4,12 @@ using System.Security.Claims;
 using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Application.Claims;
 using Csag.Blueprint.Infrastructure.Authentication;
+using Csag.Blueprint.Infrastructure.Session;
 using Csag.Blueprint.Tests.Shared.Entities;
 using Csag.Blueprint.Web.Helpers;
 using Csag.Blueprint.Web.Options.Api.Security;
 using FastEndpoints;
 using Microsoft.AspNetCore.Antiforgery;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
@@ -92,8 +92,9 @@ public sealed class LoginEndpoint : Endpoint<LoginRequest, LoginResponse>
 
         var principal = await this.principalBuilder.BuildAsync(user, currentTenantId, ct);
 
-        // The session infrastructure owns the session's lifetime and persistence, so the sign-in states neither.
-        await this.HttpContext.SignInAsync(IdentityConstants.ApplicationScheme, principal);
+        // The session infrastructure owns the session's lifetime and persistence, so the sign-in states neither. A
+        // session this browser still holds ends, and the new one gets a new key.
+        await this.HttpContext.SignInNewSessionAsync(principal);
 
         // SignInAsync only writes the cookie for future requests; updating HttpContext.User binds
         // the antiforgery tokens generated below to the authenticated identity.

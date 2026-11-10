@@ -29,12 +29,19 @@ public interface ISessionLifecycle
 {
     /// <summary>
     /// The account's credentials changed: a password change or reset, or a second factor enabled or disabled. Ends
-    /// every session of the account except the caller's own, when the caller's session belongs to that account.
-    /// With no caller session (a reset from an emailed link, a setup step that runs before a full session exists, a
-    /// background job), or one belonging to another account, every session of the account ends.
+    /// every session of the account. When the caller's session belongs to that account, the caller continues in a new
+    /// session with the same claims and tenant, under a new key and with a fresh lifetime, and the response carries
+    /// its cookie. A copy of the caller's old cookie stops working, while the person who made the change stays signed
+    /// in. With no caller session (a reset from an emailed link, a setup step that runs before a full session exists,
+    /// a background job), or one belonging to another account, every session of the account ends and none is started.
     /// </summary>
+    /// <remarks>
+    /// The caller gets no new session when a step fails, or when <see cref="ISessionEligibility"/> says the account
+    /// may no longer hold one. The caller is then signed out.
+    /// </remarks>
     /// <param name="accountId">The account whose credentials changed.</param>
-    /// <returns>A task that completes once the sessions are ended and every participant has run.</returns>
+    /// <returns>A task that completes once the sessions are ended, the caller's new session is written, and every
+    /// participant has run.</returns>
     Task CredentialsChangedAsync(Guid accountId);
 
     /// <summary>

@@ -43,7 +43,7 @@ public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
     {
         ArgumentNullException.ThrowIfNull(writer);
 
-        writer.WriteStringValue(Format(value));
+        writer.WriteStringValue(LocalDateTimeFormat.Format(value));
     }
 
     /// <inheritdoc/>
@@ -57,18 +57,7 @@ public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
     {
         ArgumentNullException.ThrowIfNull(writer);
 
-        writer.WritePropertyName(Format(value));
-    }
-
-    private static string Format(DateTime value)
-    {
-        if (value.Kind != DateTimeKind.Unspecified)
-        {
-            throw new InvalidOperationException(
-                $"A DateTime with Kind {value.Kind} is not a local reading. Use DateTimeOffset for an instant, or TimeZones.ToLocalReading(instant, zone) for the reading at a place.");
-        }
-
-        return LocalDateTimeFormat.Format(value);
+        writer.WritePropertyName(LocalDateTimeFormat.Format(value));
     }
 
     private static DateTime Parse(string? text)

@@ -9,6 +9,11 @@ using Newtonsoft.Json;
 /// NSwag serializes examples with Newtonsoft.Json, which would otherwise append the offset of the
 /// value's <see cref="DateTime.Kind"/>.
 /// </summary>
+/// <remarks>
+/// Like the API's converter, it refuses a <see cref="DateTime"/> whose <see cref="DateTime.Kind"/> is not
+/// <see cref="DateTimeKind.Unspecified"/> (<see cref="LocalDateTimeFormat.Format"/> throws), so an example built
+/// from an instant fails the document instead of documenting it as a reading.
+/// </remarks>
 internal sealed class LocalDateTimeExampleConverter : JsonConverter
 {
     /// <inheritdoc/>

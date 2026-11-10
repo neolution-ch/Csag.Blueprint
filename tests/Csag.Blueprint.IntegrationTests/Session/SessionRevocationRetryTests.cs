@@ -21,9 +21,10 @@ using Moq;
 /// <summary>
 /// Integration tests for revoking intents whose ticket removal or row delete fails, against the real SQL container and
 /// the host's ticket cache: the session that could not be ended keeps its tracking row, so retrying the intent ends it,
-/// and <see cref="ISessionLifecycle.RevokeMySessionAsync"/> still tells the participants on the failing attempt. Each
-/// test composes its own session lifecycle over the host's database and cache, with a cache that refuses one removal
-/// or a database that refuses the row delete.
+/// and <see cref="ISessionLifecycle.RevokeMySessionAsync"/> still tells the participants on the failing attempt. A
+/// credential change whose participant fails, or whose caller's ticket now names another account, starts no new session
+/// for the caller. Each test composes its own session lifecycle over the host's database and cache, with a cache that
+/// refuses one removal, a database that refuses the row delete, or a failing participant.
 /// </summary>
 [Collection(nameof(AppFixtureCollection))]
 public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBase(app)
@@ -159,6 +160,75 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
         participant.Revocations.Count.ShouldBe(3);
     }
 
+    [Fact]
+    public async Task CredentialsChanged_FromTheCallersOwnSession_AsksWhetherTheCallerMayContinueAsync()
+    {
+        // The eligibility question is the first step of continuing the caller in a new session. A "no" ends there, so
+        // this harness, which cannot sign in, still shows whether the intent went that far.
+        var user = await this.CreateTestUserAsync("credentials_continue_asked_test@test.local", SeedData.TenantAId);
+        using var callerDevice = await this.SignInAsync(user.Email!);
+        var callerKey = (await this.GetSingleSessionAsync(user.Id)).SessionKey;
+        var eligibility = new RecordingEligibility();
+        await using var services = this.BuildLifecycleServices(
+            this.App.Services.GetRequiredService<ITicketCacheService>(),
+            new RecordingParticipant(),
+            CallerRequest(user.Id, callerKey),
+            eligibility: eligibility);
+
+        await RunIntentAsync(services, lifecycle => lifecycle.CredentialsChangedAsync(user.Id));
+
+        eligibility.Asked.ShouldBe([user.Id]);
+        (await this.RemainingKeysAsync(user.Id)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CredentialsChanged_WhenAParticipantFails_StartsNoNewSessionForTheCallerAsync()
+    {
+        var user = await this.CreateTestUserAsync("credentials_participant_fails_test@test.local", SeedData.TenantAId);
+        using var callerDevice = await this.SignInAsync(user.Email!);
+        var callerKey = (await this.GetSingleSessionAsync(user.Id)).SessionKey;
+        var eligibility = new RecordingEligibility();
+        await using var services = this.BuildLifecycleServices(
+            this.App.Services.GetRequiredService<ITicketCacheService>(),
+            new FailingParticipant(),
+            CallerRequest(user.Id, callerKey),
+            eligibility: eligibility);
+
+        var exception = await Should.ThrowAsync<AggregateException>(() => RunIntentAsync(services, lifecycle => lifecycle.CredentialsChangedAsync(user.Id)));
+
+        // Assert — the sessions ended, and the caller was never considered for a new one.
+        exception.InnerExceptions.ShouldHaveSingleItem().Message.ShouldBe(FailingParticipant.Failure);
+        eligibility.Asked.ShouldBeEmpty();
+        (await this.RemainingKeysAsync(user.Id)).ShouldBeEmpty();
+        await ShouldAuthenticateAsync(callerDevice, HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task CredentialsChanged_WhenTheCallersTicketNowNamesAnotherAccount_StartsNoNewSessionAsync()
+    {
+        // Arrange — a plain sign-in of another account over a copy of the caller's cookie stored that account's principal
+        // under the caller's key after the caller's request authenticated.
+        var ct = TestContext.Current.CancellationToken;
+        var user = await this.CreateTestUserAsync("credentials_swapped_ticket_test@test.local", SeedData.TenantAId);
+        var other = await this.CreateTestUserAsync("credentials_swapped_ticket_other@test.local", SeedData.TenantAId);
+        using var callerDevice = await this.SignInAsync(user.Email!);
+        var callerKey = (await this.GetSingleSessionAsync(user.Id)).SessionKey;
+        var cache = this.App.Services.GetRequiredService<ITicketCacheService>();
+        var otherPrincipal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.NameIdentifier, other.Id.ToString())],
+            IdentityConstants.ApplicationScheme));
+        await cache.SetTicketAsync(callerKey, new AuthenticationTicket(otherPrincipal, IdentityConstants.ApplicationScheme), DateTimeOffset.UtcNow.AddHours(1), ct);
+        var eligibility = new RecordingEligibility();
+        await using var services = this.BuildLifecycleServices(cache, new RecordingParticipant(), CallerRequest(user.Id, callerKey), eligibility: eligibility);
+
+        // Act
+        await RunIntentAsync(services, lifecycle => lifecycle.CredentialsChangedAsync(user.Id));
+
+        // Assert — continuing with that principal would sign the caller into the other account, so the intent does not.
+        eligibility.Asked.ShouldBeEmpty();
+        (await this.RemainingKeysAsync(user.Id)).ShouldBeEmpty();
+    }
+
     private static async Task RunIntentAsync(ServiceProvider services, Func<ISessionLifecycle, Task> intent)
     {
         await using var scope = services.CreateAsyncScope();
@@ -199,10 +269,16 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
         ITicketCacheService ticketCache,
         ISessionRevocationParticipant participant,
         HttpContext? caller = null,
-        IDbContextFactory<TestDbContext>? dbContextFactory = null)
+        IDbContextFactory<TestDbContext>? dbContextFactory = null,
+        ISessionEligibility? eligibility = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
+        if (eligibility is not null)
+        {
+            services.AddSingleton(eligibility);
+        }
+
         services.AddSingleton(dbContextFactory ?? this.App.Services.GetRequiredService<IDbContextFactory<TestDbContext>>());
         services.AddSingleton(ticketCache);
         services.AddSingleton<IHttpContextAccessor>(new FixedHttpContextAccessor { HttpContext = caller });
@@ -298,6 +374,28 @@ public sealed class SessionRevocationRetryTests(AppFixture app) : SessionTestBas
         {
             this.Revocations.Add(revocation);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FailingParticipant : ISessionRevocationParticipant
+    {
+        public const string Failure = "The participant failed.";
+
+        public Task OnSessionsRevokedAsync(SessionRevocation revocation)
+            => Task.FromException(new InvalidOperationException(Failure));
+    }
+
+    /// <summary>
+    /// Records every account it is asked about and answers no, so continuing a caller stops right after the question.
+    /// </summary>
+    private sealed class RecordingEligibility : ISessionEligibility
+    {
+        public List<Guid> Asked { get; } = [];
+
+        public Task<bool> MayHoldSessionAsync(Guid accountId)
+        {
+            this.Asked.Add(accountId);
+            return Task.FromResult(false);
         }
     }
 }

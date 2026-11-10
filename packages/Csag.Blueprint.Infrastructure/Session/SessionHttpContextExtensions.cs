@@ -2,9 +2,11 @@ namespace Csag.Blueprint.Infrastructure.Session;
 
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// <see cref="HttpContext"/> helpers for the reference-token session model.
@@ -26,10 +28,11 @@ public static class SessionHttpContextExtensions
     /// a copy of the old cookie would then hold the new session, possibly of another account.
     /// </para>
     /// <para>
-    /// This method signs the request's own session out through that handler, which removes the old ticket and its
-    /// tracking row and stops the handler from renewing the old ticket and rewriting the old cookie when the response
-    /// starts. It then signs in through a handler instance of its own, which finds the old session gone and stores the
-    /// ticket under a new key.
+    /// When the request carries the session cookie, this method signs its session out through that handler, which
+    /// removes the old ticket and its tracking row and stops the handler from renewing the old ticket and rewriting the
+    /// old cookie when the response starts. It does so whether or not the request authenticated: an application's
+    /// <c>OnValidatePrincipal</c> can reject the principal and leave the ticket in place. It then signs in through a
+    /// handler instance of its own, which finds the old session gone and stores the ticket under a new key.
     /// </para>
     /// </remarks>
     /// <param name="httpContext">The request signing in.</param>
@@ -105,8 +108,13 @@ public static class SessionHttpContextExtensions
 
     private static async Task SignInNewSessionCoreAsync(HttpContext httpContext, ClaimsPrincipal session, AuthenticationProperties? properties)
     {
-        var current = await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme);
-        if (current.Succeeded)
+        // Decided by the cookie, not by the authentication result. A rejected principal fails authentication while its
+        // ticket stays in the store under the cookie's key, where the handler below would find and reuse it.
+        var cookieOptions = httpContext.RequestServices
+            .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(IdentityConstants.ApplicationScheme);
+        if (cookieOptions.Cookie.Name is { } cookieName
+            && !string.IsNullOrEmpty(cookieOptions.CookieManager.GetRequestCookie(httpContext, cookieName)))
         {
             await httpContext.SignOutAsync(IdentityConstants.ApplicationScheme);
         }

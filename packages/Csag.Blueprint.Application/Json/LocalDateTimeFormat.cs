@@ -22,11 +22,27 @@ public static class LocalDateTimeFormat
     private static readonly string[] ReadFormats = [WriteFormat, "yyyy-MM-dd'T'HH:mm"];
 
     /// <summary>
-    /// Formats a local reading. The <see cref="DateTime.Kind"/> is ignored and fractional seconds are dropped.
+    /// Formats a local reading. Fractional seconds are dropped.
     /// </summary>
-    /// <param name="reading">The local reading.</param>
+    /// <remarks>
+    /// A <see cref="DateTime"/> whose <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Utc"/> or
+    /// <see cref="DateTimeKind.Local"/> holds an instant or the server's clock, and written without an offset it
+    /// would read as a clock reading at the place, so it is refused. The API's JSON converter and the OpenAPI
+    /// examples both format through here.
+    /// </remarks>
+    /// <param name="value">The local reading, with <see cref="DateTimeKind.Unspecified"/>.</param>
     /// <returns>The reading as <c>yyyy-MM-ddTHH:mm:ss</c>.</returns>
-    public static string Format(DateTime reading) => reading.ToString(WriteFormat, CultureInfo.InvariantCulture);
+    /// <exception cref="InvalidOperationException">The value's <see cref="DateTime.Kind"/> is not <see cref="DateTimeKind.Unspecified"/>.</exception>
+    public static string Format(DateTime value)
+    {
+        if (value.Kind != DateTimeKind.Unspecified)
+        {
+            throw new InvalidOperationException(
+                $"A DateTime with Kind {value.Kind} is not a local reading. Use DateTimeOffset for an instant, or TimeZones.ToLocalReading(instant, zone) for the reading at a place.");
+        }
+
+        return value.ToString(WriteFormat, CultureInfo.InvariantCulture);
+    }
 
     /// <summary>
     /// Parses a local reading in the format <c>yyyy-MM-ddTHH:mm:ss</c> or <c>yyyy-MM-ddTHH:mm</c>.

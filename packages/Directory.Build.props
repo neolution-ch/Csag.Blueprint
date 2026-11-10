@@ -1,0 +1,20 @@
+<Project>
+  <Import
+    Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- Package code reads "now" from an injected TimeProvider, so applications and tests can pin the
+  clock (BannedSymbols.txt, RS0030). Tests may read the real clock. The analyzer is a build-time
+  dependency only: PrivateAssets keeps it out of the packages' dependencies. RS0030 is an error even
+  in the source generator, which does not treat warnings as errors. -->
+  <PropertyGroup>
+    <WarningsAsErrors>$(WarningsAsErrors);RS0030</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.BannedApiAnalyzers">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)../BannedSymbols.txt" />
+  </ItemGroup>
+</Project>

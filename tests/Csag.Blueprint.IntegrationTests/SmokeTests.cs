@@ -78,7 +78,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
             Capacity = 3,
             PricePerHour = 21.50m,
             IsActive = true,
-            AcquiredAt = new DateTime(2025, 1, 5, 0, 0, 0, DateTimeKind.Utc),
+            AcquiredAt = new DateTime(2025, 1, 5, 0, 0, 0, DateTimeKind.Unspecified),
         };
 
         var createResponse = await this.App.ManagerAClient.PostAsJsonAsync(VehiclesUri, request, BlueprintJsonOptions.Default, ct);
@@ -156,7 +156,7 @@ public sealed class SmokeTests(AppFixture app) : IntegrationTestBase(app)
             Capacity = 1,
             PricePerHour = 5m,
             IsActive = true,
-            AcquiredAt = new DateTime(2025, 1, 5, 0, 0, 0, DateTimeKind.Utc),
+            AcquiredAt = new DateTime(2025, 1, 5, 0, 0, 0, DateTimeKind.Unspecified),
         };
 
         var response = await this.App.ViewerAClient.PostAsJsonAsync(VehiclesUri, request, BlueprintJsonOptions.Default, ct);

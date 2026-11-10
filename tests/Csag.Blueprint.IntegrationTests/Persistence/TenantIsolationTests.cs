@@ -110,7 +110,7 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
                 Capacity = 1,
                 PricePerHour = 10.00m,
                 IsActive = true,
-                AcquiredAt = new DateTime(2025, 2, 1, 0, 0, 0, DateTimeKind.Utc),
+                AcquiredAt = new DateTime(2025, 2, 1, 0, 0, 0, DateTimeKind.Unspecified),
             },
             BlueprintJsonOptions.Default,
             ct);
@@ -145,7 +145,7 @@ public sealed class TenantIsolationTests(AppFixture app) : IntegrationTestBase(a
                 Capacity = 1,
                 PricePerHour = 7.50m,
                 IsActive = true,
-                AcquiredAt = new DateTime(2025, 4, 1, 0, 0, 0, DateTimeKind.Utc),
+                AcquiredAt = new DateTime(2025, 4, 1, 0, 0, 0, DateTimeKind.Unspecified),
             },
             BlueprintJsonOptions.Default,
             ct);

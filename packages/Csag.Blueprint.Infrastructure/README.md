@@ -18,6 +18,7 @@ It contains the reusable EF Core persistence backbone, session/auth infrastructu
 | `EntityFilteringModelBuilderExtensions` | Registers the named soft-delete query filter and creates the supporting `IX_{table}_DeletedAt` and composite `IX_{table}_ActiveRange` indexes for `ISoftDeletable` / `IHasActiveRange`. |
 | `LocalizationModelBuilderExtensions` | Wires `IHasLocalizedTexts` entities to their `ILocalizedText` side, with the per-language unique constraint and indexes. |
 | `ContractModelBuilderExtensions` | Applies the model conventions the domain contracts imply (`IHasInternalName` constraints, localized text constraints). |
+| `TimeValueModelBuilderExtensions` | Names the columns of `PlaceTime` and `ZonedTime` properties after the property (`StartLocal`, `StartAt`, `StartTimeZoneId`), and stores every `DateTimeOffset` at offset zero. See [Time value columns](#time-value-columns) and [Instants are stored at UTC](#instants-are-stored-at-utc). |
 | `KeyConventionModelBuilderExtensions` | On SQL Server, gives every single-column `Guid` primary key a `NEWSEQUENTIALID()` column default. This applies to **all** entities, not only contract adopters. EF Core still assigns the key client-side on `Add`; the default serves inserts that bypass EF Core. |
 
 ### Data isolation topology
@@ -114,13 +115,84 @@ soft-delete filtering included, are applied.
 
 Applications that do not derive from `BlueprintDbContext` can call the model-wide `Configure*`
 extension methods (`ConfigureBlueprintMultiTenancy`, `ConfigureEntityFiltering`,
-`ConfigureContractConstraints`, `ConfigureLocalizedTextConventions`, `ConfigureGuidPrimaryKeyDefaults`
-and their parts) directly from their own `OnModelCreating`. They configure at convention level too, so
+`ConfigureContractConstraints`, `ConfigureLocalizedTextConventions`, `ConfigureTimeValueColumns`,
+`ConfigureGuidPrimaryKeyDefaults` and their parts) directly from their own `OnModelCreating`. They configure at convention level too, so
 explicit configuration wins whether it comes before or after the call, but they only see the entity
 types registered so far — call them last. The per-entity helpers you call with type arguments
 (`ConfigureLocalizedTextRelationship`, `ConfigureLocalizedTextUniqueConstraint`, `ConfigureLocalization`)
 are explicit configuration of those types, like any fluent call: the last configuration of an aspect
 wins.
+
+### Time value columns
+
+EF Core maps a `PlaceTime` or `ZonedTime` property (`Csag.Blueprint.Domain.Time`) as a complex
+type without any configuration, since the types carry `[ComplexType]`. The blueprint conventions name its columns
+after the property, so an entity needs no configuration of its own:
+
+| Member | Column | SQL Server type |
+| --- | --- | --- |
+| `Local` | `{Property}Local` | `datetime2` |
+| `At` | `{Property}At` | `datetimeoffset` |
+| `TimeZoneId` (`ZonedTime`) | `{Property}TimeZoneId` | `nvarchar(100)` |
+
+```csharp
+public PlaceTime Start { get; set; } = null!;            // StartLocal, StartAt: NOT NULL
+public PlaceTime? End { get; set; }                      // EndLocal, EndAt: NULL
+public ZonedTime StandOpens { get; set; } = null!;       // StandOpensLocal, StandOpensTimeZoneId, StandOpensAt
+```
+
+An optional property (`PlaceTime?`) gets nullable columns, all null when the value is. Inside another complex type or
+an owned type stored in its owner's table, the columns keep the prefix EF Core gives that type (`Slot_OpensLocal`,
+`Venue_DoorsOpenLocal`); a time value mapped to JSON is left to the JSON mapping. A column you name yourself keeps your
+name:
+
+```csharp
+builder.Entity<Reservation>().ComplexProperty(r => r.Start, start => start.Property(t => t.Local).HasColumnName("StartsLocally"));
+```
+
+Checked against SQL Server with EF Core 10.0.12:
+
+- Queries reach into a value and run in SQL: `Where(r => r.Start.At >= from)`, `OrderBy(r => r.Start.At)`,
+  `Where(r => r.Start.Local < until)`, `Where(r => r.End == null)` (`[EndAt] IS NULL`), and projections into flat DTOs
+  (`Select(r => new Row { StartLocal = r.Start.Local, StartAt = r.Start.At })`) that read only those columns. Table
+  view columns select members the same way: `Column(dto => dto.StartLocal, e => e.Start.Local)`.
+- `ExecuteUpdateAsync(s => s.SetProperty(r => r.Start, PlaceTime.Create(...)))` writes every column of the value, and
+  `SetProperty(r => r.End, (PlaceTime?)null)` clears them.
+- Assigning a new value to a property of a tracked entity is detected and saved like any other change.
+- **Indexes.** EF Core 10 cannot declare an index over a member of a complex type: `HasIndex(r => r.Start.At)` throws
+  `ArgumentException` ("... is not a valid member access expression ..."), and `HasIndex("Start.At")` finds no property.
+  Create the index on the column in your migration instead. EF Core does not know about it, so `EnsureCreated` does not
+  create it and later migrations leave it alone:
+
+  ```csharp
+  migrationBuilder.CreateIndex(name: "IX_Reservations_StartAt", table: "Reservations", column: "StartAt");
+  ```
+
+- **Audit.** Audit.NET records a value's columns under their column names (`StartLocal`, `StartAt`). An optional value
+  that is null is recorded with `0001-01-01T00:00:00` as its reading and instant and a null `TimeZoneId`, not as nulls.
+- **Table-per-concrete-type.** EF Core 10 creates no columns for a complex property declared on the abstract root of a
+  TPC hierarchy, whatever its type. Declare time values on the concrete types there.
+
+Rows are read back as stored; nothing is derived on load. After a time zone data update (or when the tenant's zone
+changes), a job derives the stored values again with `Rederive` and logs the ones it reports as `Shifted`.
+
+### Instants are stored at UTC
+
+Every `DateTimeOffset` property in the model, of an entity, an owned type or a complex type (a time value's `At`
+included), gets a value converter that writes `value.ToUniversalTime()` and reads the stored value unchanged. An instant
+saved as `2026-07-01T10:00:00+02:00` is stored and read back as `2026-07-01T08:00:00+00:00`, the same instant. Query
+parameters compared with such a property are converted the same way, so `Where(r => r.ConfirmedAt >= from)` with a
+`+02:00` `from` still finds the rows it should.
+
+- **PostgreSQL.** Npgsql writes a `DateTimeOffset` to a `timestamptz` column only at offset zero and throws for any
+  other, so without the converter every instant with a local offset would fail to save.
+- **SQL Server.** `datetimeoffset` keeps whatever offset a value was written with; with the converter every stored
+  instant is `+00:00`, the way instants travel in the API.
+
+A property with a value converter of its own (`HasConversion(...)`, including `HasConversion<string>()`) keeps it.
+`BlueprintDbContext` applies the converter at model finalization, like the column names; a context that does not derive
+from it gets it from `ConfigureTimeValueColumns()`, called last in `OnModelCreating`. An entity that is already tracked
+keeps the offset it was given until it is read again.
 
 ### Query extensions for the domain contracts
 
@@ -130,13 +202,16 @@ the `Csag.Blueprint.Domain` contracts:
 | Contract | Extensions |
 | --- | --- |
 | `ISoftDeletable` | `WhereNotDeleted()`, `WhereDeleted()`, `WhereDeletedBefore()` |
-| `IHasActiveRange` | `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveToday()`, `WhereActiveInRange()`, `WhereInactiveNow()`, `WhereActiveAndNotDeleted()` |
+| `IHasActiveRange` | `WhereActiveNow(timeProvider)`, `WhereActiveAt(at)`, `WhereActiveToday(timeProvider, timeZone)`, `WhereActiveInRange(start, end)`, `WhereInactiveNow(timeProvider)`, `WhereActiveAndNotDeleted(timeProvider)` |
 | `IHasLocalizedTexts` / `ILocalizedText` | `SelectWithCurrentLanguageText()`, `CurrentLanguageTextExpression()`, `IncludeCurrentLanguageText()`, `WhereHasCurrentLanguageText()`, `GetCurrentLanguageText()`, `GetCurrentLanguageTextValue()` |
 
 `WhereActiveNow()`, `WhereActiveAt()`, `WhereActiveInRange()` and `WhereInactiveNow()` compare against
-an instant. `WhereActiveToday()` deliberately compares against **midnight of the current UTC day**, so
-an entity whose range starts later today does **not** yet count as active — use `WhereActiveNow()` when
-you need instant precision.
+an instant; the ones that mean "now" read it from the `TimeProvider` they are given, so a test can pin it.
+`WhereActiveToday()` deliberately compares against **the start of today in the given zone** (normally the
+tenant's, from `ITenantTimeZoneProvider`): today is the date a clock there shows now (`TimeZones.Today`), and
+its start the first instant of that date there (`TimeZones.DayRange`), not midnight UTC. An entity whose
+range starts later today does **not** yet count as active — use `WhereActiveNow()` when you need instant
+precision.
 
 **`IHasActiveRange` is deliberately not a global query filter.** An active range is evaluated against
 a point in time chosen by the caller, and "now" is only one of them — availability searches look at a
@@ -159,7 +234,7 @@ translation is resolved by the database rather than in memory:
 
 ```csharp
 var cards = await context.Pedalos
-    .WhereActiveNow()
+    .WhereActiveNow(timeProvider)
     .SelectWithCurrentLanguageText<Pedalo, PedaloText, PedaloCard>(
         languageProvider,
         (pedalo, name) => new PedaloCard(pedalo.PedaloId, name ?? pedalo.InternalName))
@@ -297,6 +372,7 @@ Expired service-account sessions are deleted by the job `AddBlueprintSessionInfr
 | Component | Purpose |
 | --- | --- |
 | `TenantService` / `TenantManager` | Reusable tenant access and membership logic. |
+| `UtcTenantTimeZoneProvider` | The `ITenantTimeZoneProvider` in effect until the application registers its own: every tenant is in UTC. `AddBlueprintTenancyRuntime` and `AddBlueprintTableViewCore` register it with `TryAdd`. |
 | `BlueprintDbStringLocalizer` / `BlueprintDbStringLocalizerFactory` | Database-backed localization infrastructure. |
 | `PassThroughStringLocalizer` | Generation-mode localizer that returns keys as-is. |
 | `TranslationCacheKeys` | Cache key helpers for localization caching. |
@@ -312,7 +388,7 @@ Expired service-account sessions are deleted by the job `AddBlueprintSessionInfr
 
 | Component | Purpose |
 | --- | --- |
-| `TableViewExecutor` | Executes filtering, sorting, counting, pagination, and projection for table-view queries. |
+| `TableViewExecutor` | Executes filtering, sorting, counting, pagination, and projection for table-view queries. Filters on instant columns are evaluated in the request's zone, else in the zone of `ITenantTimeZoneProvider`, which it looks up only when the request has filter values. |
 | `TableViewCatalogService` | Discovers and filters registered table views by permission. |
 | `BlueprintTableViewPreferencesService` | Persists per-user table view preferences. |
 

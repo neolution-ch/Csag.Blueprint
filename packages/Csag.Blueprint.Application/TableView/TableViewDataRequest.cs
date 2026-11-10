@@ -17,6 +17,15 @@ public class TableViewDataRequest
     public IList<SortColumn>? SortColumns { get; set; }
 
     /// <summary>
+    /// Gets or sets the IANA id of the zone that date filters on instant columns are evaluated in,
+    /// normally the viewer's zone (in a browser, <c>Intl.DateTimeFormat().resolvedOptions().timeZone</c>).
+    /// Optional: when omitted, the tenant's zone is used, and UTC when there is none. A well-formed id that
+    /// this server's time-zone data does not know falls back the same way, with a warning in the log. An id
+    /// that is not in the IANA form, or is longer than 64 characters, is rejected as a validation error.
+    /// </summary>
+    public string? TimeZone { get; set; }
+
+    /// <summary>
     /// Gets or sets the page number (1-based).
     /// </summary>
     public int Page { get; set; } = 1;

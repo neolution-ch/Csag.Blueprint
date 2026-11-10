@@ -1,6 +1,8 @@
 namespace Csag.Blueprint.Web.Extensions;
 
+using Csag.Blueprint.Application.Abstractions.Services;
 using Csag.Blueprint.Infrastructure.Countries;
+using Csag.Blueprint.Infrastructure.Tenancy;
 using Csag.Blueprint.Web.Tenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics;
@@ -17,7 +19,7 @@ public static class BlueprintBuilderExtensions
     /// <summary>
     /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
     /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
-    /// session authentication, anti-forgery protection, and the country catalog.
+    /// session authentication, anti-forgery protection, country catalog, and tenant time-zone fallback.
     /// </summary>
     /// <param name="builder">The web application builder.</param>
     /// <returns>The web application builder for chaining.</returns>
@@ -27,7 +29,7 @@ public static class BlueprintBuilderExtensions
     /// <summary>
     /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
     /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
-    /// session authentication, anti-forgery protection, and the country catalog.
+    /// session authentication, anti-forgery protection, country catalog, and tenant time-zone fallback.
     /// </summary>
     /// <param name="builder">The web application builder.</param>
     /// <param name="configure">
@@ -91,6 +93,10 @@ public static class BlueprintBuilderExtensions
         builder.Services.TryAddSingleton(TimeProvider.System);
 
         builder.Services.AddBlueprintCountries();
+
+        // Zone seam: the tenant's zone decides "today" and calendar days. The application registers the
+        // provider that reads it; until then every tenant is in UTC.
+        builder.Services.TryAddSingleton<ITenantTimeZoneProvider, UtcTenantTimeZoneProvider>();
 
         return builder;
     }

@@ -8,6 +8,7 @@
   <ItemGroup>
     <!-- Static code analysis -->
     <PackageVersion Include="Neolution.CodeAnalysis" Version="3.3.0-beta.2" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.BannedApiAnalyzers" Version="5.6.0" />
     <!-- Source Generators.
     This version sets the minimum SDK for CONSUMERS of
     Csag.Blueprint.SourceGenerators: the compiler will not load an analyzer that

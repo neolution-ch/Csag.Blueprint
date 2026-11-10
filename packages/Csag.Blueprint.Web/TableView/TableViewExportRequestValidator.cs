@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Web.TableView;
 
 using Csag.Blueprint.Application.TableView;
+using Csag.Blueprint.Web.Validation;
 using FastEndpoints;
 using FluentValidation;
 
@@ -33,6 +34,10 @@ public sealed class TableViewExportRequestValidator : Validator<TableViewExportR
             .NotNull()
             .When(x => x.PageSize.HasValue)
             .WithMessage("Page is required when PageSize is set");
+
+        this.RuleFor(x => x.TimeZone)
+            .MustBeWellFormedIanaTimeZone()
+            .WithMessage(TableViewRequestTimeZone.InvalidMessage);
 
         this.RuleForEach(x => x.SortColumns)
             .ChildRules(TableViewDataRequestValidator.AddSortColumnRules);

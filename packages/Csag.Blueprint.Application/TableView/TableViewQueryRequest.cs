@@ -30,6 +30,13 @@ public sealed class TableViewQueryRequest<TEntity, TDto>
     public IList<SortColumn>? SortColumns { get; set; }
 
     /// <summary>
+    /// Gets or sets the zone that filters on instant (<see cref="DateTimeOffset"/>) columns are evaluated in.
+    /// When null, the executor uses the zone of <see cref="Abstractions.Services.ITenantTimeZoneProvider"/>,
+    /// which is UTC when the application provides none.
+    /// </summary>
+    public TimeZoneInfo? TimeZone { get; set; }
+
+    /// <summary>
     /// Gets or sets the page number (1-based).
     /// </summary>
     public int Page { get; set; } = 1;

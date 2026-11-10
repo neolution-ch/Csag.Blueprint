@@ -21,6 +21,10 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<ITenantService, TenantService>();
 
+        // Zone seam: the application registers the provider that reads the tenant's zone. TryAdd, so one
+        // registered before this call wins; one registered after replaces this fallback on resolution.
+        services.TryAddSingleton<ITenantTimeZoneProvider, UtcTenantTimeZoneProvider>();
+
         // Clock seam shared by every blueprint service that stamps or compares time. TryAdd, so a
         // TimeProvider registered before this call (a FakeTimeProvider in tests) wins.
         services.TryAddSingleton(TimeProvider.System);

@@ -314,7 +314,7 @@ public sealed class AuditTests(AppFixture app) : IntegrationTestBase(app)
         Capacity = 1,
         PricePerHour = 9.50m,
         IsActive = true,
-        AcquiredAt = new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Utc),
+        AcquiredAt = new DateTime(2025, 6, 1, 0, 0, 0, DateTimeKind.Unspecified),
     };
 
     /// <summary>

@@ -8,6 +8,7 @@ namespace Csag.Blueprint.Web.Extensions
     using Microsoft.AspNetCore.Builder;
     using Microsoft.AspNetCore.Identity;
     using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Primitives;
 
     /// <summary>
     /// Extension methods for configuring FastEndpoints and Swagger on WebApplication.
@@ -118,6 +119,15 @@ namespace Csag.Blueprint.Web.Extensions
                     // Without this, security scanners (e.g. OWASP ZAP) flag the 500 as a SQL injection.
                     x.Binding.FormExceptionTransformer =
                         _ => new FluentValidation.Results.ValidationFailure("_", "The request body was malformed or contained invalid multipart data.");
+
+                    // Query, route, form and header values bypass System.Text.Json, and FastEndpoints' own
+                    // DateTime parsing accepts offsets (converting to the server's zone), fractions and
+                    // culture formats, and its DateTimeOffset parsing reads a value without an offset in the
+                    // server's zone. These parsers accept exactly the local readings and instants a JSON body
+                    // does. FastEndpoints keys parsers by the underlying type, so they serve DateTime? and
+                    // DateTimeOffset? as well.
+                    x.Binding.ValueParserFor<DateTime>(ParseLocalReading);
+                    x.Binding.ValueParserFor<DateTimeOffset>(ParseInstant);
                 });
 
             // Serve the Swagger UI HTML and the runtime Swagger JSON document only when enabled.
@@ -130,6 +140,32 @@ namespace Csag.Blueprint.Web.Extensions
             }
 
             return app;
+        }
+
+        /// <summary>
+        /// Parses a bound local reading. An empty value fails like any other malformed one. A failure still
+        /// carries a DateTime: the header and claim binders assign the value before they look at the outcome,
+        /// so a null would fail there with a NullReferenceException instead of a 400, and the query and form
+        /// binders assign it, failure or not, to a nullable property whose value is empty
+        /// (<c>UseDefaultValuesForNullableProps</c>).
+        /// </summary>
+        private static ParseResult ParseLocalReading(StringValues input)
+        {
+            return LocalDateTimeFormat.TryParse(input.ToString(), out var reading)
+                ? new ParseResult(true, reading)
+                : new ParseResult(false, default(DateTime));
+        }
+
+        /// <summary>
+        /// Parses a bound instant, which must carry a UTC offset or <c>Z</c>. Like
+        /// <see cref="ParseLocalReading"/>, a failure still carries a DateTimeOffset for the binders that assign
+        /// the value before they look at the outcome.
+        /// </summary>
+        private static ParseResult ParseInstant(StringValues input)
+        {
+            return InstantFormat.TryParse(input.ToString(), out var instant)
+                ? new ParseResult(true, instant)
+                : new ParseResult(false, default(DateTimeOffset));
         }
     }
 }

@@ -1,0 +1,80 @@
+namespace Csag.Blueprint.Application.Json;
+
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
+/// <summary>
+/// Serializes a <see cref="DateTime"/> as a local reading: the clock reading at a place, with no
+/// UTC offset. Writes <c>yyyy-MM-ddTHH:mm:ss</c> and reads <c>yyyy-MM-ddTHH:mm:ss</c> or
+/// <c>yyyy-MM-ddTHH:mm</c>. Applies to <see cref="Nullable{DateTime}"/> as well.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A <see cref="DateTime"/> in a contract always means a local reading; an instant is a
+/// <see cref="DateTimeOffset"/>. Reading therefore refuses a value with a UTC offset or <c>Z</c>
+/// instead of silently converting it to some zone, and the <see cref="JsonException"/> it throws
+/// reaches the client as a 400 validation error. Values read have
+/// <see cref="DateTimeKind.Unspecified"/>.
+/// </para>
+/// <para>
+/// Writing drops fractional seconds and throws an <see cref="InvalidOperationException"/> for a
+/// <see cref="DateTime"/> whose <see cref="DateTime.Kind"/> is <see cref="DateTimeKind.Utc"/> or
+/// <see cref="DateTimeKind.Local"/>: such a value holds an instant or the server's clock, and written
+/// without an offset it would read as a clock reading at the place. Local readings have
+/// <see cref="DateTimeKind.Unspecified"/>, as EF Core reads <c>datetime2</c> columns and as
+/// <c>TimeZones</c> and the time values return them. Use <see cref="DateTimeOffset"/> for an instant.
+/// </para>
+/// </remarks>
+public sealed class LocalDateTimeJsonConverter : JsonConverter<DateTime>
+{
+    /// <inheritdoc/>
+    public override DateTime Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException(LocalDateTimeFormat.GetInvalidMessage(null));
+        }
+
+        return Parse(reader.GetString());
+    }
+
+    /// <inheritdoc/>
+    public override void Write(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        writer.WriteStringValue(Format(value));
+    }
+
+    /// <inheritdoc/>
+    public override DateTime ReadAsPropertyName(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        return Parse(reader.GetString());
+    }
+
+    /// <inheritdoc/>
+    public override void WriteAsPropertyName(Utf8JsonWriter writer, DateTime value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        writer.WritePropertyName(Format(value));
+    }
+
+    private static string Format(DateTime value)
+    {
+        if (value.Kind != DateTimeKind.Unspecified)
+        {
+            throw new InvalidOperationException(
+                $"A DateTime with Kind {value.Kind} is not a local reading. Use DateTimeOffset for an instant, or TimeZones.ToLocalReading(instant, zone) for the reading at a place.");
+        }
+
+        return LocalDateTimeFormat.Format(value);
+    }
+
+    private static DateTime Parse(string? text)
+    {
+        return LocalDateTimeFormat.TryParse(text, out var reading)
+            ? reading
+            : throw new JsonException(LocalDateTimeFormat.GetInvalidMessage(text));
+    }
+}

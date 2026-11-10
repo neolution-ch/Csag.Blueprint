@@ -1,11 +1,15 @@
 namespace Csag.Blueprint.Infrastructure.UnitTests.Filtering;
 
+using Csag.Blueprint.Domain.Time;
 using Csag.Blueprint.Infrastructure.Extensions;
 using Csag.Blueprint.Infrastructure.UnitTests.TestModel;
+using Microsoft.Extensions.Time.Testing;
 
 public sealed class EntityFilteringExtensionsTests
 {
-    private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
+    private static readonly DateTimeOffset Now = new(2026, 7, 1, 12, 0, 0, TimeSpan.Zero);
+
+    private readonly FakeTimeProvider clock = new(Now);
 
     [Fact]
     public void WhereActiveNow_KeepsOpenEndedAndCurrentRanges()
@@ -13,8 +17,20 @@ public sealed class EntityFilteringExtensionsTests
         using var db = new SqliteTestDatabase();
         SeedActiveRanges(db);
 
-        Names(db.Context.Products.WhereActiveNow())
+        Names(db.Context.Products.WhereActiveNow(this.clock))
             .ShouldBe(["always", "current", "started", "ending"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void WhereActiveNow_ReadsTheClockItIsGiven()
+    {
+        using var db = new SqliteTestDatabase();
+        SeedActiveRanges(db);
+
+        this.clock.Advance(TimeSpan.FromDays(5));
+
+        Names(db.Context.Products.WhereActiveNow(this.clock))
+            .ShouldBe(["always", "current", "started", "future"], ignoreOrder: true);
     }
 
     [Fact]
@@ -23,7 +39,7 @@ public sealed class EntityFilteringExtensionsTests
         using var db = new SqliteTestDatabase();
         SeedActiveRanges(db);
 
-        Names(db.Context.Products.WhereInactiveNow()).ShouldBe(["future", "expired"], ignoreOrder: true);
+        Names(db.Context.Products.WhereInactiveNow(this.clock)).ShouldBe(["future", "expired"], ignoreOrder: true);
     }
 
     [Fact]
@@ -59,17 +75,36 @@ public sealed class EntityFilteringExtensionsTests
     }
 
     [Fact]
-    public void WhereActiveToday_UsesStartOfUtcDay()
+    public void WhereActiveToday_InUtc_UsesMidnightUtc()
     {
         using var db = new SqliteTestDatabase();
-        var startOfUtcDay = new DateTimeOffset(DateTimeOffset.UtcNow.Date, TimeSpan.Zero);
+        var midnight = new DateTimeOffset(2026, 7, 1, 0, 0, 0, TimeSpan.Zero);
 
-        // Active only later today: excluded, because the check is made at midnight UTC.
-        db.AddProduct("later-today").ActiveFrom = startOfUtcDay.AddHours(23);
-        db.AddProduct("since-midnight").ActiveFrom = startOfUtcDay;
+        // Active only later today: excluded, because the check is made at the start of the day.
+        db.AddProduct("later-today").ActiveFrom = midnight.AddHours(11);
+        db.AddProduct("since-midnight").ActiveFrom = midnight;
         db.Save();
 
-        Names(db.Context.Products.WhereActiveToday()).ShouldBe(["since-midnight"]);
+        Names(db.Context.Products.WhereActiveToday(this.clock, TimeZoneInfo.Utc)).ShouldBe(["since-midnight"]);
+    }
+
+    [Fact]
+    public void WhereActiveToday_WhenTheZonesDayDiffersFromTheUtcDay_UsesTheStartOfTheZonesDay()
+    {
+        using var db = new SqliteTestDatabase();
+
+        // 23:30 UTC on 1 July is 01:30 on 2 July in Zurich (UTC+2), whose day started at 22:00 UTC on 1 July.
+        this.clock.SetUtcNow(new DateTimeOffset(2026, 7, 1, 23, 30, 0, TimeSpan.Zero));
+        var zurichMidnight = new DateTimeOffset(2026, 7, 1, 22, 0, 0, TimeSpan.Zero);
+
+        db.AddProduct("since-zurich-midnight").ActiveFrom = zurichMidnight;
+        db.AddProduct("since-the-utc-evening").ActiveFrom = zurichMidnight.AddHours(-2);
+        db.AddProduct("ended-on-the-utc-day").ActiveUntil = zurichMidnight.AddHours(-10);
+        db.AddProduct("from-later-in-the-zurich-night").ActiveFrom = zurichMidnight.AddMinutes(30);
+        db.Save();
+
+        Names(db.Context.Products.WhereActiveToday(this.clock, FindZone("Europe/Zurich")))
+            .ShouldBe(["since-zurich-midnight", "since-the-utc-evening"], ignoreOrder: true);
     }
 
     [Fact]
@@ -106,7 +141,7 @@ public sealed class EntityFilteringExtensionsTests
         db.AddProduct("live-expired").ActiveUntil = Now.AddDays(-1);
         db.Save();
 
-        Names(db.Context.Products.IgnoreSoftDeleteFilter().WhereActiveAndNotDeleted())
+        Names(db.Context.Products.IgnoreSoftDeleteFilter().WhereActiveAndNotDeleted(this.clock))
             .ShouldBe(["live-active"]);
     }
 
@@ -128,4 +163,11 @@ public sealed class EntityFilteringExtensionsTests
 
     private static List<string> Names(IQueryable<Product> query)
         => [.. query.Select(p => p.InternalName)];
+
+    private static TimeZoneInfo FindZone(string id)
+    {
+        return TimeZones.TryFindIanaTimeZone(id, out var zone)
+            ? zone
+            : throw new InvalidOperationException($"The host cannot resolve the IANA zone '{id}'; install time zone data.");
+    }
 }

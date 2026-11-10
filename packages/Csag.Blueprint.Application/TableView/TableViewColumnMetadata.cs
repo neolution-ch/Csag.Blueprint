@@ -27,9 +27,20 @@ public sealed class TableViewColumnMetadata
     public string? DisplayNameKey { get; set; }
 
     /// <summary>
-    /// Gets or sets the data type of the column (e.g., "string", "number", "boolean", "date", "enum").
+    /// Gets or sets the data type of the column, one of the <see cref="TableViewDataTypes"/> values. Temporal
+    /// columns report <c>date</c> (<see cref="DateOnly"/>), <c>localDateTime</c> (<see cref="DateTime"/>, a local
+    /// reading) or <c>instant</c> (<see cref="DateTimeOffset"/>), which clients format differently.
     /// </summary>
     public string DataType { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the name of the column whose value, in the same row, is the IANA zone id of this
+    /// column's local reading; set with <see cref="TableViewColumnDefinition{TEntity, TDto}.WithTimeZoneFrom"/>.
+    /// Null when the column is not a local reading or its readings are all in the tenant's zone, the default.
+    /// A client labels each reading with the zone its row names rather than with the tenant's zone, and an
+    /// Excel export names no zone in the column's header, since the zone column carries it per row.
+    /// </summary>
+    public string? TimeZoneColumn { get; set; }
 
     /// <summary>
     /// Gets or sets the description of the column.

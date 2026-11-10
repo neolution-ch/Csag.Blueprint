@@ -65,6 +65,7 @@ public sealed class BlueprintModelFinalizingConvention<TAppTenant, TAppUser, TAp
         ContractModelBuilderExtensions.ConfigureContractConstraints(modelBuilder);
         LocalizationModelBuilderExtensions.ConfigureLocalizedTextConventions(modelBuilder);
         EntityFilteringModelBuilderExtensions.ConfigureEntityFiltering(modelBuilder);
+        TimeValueModelBuilderExtensions.ConfigureTimeValueColumns(modelBuilder);
 
         // NEWSEQUENTIALID() is a SQL Server function, so this convention only applies there: other
         // providers accept the DDL and then fail every insert. Runs last, so relationships the

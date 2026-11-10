@@ -58,6 +58,26 @@ public sealed class SignInNewSessionTests
     }
 
     [Fact]
+    public async Task WhenARenewalWritesTheOldTicketBackAfterTheSignOut_StillStoresTheNewSessionUnderANewKey()
+    {
+        // A concurrent sliding renewal over the old cookie can write the old ticket back after the sign-out removed it.
+        // The cache here writes it back after every removal, so the ticket is there whenever the sign-in looks.
+        var cache = new InMemoryTicketCache();
+        using var services = SessionTestServices.Build(after: s => s.AddSingleton<ITicketCacheService>(cache));
+        var (httpContext, oldKey) = await RequestWithSessionCookieAsync(services);
+        (await httpContext.AuthenticateAsync(IdentityConstants.ApplicationScheme)).Succeeded.ShouldBeTrue();
+        cache.WriteBackOnRemoval(oldKey);
+
+        await httpContext.SignInNewSessionAsync(SessionTestServices.CreatePrincipal(NewAccountId));
+
+        // The old key still holds the written-back ticket, which the renewal removes again once it finds no row. What
+        // matters here is that the new session went under a key of its own.
+        var newSession = cache.Tickets.Where(t => t.Key != oldKey).ShouldHaveSingleItem();
+        newSession.Value.Principal.FindFirstValue(ClaimTypes.NameIdentifier).ShouldBe(NewAccountId.ToString("D", CultureInfo.InvariantCulture));
+        cache.Tickets[oldKey].Principal.FindFirstValue(ClaimTypes.NameIdentifier).ShouldBe(OldAccountId.ToString("D", CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
     public async Task WithoutASessionCookie_StoresTheNewSessionAndClearsNoCookie()
     {
         var cache = new InMemoryTicketCache();
@@ -101,7 +121,15 @@ public sealed class SignInNewSessionTests
 
     private sealed class InMemoryTicketCache : ITicketCacheService
     {
+        private (string Key, AuthenticationTicket Ticket)? writeBack;
+
         public Dictionary<string, AuthenticationTicket> Tickets { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Makes every removal of <paramref name="key"/> leave its current ticket in place, as a renewal that writes the
+        /// ticket back right after the removal would.
+        /// </summary>
+        public void WriteBackOnRemoval(string key) => this.writeBack = (key, this.Tickets[key]);
 
         public Task<AuthenticationTicket?> GetTicketAsync(string sessionKey, CancellationToken cancellationToken = default) =>
             Task.FromResult(this.Tickets.TryGetValue(sessionKey, out var ticket) ? ticket : null);
@@ -115,6 +143,11 @@ public sealed class SignInNewSessionTests
         public Task RemoveTicketAsync(string sessionKey, CancellationToken cancellationToken = default)
         {
             this.Tickets.Remove(sessionKey);
+            if (this.writeBack is { } written && string.Equals(written.Key, sessionKey, StringComparison.Ordinal))
+            {
+                this.Tickets[written.Key] = written.Ticket;
+            }
+
             return Task.CompletedTask;
         }
     }

@@ -332,8 +332,10 @@ changed the credentials stays signed in, and a stolen copy of their cookie does 
 
 Hooks the application keeps: `ISessionRevocationParticipant`s for its own credentials, an `ISessionEligibility`, the
 cookie callback, its own cookie event handlers, and decorators around `ITicketStore` or `IActiveSessionTracker`
-(resolve `DistributedCacheTicketStore` or `ActiveSessionTracker<TContext>` as the inner instance). The expired-session
-cleanup runs hourly by default; set `ExpiredSessionCleanup.Interval`, or turn it off with
+(resolve `DistributedCacheTicketStore` or `ActiveSessionTracker<TContext>` as the inner instance). A decorator around
+`ITicketStore` forwards the overloads that take the `HttpContext`: the store reads the request through them, for
+example to make `SignInNewSessionAsync` store a new key even when a concurrent renewal wrote the old ticket back. The
+expired-session cleanup runs hourly by default; set `ExpiredSessionCleanup.Interval`, or turn it off with
 `ExpiredSessionCleanup.Enabled = false`.
 
 ### Service-account credentials

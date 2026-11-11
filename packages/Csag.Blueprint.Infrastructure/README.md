@@ -310,7 +310,7 @@ await HttpContext.SignInNewSessionAsync(principal);
 ```
 
 It ends a session the request still holds and stores the new one under a new key, so a copy of the old cookie stops
-working. A plain `HttpContext.SignInAsync` on a request that still carries a live session cookie keeps that cookie's
+working. Call it once per request: a second call on the same request throws `InvalidOperationException`. A plain `HttpContext.SignInAsync` on a request that still carries a live session cookie keeps that cookie's
 key, because the cookie handler renews the ticket under the key it read
 ([dotnet/aspnetcore#22135](https://github.com/dotnet/aspnetcore/issues/22135)). The ticket store then attributes the
 row to the signing-in account, and a copy of the old cookie reaches the new session.
@@ -319,8 +319,8 @@ Applications report what happened through `ISessionLifecycle`, after their datab
 
 | Intent | Typical caller |
 | --- | --- |
-| `CredentialsChangedAsync` | password change or reset, second factor enabled or disabled |
-| `AccessRevokedAsync` (optionally per tenant) | account disabled or deleted, sign-in identity changed, membership removed |
+| `CredentialsChangedAsync` | password change, second factor enabled or disabled |
+| `AccessRevokedAsync` (optionally per tenant) | account disabled or deleted, sign-in identity changed, membership removed, password reset that signs in the person on the same request |
 | `ClaimsChangedAsync` (optionally per tenant) | profile, language, roles or permissions changed |
 | `TenantRemovedAsync` | tenant deleted |
 | `SwitchTenantAsync` | the caller switches tenant |
@@ -329,6 +329,11 @@ Applications report what happened through `ISessionLifecycle`, after their datab
 `CredentialsChangedAsync` ends every session of the account. When the caller's own session belongs to that account,
 the caller continues in a new session with the same claims and tenant, through `SignInNewSessionAsync`: the person who
 changed the credentials stays signed in, and a stolen copy of their cookie does not.
+
+A password reset endpoint that signs in the person on the same request calls `AccessRevokedAsync(accountId)`, then
+`SignInNewSessionAsync`. It does not call `CredentialsChangedAsync`: when the browser still holds a session cookie of
+the account, `CredentialsChangedAsync` signs in that browser itself, and the sign-in of the endpoint is then a second
+call on the same request, which throws.
 
 Hooks the application keeps: `ISessionRevocationParticipant`s for its own credentials, an `ISessionEligibility`, the
 cookie callback, its own cookie event handlers, and decorators around `ITicketStore` or `IActiveSessionTracker`

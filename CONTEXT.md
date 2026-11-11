@@ -33,7 +33,7 @@ _Avoid_: Account status check
 ### Session lifecycle intents
 
 **Credentials changed**:
-An account's password or second factor changed. Its sessions end, and when the caller's own session belongs to that account the caller continues in a new session under a new key, so a copy of its old cookie stops working.
+An account's password or second factor changed. Its sessions end, and when the caller's own session belongs to that account the caller continues in a new session under a new key, so a copy of its old cookie stops working. Exception: a password reset that signs in the person on the same request ends the sessions with **access revoked**, then signs in once.
 
 **Access revoked**:
 An account lost access, everywhere or in one tenant; its sessions there end.

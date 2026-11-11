@@ -28,16 +28,24 @@ namespace Csag.Blueprint.Application.Abstractions.Services;
 public interface ISessionLifecycle
 {
     /// <summary>
-    /// The account's credentials changed: a password change or reset, or a second factor enabled or disabled. Ends
-    /// every session of the account. When the caller's session belongs to that account, the caller continues in a new
+    /// The account's credentials changed: a password change, or a second factor enabled or disabled. Ends every
+    /// session of the account. When the caller's session belongs to that account, the caller continues in a new
     /// session with the same claims and tenant, under a new key and with a fresh lifetime, and the response carries
     /// its cookie. A copy of the caller's old cookie stops working, while the person who made the change stays signed
-    /// in. With no caller session (a reset from an emailed link, a setup step that runs before a full session exists,
-    /// a background job), or one belonging to another account, every session of the account ends and none is started.
+    /// in. With no caller session (a setup step that runs before a full session exists, a background job), or one
+    /// belonging to another account, every session of the account ends and none is started.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The caller gets no new session when a step fails, or when <see cref="ISessionEligibility"/> says the account
     /// may no longer hold one. The caller is then signed out.
+    /// </para>
+    /// <para>
+    /// A password reset endpoint that signs in the person on the same request calls
+    /// <see cref="AccessRevokedAsync(Guid)"/>, then <c>SignInNewSessionAsync</c> (Csag.Blueprint.Infrastructure). It
+    /// does not call this method: when the browser still holds a session cookie of the account, this method signs in
+    /// that browser itself, and a request can sign in only once.
+    /// </para>
     /// </remarks>
     /// <param name="accountId">The account whose credentials changed.</param>
     /// <returns>A task that completes once the sessions are ended, the caller's new session is written, and every
@@ -46,7 +54,8 @@ public interface ISessionLifecycle
 
     /// <summary>
     /// The account lost access everywhere: it was disabled, deleted, or its sign-in identity changed. Ends every
-    /// session of the account, the caller's included.
+    /// session of the account, the caller's included. A password reset endpoint that signs in the person on the same
+    /// request also calls it (see <see cref="CredentialsChangedAsync"/>).
     /// </summary>
     /// <param name="accountId">The account whose access was revoked.</param>
     /// <returns>A task that completes once the sessions are ended and every participant has run.</returns>

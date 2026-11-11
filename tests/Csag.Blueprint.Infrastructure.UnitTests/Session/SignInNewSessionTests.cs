@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Unit tests for <see cref="SessionHttpContextExtensions.SignInNewSessionAsync"/> through the real cookie handler and
 /// ticket store, over an in-memory ticket cache: whatever state the request's session cookie is in, the new session is
-/// stored under a new key and the old key no longer holds a ticket.
+/// stored under a new key and the old key no longer holds a ticket. A request starts one new session only.
 /// </summary>
 public sealed class SignInNewSessionTests
 {
@@ -91,6 +91,22 @@ public sealed class SignInNewSessionTests
             .Where(c => c!.StartsWith(services.GetCookieOptions().Cookie.Name + "=", StringComparison.Ordinal))
             .ToList();
         sessionCookies.ShouldHaveSingleItem().ShouldNotStartWith(services.GetCookieOptions().Cookie.Name + "=;");
+    }
+
+    [Fact]
+    public async Task ASecondCallOnTheSameRequest_ThrowsAndKeepsTheFirstNewSession()
+    {
+        // The sign-out of a second call reaches the old key only, so the session of the first call would stay stored
+        // until it expires. The second call must change nothing.
+        var cache = new InMemoryTicketCache();
+        using var services = SessionTestServices.Build(after: s => s.AddSingleton<ITicketCacheService>(cache));
+        var (httpContext, oldKey) = await RequestWithSessionCookieAsync(services);
+        await httpContext.SignInNewSessionAsync(SessionTestServices.CreatePrincipal(NewAccountId));
+
+        await Should.ThrowAsync<InvalidOperationException>(async () =>
+            await httpContext.SignInNewSessionAsync(SessionTestServices.CreatePrincipal(OldAccountId)));
+
+        ShouldHoldOnlyTheNewSession(cache, oldKey);
     }
 
     private static async Task<(DefaultHttpContext HttpContext, string OldKey)> RequestWithSessionCookieAsync(ServiceProvider services)

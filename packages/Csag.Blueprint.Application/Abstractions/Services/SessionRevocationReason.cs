@@ -14,7 +14,8 @@ public enum SessionRevocationReason
 
     /// <summary>
     /// The account lost access, everywhere or in <see cref="SessionRevocation.TenantId"/>
-    /// (<c>ISessionLifecycle.AccessRevokedAsync</c>). For a service account: it was deactivated or deleted
+    /// (<c>ISessionLifecycle.AccessRevokedAsync</c>). Participants also get this reason from a password reset endpoint
+    /// that signs in the person on the same request. For a service account: it was deactivated or deleted
     /// (<see cref="IServiceAccountSessionLifecycle"/>).
     /// </summary>
     AccessRevoked = 1,

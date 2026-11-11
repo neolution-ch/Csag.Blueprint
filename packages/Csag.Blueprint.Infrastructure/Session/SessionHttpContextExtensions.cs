@@ -15,11 +15,12 @@ public static class SessionHttpContextExtensions
 {
     private static readonly object RewrittenSessionKeyKey = new();
     private static readonly object StartingNewSessionKey = new();
+    private static readonly object StartedNewSessionKey = new();
 
     /// <summary>
     /// Signs <paramref name="session"/> in under a new session key. A session the request still holds ends first and
     /// its cookie is replaced, so a copy of that cookie stops working. Use it for every sign-in to the Identity
-    /// application cookie, and call it at most once per request.
+    /// application cookie, once per request.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -44,10 +45,21 @@ public static class SessionHttpContextExtensions
     /// <param name="session">The principal of the new session.</param>
     /// <param name="properties">The sign-in properties, if any. The session infrastructure sets lifetime and persistence.</param>
     /// <returns>A task that completes once the new session is stored and its cookie written.</returns>
+    /// <exception cref="InvalidOperationException">The request already called this method, possibly through
+    /// <c>ISessionLifecycle.CredentialsChangedAsync</c>. A second sign-out reaches only the session of the request's
+    /// cookie, so the session of the first call stays stored until it expires.</exception>
     public static Task SignInNewSessionAsync(this HttpContext httpContext, ClaimsPrincipal session, AuthenticationProperties? properties = null)
     {
         ArgumentNullException.ThrowIfNull(httpContext);
         ArgumentNullException.ThrowIfNull(session);
+
+        // Set before the first step: a call that fails can already have stored its session.
+        if (!httpContext.Items.TryAdd(StartedNewSessionKey, true))
+        {
+            throw new InvalidOperationException(
+                $"{nameof(SignInNewSessionAsync)} can run once per request, and this request already called it. "
+                + "ISessionLifecycle.CredentialsChangedAsync also calls it when the caller stays signed in.");
+        }
 
         return SignInNewSessionCoreAsync(httpContext, session, properties);
     }

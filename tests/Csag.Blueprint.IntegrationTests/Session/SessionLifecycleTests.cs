@@ -88,7 +88,7 @@ public sealed class SessionLifecycleTests(AppFixture app) : SessionTestBase(app)
     [Fact]
     public async Task CredentialsChanged_WithoutACallerSession_EndsEverySessionAsync()
     {
-        // A reset from an emailed link, or a background job, has no session to keep.
+        // A background job, or a request without a session cookie, has no session to keep.
         var user = await this.CreateTestUserAsync("credentials_reset_test@test.local", SeedData.TenantAId);
         using var client1 = await this.SignInAsync(user.Email!);
         using var client2 = await this.SignInAsync(user.Email!);

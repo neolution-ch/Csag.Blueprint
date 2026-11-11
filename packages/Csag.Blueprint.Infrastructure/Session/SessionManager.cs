@@ -108,6 +108,19 @@ internal sealed class SessionManager<TUser, TContext>
     }
 
     /// <summary>
+    /// Reads the ticket a session key holds, when it still authenticates <paramref name="userId"/>. A plain sign-in
+    /// over a copy of the session's cookie can have stored another account's principal under the same key.
+    /// </summary>
+    /// <param name="sessionKey">The session key.</param>
+    /// <param name="userId">The account the ticket must authenticate.</param>
+    /// <returns>The ticket, or <see langword="null"/> when the key holds none or it authenticates another account.</returns>
+    public async Task<AuthenticationTicket?> GetOwnTicketAsync(string sessionKey, Guid userId)
+    {
+        var ticket = await this.ticketCacheService.GetTicketAsync(sessionKey, CancellationToken.None);
+        return ticket is not null && BelongsTo(ticket, userId) ? ticket : null;
+    }
+
+    /// <summary>
     /// Gets the account's sessions that have not expired, newest first.
     /// </summary>
     /// <param name="userId">The account.</param>

@@ -22,8 +22,8 @@ using Neolution.Extensions.Caching.Abstractions;
 
 /// <summary>
 /// Integration tests for session tracking against the real SQL container: the ticket store records every session it
-/// stores, with the signing-in request's details; a sign-in over a live session cookie attributes that session to
-/// the signing-in account; renewal and removal keep the row in step with the ticket; and the
+/// stores, with the signing-in request's details; a sign-in over a live session cookie ends that session and starts
+/// a new one under a new key; renewal and removal keep the row in step with the ticket; and the
 /// <see cref="IActiveSessionTracker"/> writes that rely on set-based statements and the unique key index.
 /// </summary>
 [Collection(nameof(AppFixtureCollection))]
@@ -75,10 +75,9 @@ public sealed class SessionTrackingTests(AppFixture app) : SessionTestBase(app)
     }
 
     [Fact]
-    public async Task SignInOverALiveSessionCookie_ForAnotherAccount_AttributesTheSessionToThatAccountAsync()
+    public async Task SignInOverALiveSessionCookie_ForAnotherAccount_EndsThatSessionAndStartsANewOneAsync()
     {
-        // Arrange — one browser, signed in as the first account, signs in as a second without signing out. The cookie
-        // handler reuses the live cookie's session key for the new sign-in.
+        // Arrange — one browser, signed in as the first account, signs in as a second without signing out.
         var first = await this.CreateTestUserAsync("reattribute_first_test@test.local", SeedData.TenantAId);
         var second = await this.CreateTestUserAsync("reattribute_second_test@test.local", SeedData.TenantBId);
         using var client = await this.SignInAsync(first.Email!);
@@ -88,18 +87,31 @@ public sealed class SessionTrackingTests(AppFixture app) : SessionTestBase(app)
         // Act
         await this.SignInWithAsync(client, second.Email!);
 
-        // Assert — the row under that key now describes the second account and its sign-in.
+        // Assert — the first account's session is gone, and the second account's has a key of its own.
         using var scope = this.App.CreateDbContextScope();
-        var rows = await scope.Context.ActiveSessions
-            .AsNoTracking()
-            .Where(s => s.SessionKey == original.SessionKey)
-            .ToListAsync(TestContext.Current.CancellationToken);
-        var session = rows.ShouldHaveSingleItem();
-        session.UserId.ShouldBe(second.Id);
+        (await scope.Context.ActiveSessions.AnyAsync(s => s.SessionKey == original.SessionKey, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        (await scope.Context.ActiveSessions.AnyAsync(s => s.UserId == first.Id, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        var session = await this.GetSingleSessionAsync(second.Id);
         session.CurrentTenantId.ShouldBe(SeedData.TenantBId);
         session.IpAddress.ShouldBe("198.51.100.23");
-        session.CreatedAt.ShouldBeGreaterThanOrEqualTo(original.CreatedAt);
-        (await scope.Context.ActiveSessions.AnyAsync(s => s.UserId == first.Id, TestContext.Current.CancellationToken)).ShouldBeFalse();
+        await ShouldAuthenticateAsync(client, HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task SignInOverALiveSessionCookie_LeavesACopyOfTheOldCookieUnauthenticatedAsync()
+    {
+        // Arrange — someone holds a copy of the browser's cookie when the browser signs in again.
+        var user = await this.CreateTestUserAsync("resign_copied_cookie_test@test.local", SeedData.TenantAId);
+        var (browser, copy) = await this.SignInWithCopiedCookieAsync(user.Email!);
+        using var client = browser;
+        using var copiedCookie = copy;
+
+        // Act
+        await this.SignInWithAsync(client, user.Email!);
+
+        // Assert
+        await ShouldAuthenticateAsync(client, HttpStatusCode.OK);
+        await ShouldAuthenticateAsync(copiedCookie, HttpStatusCode.Unauthorized, "a sign-in must not hand the new session to a copy of the old cookie");
     }
 
     [Fact]
@@ -129,7 +141,7 @@ public sealed class SessionTrackingTests(AppFixture app) : SessionTestBase(app)
     }
 
     [Fact]
-    public async Task SignInOverOwnLiveSession_KeepsOneRowAndFollowsTheNewTenantAsync()
+    public async Task SignInOverOwnLiveSession_ReplacesItWithOneUnderANewKeyInTheNewTenantAsync()
     {
         var user = await this.CreateTestUserAsync("resign_same_user_test@test.local", SeedData.TenantAId, SeedData.TenantBId);
         using var client = await this.SignInAsync(user.Email!, SeedData.TenantAId);
@@ -138,9 +150,9 @@ public sealed class SessionTrackingTests(AppFixture app) : SessionTestBase(app)
         await this.SignInWithAsync(client, user.Email!, SeedData.TenantBId);
 
         var session = await this.GetSingleSessionAsync(user.Id);
-        session.SessionKey.ShouldBe(original.SessionKey);
+        session.SessionKey.ShouldNotBe(original.SessionKey);
         session.CurrentTenantId.ShouldBe(SeedData.TenantBId);
-        session.CreatedAt.ShouldBe(original.CreatedAt);
+        await ShouldAuthenticateAsync(client, HttpStatusCode.OK);
     }
 
     [Fact]

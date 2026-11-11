@@ -116,17 +116,28 @@ public abstract class SessionTestBase(AppFixture app) : IntegrationTestBase(app)
     /// <param name="tenantId">Tenant to scope the session to; defaults to the user's first membership.</param>
     /// <returns>A task representing the asynchronous operation.</returns>
     protected async Task SignInWithAsync(HttpClient client, string email, Guid? tenantId = null)
-    {
-        var (rsp, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
-            new LoginRequest
-            {
-                Email = email,
-                Password = SeedData.DefaultPassword,
-                TenantId = tenantId,
-            });
+        => await this.SignInWithResponseAsync(client, email, tenantId);
 
-        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, $"failed to authenticate test user '{email}'");
-        AppFixture.SetCsrfHeaderFromResponse(client, rsp);
+    /// <summary>
+    /// Signs the given user in on a brand-new client, and creates a second client that sends a copy of the session
+    /// cookie the sign-in set, as someone who stole the browser's cookie would hold it.
+    /// </summary>
+    /// <param name="email">The user's email; the password is the shared <see cref="SeedData.DefaultPassword"/>.</param>
+    /// <returns>The signed-in client and the client sending the copy.</returns>
+    protected async Task<(HttpClient Browser, HttpClient Copy)> SignInWithCopiedCookieAsync(string email)
+    {
+        var browser = this.App.CreateClient();
+        var loginResponse = await this.SignInWithResponseAsync(browser, email, tenantId: null);
+
+        var cookies = Microsoft.Net.Http.Headers.SetCookieHeaderValue.ParseList(loginResponse.Headers.GetValues("Set-Cookie").ToList())
+            .GroupBy(c => c.Name.Value, StringComparer.Ordinal)
+            .Select(sameName => sameName.Last())
+            .Where(c => c.Value.Length > 0)
+            .Select(c => $"{c.Name.Value}={c.Value.Value}");
+
+        var copy = this.App.CreateClient();
+        copy.DefaultRequestHeaders.Add("Cookie", string.Join("; ", cookies));
+        return (browser, copy);
     }
 
     /// <summary>
@@ -163,5 +174,20 @@ public abstract class SessionTestBase(AppFixture app) : IntegrationTestBase(app)
         return this.App.Services.GetRequiredService<RecordingRevocationParticipant>().Revocations
             .Where(r => r.Subject == SessionSubject.User(userId))
             .ToList();
+    }
+
+    private async Task<HttpResponseMessage> SignInWithResponseAsync(HttpClient client, string email, Guid? tenantId)
+    {
+        var (rsp, _) = await client.POSTAsync<LoginEndpoint, LoginRequest, LoginResponse>(
+            new LoginRequest
+            {
+                Email = email,
+                Password = SeedData.DefaultPassword,
+                TenantId = tenantId,
+            });
+
+        await rsp.ShouldHaveStatusCodeAsync(HttpStatusCode.OK, $"failed to authenticate test user '{email}'");
+        AppFixture.SetCsrfHeaderFromResponse(client, rsp);
+        return rsp;
     }
 }

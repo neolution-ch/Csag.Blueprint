@@ -97,6 +97,23 @@ public sealed class DistributedCacheTicketStore : ITicketStore
     }
 
     /// <summary>
+    /// Retrieves an authentication ticket from the distributed cache for <paramref name="httpContext"/>. While
+    /// <see cref="SessionHttpContextExtensions.SignInNewSessionAsync"/> signs a new session in on that request, no
+    /// ticket is found, so the cookie handler stores the new session under a new key instead of renewing the ticket
+    /// under the request cookie's key.
+    /// </summary>
+    /// <param name="key">The session key that identifies the ticket.</param>
+    /// <param name="httpContext">The request the ticket is retrieved for.</param>
+    /// <param name="cancellationToken">Not observed. The cache read is short and the result is needed either way.</param>
+    /// <returns>The authentication ticket, or null if not found, expired, or a new session is being signed in.</returns>
+    public Task<AuthenticationTicket?> RetrieveAsync(string key, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        return httpContext.IsStartingNewSession()
+            ? Task.FromResult<AuthenticationTicket?>(null)
+            : this.RetrieveAsync(key);
+    }
+
+    /// <summary>
     /// Removes an authentication ticket from the distributed cache and deletes its tracking row. A ticket that cannot
     /// be removed keeps its row, so the session stays within reach of revocation and the sign-out can be repeated.
     /// Called by the cookie handler on sign-out, including a sign-out raised while it authenticates a request, and

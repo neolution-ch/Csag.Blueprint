@@ -6,8 +6,8 @@ namespace Csag.Blueprint.Application.Abstractions.Services;
 public enum SessionRevocationReason
 {
     /// <summary>
-    /// The account's credentials changed (<see cref="ISessionLifecycle.CredentialsChangedAsync"/>). The caller's own
-    /// session may have been kept. For a service account: its secret was rotated
+    /// The account's credentials changed (<see cref="ISessionLifecycle.CredentialsChangedAsync"/>). Every session of the
+    /// account ended, and the caller may have continued in a new one. For a service account: its secret was rotated
     /// (<see cref="IServiceAccountCredentials.RotateSecretAsync"/>).
     /// </summary>
     CredentialsChanged = 0,

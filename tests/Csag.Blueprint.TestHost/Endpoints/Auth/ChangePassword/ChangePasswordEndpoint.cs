@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Identity;
 
 /// <summary>
 /// Changes the caller's password, then reports the credential change to the session lifecycle after the change is
-/// committed, which ends the account's other sessions and keeps the caller's.
+/// committed, which ends every session of the account and continues the caller's in a new one under a new key.
 /// </summary>
 public sealed class ChangePasswordEndpoint : Endpoint<ChangePasswordRequest>
 {

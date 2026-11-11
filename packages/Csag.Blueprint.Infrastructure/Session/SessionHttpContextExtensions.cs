@@ -1,8 +1,12 @@
 namespace Csag.Blueprint.Infrastructure.Session;
 
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 /// <summary>
 /// <see cref="HttpContext"/> helpers for the reference-token session model.
@@ -10,6 +14,43 @@ using Microsoft.AspNetCore.Identity;
 public static class SessionHttpContextExtensions
 {
     private static readonly object RewrittenSessionKeyKey = new();
+    private static readonly object StartingNewSessionKey = new();
+
+    /// <summary>
+    /// Signs <paramref name="session"/> in under a new session key. A session the request still holds ends first and
+    /// its cookie is replaced, so a copy of that cookie stops working. Use it for every sign-in to the Identity
+    /// application cookie, and call it at most once per request.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>HttpContext.SignInAsync</c> on a request that still carries a live session cookie keeps that cookie's key: the
+    /// cookie handler that authenticated the request renews the ticket under the key it read, instead of storing a new
+    /// one (<see href="https://github.com/dotnet/aspnetcore/issues/22135">dotnet/aspnetcore#22135</see>). Whoever holds
+    /// a copy of the old cookie would then hold the new session, possibly of another account.
+    /// </para>
+    /// <para>
+    /// When the request carries the session cookie, this method signs its session out through that handler, which
+    /// removes the old ticket and its tracking row and stops the handler from renewing the old ticket and rewriting the
+    /// old cookie when the response starts. It does so whether or not the request authenticated: an application's
+    /// <c>OnValidatePrincipal</c> can reject the principal and leave the ticket in place. It then signs in through a
+    /// handler instance of its own, which finds the old session gone and stores the ticket under a new key. During
+    /// that sign-in <see cref="DistributedCacheTicketStore"/> finds no ticket for the request's cookie, so a concurrent
+    /// sliding renewal that writes the old ticket back cannot make the handler reuse the old key. A decorator around
+    /// <see cref="Microsoft.AspNetCore.Authentication.Cookies.ITicketStore"/> keeps that guarantee only when it forwards
+    /// the overloads that take the <see cref="HttpContext"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="httpContext">The request signing in.</param>
+    /// <param name="session">The principal of the new session.</param>
+    /// <param name="properties">The sign-in properties, if any. The session infrastructure sets lifetime and persistence.</param>
+    /// <returns>A task that completes once the new session is stored and its cookie written.</returns>
+    public static Task SignInNewSessionAsync(this HttpContext httpContext, ClaimsPrincipal session, AuthenticationProperties? properties = null)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        ArgumentNullException.ThrowIfNull(session);
+
+        return SignInNewSessionCoreAsync(httpContext, session, properties);
+    }
 
     /// <summary>
     /// Resolves the session key of the request's current authentication session, if any. The key is the
@@ -69,6 +110,55 @@ public static class SessionHttpContextExtensions
     /// <returns><see langword="true"/> when the session lifecycle rewrote that session during the request.</returns>
     internal static bool WasSessionRewritten(this HttpContext? httpContext, string sessionKey)
         => httpContext?.Items[RewrittenSessionKeyKey] is string rewritten && string.Equals(rewritten, sessionKey, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Answers whether <see cref="SignInNewSessionAsync"/> is signing a session in on this request right now, so that
+    /// <see cref="DistributedCacheTicketStore"/> lets the cookie handler find no ticket under the request's cookie.
+    /// </summary>
+    /// <param name="httpContext">The request, if any.</param>
+    /// <returns><see langword="true"/> while the new session is being signed in.</returns>
+    internal static bool IsStartingNewSession(this HttpContext? httpContext)
+        => httpContext?.Items.ContainsKey(StartingNewSessionKey) == true;
+
+    private static async Task SignInNewSessionCoreAsync(HttpContext httpContext, ClaimsPrincipal session, AuthenticationProperties? properties)
+    {
+        // Decided by the cookie, not by the authentication result. A rejected principal fails authentication while its
+        // ticket stays in the store under the cookie's key, where the handler below would find and reuse it.
+        var cookieOptions = httpContext.RequestServices
+            .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(IdentityConstants.ApplicationScheme);
+        if (cookieOptions.Cookie.Name is { } cookieName
+            && !string.IsNullOrEmpty(cookieOptions.CookieManager.GetRequestCookie(httpContext, cookieName)))
+        {
+            await httpContext.SignOutAsync(IdentityConstants.ApplicationScheme);
+        }
+
+        var schemes = httpContext.RequestServices.GetRequiredService<IAuthenticationSchemeProvider>();
+        var scheme = await schemes.GetSchemeAsync(IdentityConstants.ApplicationScheme)
+            ?? throw new InvalidOperationException($"The {IdentityConstants.ApplicationScheme} authentication scheme is not registered.");
+
+        // Built the way the framework's handler provider builds one. Handlers are registered as transient services, so
+        // this is a new instance, not the one HttpContext.SignInAsync would reach.
+        var handler = (httpContext.RequestServices.GetService(scheme.HandlerType)
+                ?? ActivatorUtilities.CreateInstance(httpContext.RequestServices, scheme.HandlerType))
+            as IAuthenticationSignInHandler
+            ?? throw new InvalidOperationException($"The {IdentityConstants.ApplicationScheme} authentication handler cannot sign in.");
+
+        await handler.InitializeAsync(scheme, httpContext);
+
+        // The handler still reads the request's cookie, and a concurrent sliding renewal over that cookie can write the
+        // old ticket back after the sign-out removed it. While the mark is set, the ticket store finds no ticket for the
+        // cookie, so the handler stores the new ticket under a new key whatever the cache holds.
+        httpContext.Items[StartingNewSessionKey] = true;
+        try
+        {
+            await handler.SignInAsync(session, properties);
+        }
+        finally
+        {
+            httpContext.Items.Remove(StartingNewSessionKey);
+        }
+    }
 
     private static async Task<string?> GetCurrentSessionKeyCoreAsync(HttpContext httpContext)
     {

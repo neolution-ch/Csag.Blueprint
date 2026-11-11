@@ -22,6 +22,7 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     where TContext : DbContext
 {
     private readonly SessionManager<TUser, TContext> sessions;
+    private readonly ISessionEligibility eligibility;
     private readonly ITenantMembershipChecker membershipChecker;
     private readonly IHttpContextAccessor httpContextAccessor;
     private readonly IEnumerable<ISessionRevocationParticipant> participants;
@@ -30,19 +31,22 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     /// <summary>
     /// Initializes a new instance of the <see cref="SessionLifecycle{TUser, TContext}"/> class.
     /// </summary>
-    /// <param name="sessions">The tracked-session operations.</param>
+    /// <param name="sessions">The tracked-session operations, including the caller's ticket a credential change carries into the new session.</param>
+    /// <param name="eligibility">Answers whether the account may still hold the caller's new session.</param>
     /// <param name="membershipChecker">Answers whether the caller may switch into a tenant.</param>
     /// <param name="httpContextAccessor">Locates the caller's session.</param>
     /// <param name="participants">The application's revocation participants.</param>
     /// <param name="logger">The logger.</param>
     public SessionLifecycle(
         SessionManager<TUser, TContext> sessions,
+        ISessionEligibility eligibility,
         ITenantMembershipChecker membershipChecker,
         IHttpContextAccessor httpContextAccessor,
         IEnumerable<ISessionRevocationParticipant> participants,
         ILogger<SessionLifecycle<TUser, TContext>> logger)
     {
         this.sessions = sessions ?? throw new ArgumentNullException(nameof(sessions));
+        this.eligibility = eligibility ?? throw new ArgumentNullException(nameof(eligibility));
         this.membershipChecker = membershipChecker ?? throw new ArgumentNullException(nameof(membershipChecker));
         this.httpContextAccessor = httpContextAccessor ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         this.participants = participants ?? throw new ArgumentNullException(nameof(participants));
@@ -52,19 +56,37 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     /// <inheritdoc/>
     public async Task CredentialsChangedAsync(Guid accountId)
     {
-        var caller = await this.GetCallerSessionAsync();
+        var httpContext = this.httpContextAccessor.HttpContext;
+        var caller = httpContext is null ? null : await httpContext.GetCurrentSessionAsync();
+        var failures = new List<Exception>();
 
-        // The filter only ever matches this account's rows, so keeping the caller's key spares the caller's own
-        // session only when it belongs to this account — an administrator resetting someone else's password keeps
-        // their own session without sparing any of the other account's.
-        var keepSessionKey = caller?.SessionKey;
-        Expression<Func<BlueprintActiveSession, bool>> filter = keepSessionKey is null
-            ? s => s.UserId == accountId
-            : s => s.UserId == accountId && s.SessionKey != keepSessionKey;
+        // The caller's own session continues in a new one with the same claims. Its ticket is read before the
+        // revocation below removes it, and only while it still authenticates this account: a plain sign-in over a copy
+        // of the caller's cookie can have stored another account's principal under the same key since the request
+        // authenticated, and continuing with that principal would sign the caller into the other account. A caller of
+        // another account, such as an administrator resetting someone else's password, keeps its own session untouched.
+        AuthenticationTicket? callerTicket = null;
+        if (caller is not null && caller.AccountId == accountId)
+        {
+            await this.RunStepAsync(failures, async () => callerTicket = await this.sessions.GetOwnTicketAsync(caller.SessionKey, accountId));
+        }
 
-        await this.RevokeAndNotifyAsync(
-            filter,
-            new SessionRevocation { Reason = SessionRevocationReason.CredentialsChanged, Subject = SessionSubject.User(accountId) });
+        // Every session of the account ends, the caller's included: a copy of the caller's cookie must stop working
+        // when the credentials change, and keeping the caller's key would keep that copy valid.
+        await this.RevokeSessionsAsync(s => s.UserId == accountId, failures);
+
+        await this.NotifyParticipantsAsync(
+            new SessionRevocation { Reason = SessionRevocationReason.CredentialsChanged, Subject = SessionSubject.User(accountId) },
+            failures);
+
+        // After any failed step, a participant's included, the caller gets no new session. Ending up signed out is the
+        // safe side, and the intent is safe to retry.
+        if (httpContext is not null && callerTicket is not null && failures.Count == 0)
+        {
+            await this.RunStepAsync(failures, () => this.ContinueCallerSessionAsync(httpContext, accountId, callerTicket));
+        }
+
+        ThrowIfAnyFailed(failures);
     }
 
     /// <inheritdoc/>
@@ -211,6 +233,19 @@ internal sealed class SessionLifecycle<TUser, TContext> : ISessionLifecycle
     {
         var httpContext = this.httpContextAccessor.HttpContext;
         return httpContext is null ? null : await httpContext.GetCurrentSessionAsync();
+    }
+
+    private async Task ContinueCallerSessionAsync(HttpContext httpContext, Guid accountId, AuthenticationTicket callerTicket)
+    {
+        // A sign-in asks the same question and fails on a "no". Asking first leaves the caller signed out instead of
+        // failing an intent whose revocation already succeeded.
+        if (!await this.eligibility.MayHoldSessionAsync(accountId))
+        {
+            return;
+        }
+
+        // The new session gets a fresh lifetime, as any sign-in does.
+        await httpContext.SignInNewSessionAsync(callerTicket.Principal);
     }
 
     private async Task MarkCallerSessionRewrittenAsync(Guid accountId)

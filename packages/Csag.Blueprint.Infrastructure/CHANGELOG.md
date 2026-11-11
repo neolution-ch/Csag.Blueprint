@@ -1,5 +1,23 @@
 # @neolution-ch/csag-blueprint-infrastructure
 
+## 0.10.0
+
+### Minor Changes
+
+- [#88](https://github.com/neolution-ch/Csag.Blueprint/pull/88) [`52313be`](https://github.com/neolution-ch/Csag.Blueprint/commit/52313be2528e56acb1c30f0e3b1a8b42f7a7d353) Thanks [@neotrow](https://github.com/neotrow)! - Start a session under a new key at every sign-in and credential change, so a copied session cookie stops working
+  
+  `HttpContext.SignInNewSessionAsync(principal)` (Csag.Blueprint.Infrastructure) signs a session in under a new key. A session the request still holds ends first. A plain `HttpContext.SignInAsync` on a request that still carries a live session cookie keeps that cookie's key (dotnet/aspnetcore#22135), so a copy of the old cookie reaches the new session. Use the new method for every sign-in to the Identity application cookie.
+  
+  **Behaviour change:** `ISessionLifecycle.CredentialsChangedAsync` ends every session of the account, the caller's included. When the caller's session belongs to the account, the caller continues in a new session with the same claims and tenant, under a new key and with a fresh lifetime, and the response sets its cookie. Before, the caller kept its session and its key, so a copied cookie stayed valid after a password change. A client that stores the session cookie itself must take the new one from the response, as browsers do. When `ISessionEligibility` refuses the account, or a step of the intent fails, the caller is signed out instead.
+
+### Patch Changes
+
+- [#90](https://github.com/neolution-ch/Csag.Blueprint/pull/90) [`45baebc`](https://github.com/neolution-ch/Csag.Blueprint/commit/45baebca85de290c65824898f49f33fb8caf8ee4) Thanks [@neoscie](https://github.com/neoscie)! - Refuse a second new session on one request, and document the calls for a password reset that signs in the person
+  
+  A second call to `HttpContext.SignInNewSessionAsync` on the same request throws `InvalidOperationException`. Before, the second call could not end the session of the first call, and that session stayed stored until it expired. `ISessionLifecycle.CredentialsChangedAsync` can call the method itself, so do not sign in again on a request that calls it.
+  
+  A password reset endpoint that signs in the person on the same request calls `ISessionLifecycle.AccessRevokedAsync(accountId)`, then `SignInNewSessionAsync`. Revocation participants get `SessionRevocationReason.AccessRevoked` for such a reset.
+
 ## 0.9.0
 
 ### Minor Changes

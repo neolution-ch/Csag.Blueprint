@@ -73,7 +73,7 @@ jobs:
             # Sticky PR comment with per-suite totals, updated in place on every push.
             - name: Publish test results
               if: always()
-              uses: EnricoMi/publish-unit-test-result-action@v2.24.0
+              uses: EnricoMi/publish-unit-test-result-action@v2.25.0
               with:
                   files: ./test-results/**/*.trx
 

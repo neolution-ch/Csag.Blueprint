@@ -11,6 +11,7 @@
     <Project Path="packages/Csag.Blueprint.Web/Csag.Blueprint.Web.csproj" />
     <Project Path="packages/Csag.Blueprint.SourceGenerators/Csag.Blueprint.SourceGenerators.csproj" />
     <Project Path="packages/Csag.Blueprint.Testing/Csag.Blueprint.Testing.csproj" />
+    <Project Path="packages/Csag.Blueprint.Realtime.AzureSignalR/Csag.Blueprint.Realtime.AzureSignalR.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Csag.Blueprint.Tests.Shared/Csag.Blueprint.Tests.Shared.csproj" />
@@ -19,6 +20,7 @@
     <Project Path="tests/Csag.Blueprint.Web.UnitTests/Csag.Blueprint.Web.UnitTests.csproj" />
     <Project Path="tests/Csag.Blueprint.SourceGenerators.UnitTests/Csag.Blueprint.SourceGenerators.UnitTests.csproj" />
     <Project Path="tests/Csag.Blueprint.Testing.UnitTests/Csag.Blueprint.Testing.UnitTests.csproj" />
+    <Project Path="tests/Csag.Blueprint.Realtime.AzureSignalR.UnitTests/Csag.Blueprint.Realtime.AzureSignalR.UnitTests.csproj" />
     <Project Path="tests/Csag.Blueprint.TestHost/Csag.Blueprint.TestHost.csproj" />
     <Project Path="tests/Csag.Blueprint.IntegrationTests/Csag.Blueprint.IntegrationTests.csproj" />
   </Folder>

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+    <Version>0.10.0</Version>
+        <Description>Azure SignalR Service provider for the CSAG Blueprint real-time channel: tenant-scoped publishing over the serverless REST API and client connection tickets.</Description>
+    </PropertyGroup>
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Azure.SignalR.Management" />
+    </ItemGroup>
+    <ItemGroup>
+        <ProjectReference Include="..\Csag.Blueprint.Application\Csag.Blueprint.Application.csproj" />
+    </ItemGroup>
+</Project>

@@ -21,6 +21,8 @@ importers:
 
   packages/Csag.Blueprint.Infrastructure: {}
 
+  packages/Csag.Blueprint.Realtime.AzureSignalR: {}
+
   packages/Csag.Blueprint.SourceGenerators: {}
 
   packages/Csag.Blueprint.Testing: {}

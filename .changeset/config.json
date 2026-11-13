@@ -12,7 +12,8 @@
       "@neolution-ch/csag-blueprint-infrastructure",
       "@neolution-ch/csag-blueprint-web",
       "@neolution-ch/csag-blueprint-testing",
-      "@neolution-ch/csag-blueprint-source-generators"
+      "@neolution-ch/csag-blueprint-source-generators",
+      "@neolution-ch/csag-blueprint-realtime-azure-signalr"
     ]
   ],
   "linked": [],

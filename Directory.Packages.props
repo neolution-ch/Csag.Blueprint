@@ -41,7 +41,7 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.SqlServer" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.13" />
     <PackageVersion Include="Neolution.Extensions.Configuration.GoogleSecrets" Version="1.6.0" />
-    <PackageVersion Include="NLog.Web.AspNetCore" Version="6.2.1" />
+    <PackageVersion Include="NLog.Web.AspNetCore" Version="6.2.2" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.1" />
     <!-- Realtime.AzureSignalR -->
     <PackageVersion Include="Microsoft.Azure.SignalR.Management" Version="1.33.1" />

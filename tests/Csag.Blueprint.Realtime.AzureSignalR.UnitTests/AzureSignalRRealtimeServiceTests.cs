@@ -138,6 +138,25 @@ public sealed class AzureSignalRRealtimeServiceTests
         entry.Exception.ShouldNotBeNull();
     }
 
+    [Fact]
+    public async Task AfterDisposal_PublishingSendsNothing_AndLogsInsteadOfThrowing()
+    {
+        // Arrange
+        await using var api = await FakeRestApi.StartAsync();
+        var logger = new RecordingLogger();
+
+        var service = CreateService(api, logger);
+        await service.DisposeAsync();
+
+        // Act
+        await service.NotifyUserAsync(TenantId, FirstUserId, SampleEvent(), TestContext.Current.CancellationToken);
+
+        // Assert
+        // A hub context created after disposal would never be disposed.
+        api.SentToUsers.ShouldBeEmpty();
+        logger.Entries.ShouldHaveSingleItem().Exception.ShouldBeOfType<ObjectDisposedException>();
+    }
+
     private static AzureSignalRRealtimeService CreateService(FakeRestApi api, RecordingLogger logger)
     {
         var options = Options.Create(new BlueprintAzureSignalROptions

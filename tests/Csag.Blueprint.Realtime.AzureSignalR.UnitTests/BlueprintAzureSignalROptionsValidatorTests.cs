@@ -128,6 +128,7 @@ public sealed class BlueprintAzureSignalROptionsValidatorTests
     [InlineData("")]
     [InlineData("has spaces")]
     [InlineData("has-a-hyphen")]
+    [InlineData("app\n")]
     [InlineData(null)]
     public void WithInvalidHubName_IsInvalid(string? hubName)
     {

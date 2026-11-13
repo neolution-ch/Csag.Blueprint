@@ -109,6 +109,7 @@ internal sealed partial class BlueprintAzureSignalROptionsValidator : IValidateO
                 && property[1].Length > 0);
     }
 
-    [GeneratedRegex("^[A-Za-z0-9_]{1,64}$", RegexOptions.CultureInvariant)]
+    // \z rather than $, which in .NET also matches before a trailing newline.
+    [GeneratedRegex(@"^[A-Za-z0-9_]{1,64}\z", RegexOptions.CultureInvariant)]
     private static partial Regex HubNamePattern();
 }

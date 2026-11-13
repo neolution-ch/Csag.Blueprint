@@ -30,6 +30,18 @@ public sealed class RecordingRealtimeNotifierTests
     }
 
     [Fact]
+    public async Task NotifyUsersAsync_WithNoUsers_RecordsNothing()
+    {
+        var notifier = new RecordingRealtimeNotifier();
+
+        await notifier.NotifyUsersAsync(TenantId, [], Event("users"), TestContext.Current.CancellationToken);
+
+        // An empty list publishes nothing, and a recorded entry without users would pass for a
+        // tenant-wide notification.
+        notifier.Notifications.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task Clear_ForgetsEverything()
     {
         var notifier = new RecordingRealtimeNotifier();

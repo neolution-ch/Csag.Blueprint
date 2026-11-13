@@ -37,7 +37,15 @@ namespace Csag.Blueprint.Testing.Realtime
         /// <inheritdoc />
         public Task NotifyUsersAsync(Guid tenantId, IReadOnlyCollection<Guid> userIds, RealtimeEvent realtimeEvent, CancellationToken cancellationToken = default)
         {
-            this.notifications.Enqueue(new RecordedNotification(tenantId, [.. userIds], realtimeEvent));
+            ArgumentNullException.ThrowIfNull(userIds);
+
+            // An empty list publishes nothing. Recording it would also be indistinguishable from a
+            // tenant-wide notification, which is what an entry without users stands for.
+            if (userIds.Count > 0)
+            {
+                this.notifications.Enqueue(new RecordedNotification(tenantId, [.. userIds], realtimeEvent));
+            }
+
             return Task.CompletedTask;
         }
     }

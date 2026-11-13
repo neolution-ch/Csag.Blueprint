@@ -25,9 +25,11 @@ public sealed class AzureSignalRRealtimeService : IRealtimeNotifier, IRealtimeTi
     private readonly BlueprintAzureSignalROptions options;
     private readonly TimeProvider timeProvider;
     private readonly ILogger<AzureSignalRRealtimeService> logger;
-    private readonly Lazy<Task<ServiceHubContext>> hubContext;
+    private readonly Lock gate = new();
 
+    private Task<ServiceHubContext>? hubContext;
     private ServiceManager? serviceManager;
+    private bool disposed;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AzureSignalRRealtimeService"/> class.
@@ -46,13 +48,6 @@ public sealed class AzureSignalRRealtimeService : IRealtimeNotifier, IRealtimeTi
         this.options = options.Value;
         this.timeProvider = timeProvider;
         this.logger = logger;
-
-        // Building the hub context is expensive, so it is created once and shared. Deferring it
-        // also keeps it off the startup path, where a cold-started instance is already paying for
-        // everything else it has to do before serving its first request.
-        this.hubContext = new Lazy<Task<ServiceHubContext>>(
-            this.CreateHubContextAsync,
-            LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
     /// <inheritdoc />
@@ -102,7 +97,7 @@ public sealed class AzureSignalRRealtimeService : IRealtimeNotifier, IRealtimeTi
     /// <inheritdoc />
     public async Task<RealtimeTicket?> IssueAsync(Guid tenantId, Guid userId, CancellationToken cancellationToken = default)
     {
-        var hub = await this.hubContext.Value;
+        var hub = await this.GetHubContextAsync();
         var serviceUserId = RealtimeGroupNames.ServiceUserId(tenantId, userId);
 
         // Membership is granted before the ticket is handed out, so it is already in place by the
@@ -145,17 +140,60 @@ public sealed class AzureSignalRRealtimeService : IRealtimeNotifier, IRealtimeTi
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
-        if (this.hubContext.IsValueCreated)
+        Task<ServiceHubContext>? creation;
+        lock (this.gate)
         {
-            var pending = this.hubContext.Value;
-            if (pending.IsCompletedSuccessfully)
+            if (this.disposed)
             {
-                var hub = await pending;
-                await hub.DisposeAsync();
+                return;
             }
+
+            this.disposed = true;
+            creation = this.hubContext;
+        }
+
+        // The manager is built by the creation, so without one there is nothing to dispose.
+        if (creation is null)
+        {
+            return;
+        }
+
+        try
+        {
+            // A request can still be creating the context when the host shuts down. Waiting for it
+            // disposes the context that creation produces, and keeps the manager alive for as long as
+            // the creation still uses it.
+            var hub = await creation;
+            await hub.DisposeAsync();
+        }
+#pragma warning disable CA1031 // The manager below must be disposed whatever became of the context.
+        catch (Exception exception)
+#pragma warning restore CA1031
+        {
+            // A creation that failed has already surfaced to the call that started it.
+            this.logger.LogDebug(exception, "Could not dispose the realtime hub context");
         }
 
         this.serviceManager?.Dispose();
+    }
+
+    /// <summary>
+    /// Returns the shared hub context, starting its creation on first use.
+    /// </summary>
+    /// <returns>The hub context.</returns>
+    /// <exception cref="ObjectDisposedException">The service has been disposed.</exception>
+    private Task<ServiceHubContext> GetHubContextAsync()
+    {
+        // Building the hub context is expensive, so it is created once and shared. Deferring it to the
+        // first use also keeps it off the startup path, where a cold-started instance is already paying
+        // for everything else it has to do before serving its first request.
+        lock (this.gate)
+        {
+            // Disposal takes the same lock, so a creation either starts before it and is waited for
+            // there, or never starts and cannot leave a context behind that nothing disposes.
+            ObjectDisposedException.ThrowIf(this.disposed, this);
+            return this.hubContext ??= this.CreateHubContextAsync();
+        }
     }
 
     private async Task<ServiceHubContext> CreateHubContextAsync()
@@ -184,7 +222,7 @@ public sealed class AzureSignalRRealtimeService : IRealtimeNotifier, IRealtimeTi
     {
         try
         {
-            var hub = await this.hubContext.Value;
+            var hub = await this.GetHubContextAsync();
             await resolveTarget(hub).SendAsync(ClientMethodName, realtimeEvent, cancellationToken);
         }
 #pragma warning disable CA1031 // A notification must never fail the write that triggered it.

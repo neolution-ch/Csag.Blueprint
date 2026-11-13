@@ -1,6 +1,7 @@
 namespace Csag.Blueprint.Web.Extensions;
 
 using Csag.Blueprint.Application.Abstractions.Services;
+using Csag.Blueprint.Infrastructure.Countries;
 using Csag.Blueprint.Infrastructure.Tenancy;
 using Csag.Blueprint.Web.Tenancy;
 using Microsoft.AspNetCore.Builder;
@@ -18,7 +19,7 @@ public static class BlueprintBuilderExtensions
     /// <summary>
     /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
     /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
-    /// session authentication, and anti-forgery protection.
+    /// session authentication, anti-forgery protection, country catalog, and tenant time-zone fallback.
     /// </summary>
     /// <param name="builder">The web application builder.</param>
     /// <returns>The web application builder for chaining.</returns>
@@ -28,7 +29,7 @@ public static class BlueprintBuilderExtensions
     /// <summary>
     /// Configures all Blueprint-level services: server options (HTTPS, HSTS, CORS, Kestrel, request size limits),
     /// generic OpenID Connect external authentication, FastEndpoints, Swagger, distributed cache,
-    /// session authentication, and anti-forgery protection.
+    /// session authentication, anti-forgery protection, country catalog, and tenant time-zone fallback.
     /// </summary>
     /// <param name="builder">The web application builder.</param>
     /// <param name="configure">
@@ -90,6 +91,8 @@ public static class BlueprintBuilderExtensions
         // Clock seam: everything blueprint-side reads time through TimeProvider so tests can supply a
         // fake. TryAdd, so a TimeProvider registered before this call (a FakeTimeProvider in tests) wins.
         builder.Services.TryAddSingleton(TimeProvider.System);
+
+        builder.Services.AddBlueprintCountries();
 
         // Zone seam: the tenant's zone decides "today" and calendar days. The application registers the
         // provider that reads it; until then every tenant is in UTC.

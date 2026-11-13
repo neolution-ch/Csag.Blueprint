@@ -26,6 +26,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore"
       Version="10.0.13" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.13" />
+    <PackageVersion Include="Nager.Country" Version="4.8.0" />
     <PackageVersion Include="Neolution.Extensions.Caching.Distributed" Version="3.0.0" />
     <!-- Web -->
     <PackageVersion Include="Audit.NET" Version="33.0.0" />

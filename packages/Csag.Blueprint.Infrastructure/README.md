@@ -401,6 +401,12 @@ Expired service-account sessions are deleted by the job `AddBlueprintSessionInfr
 | `TranslationCacheKeys` | Cache key helpers for localization caching. |
 | `MigrationBuilderExtensions` | Translation seeding helpers for migrations. |
 
+### Country catalog
+
+| Component | Purpose |
+| --- | --- |
+| `NagerCountryCatalog` | `ICountryCatalog` with the codes of the `Nager.Country` package. `AddBlueprintCountries` registers it. |
+
 ### Table view infrastructure
 
 | Component | Purpose |

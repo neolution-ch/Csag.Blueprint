@@ -46,6 +46,12 @@
           "Microsoft.EntityFrameworkCore.Relational": "10.0.13"
         }
       },
+      "Nager.Country": {
+        "type": "Direct",
+        "requested": "[4.8.0, )",
+        "resolved": "4.8.0",
+        "contentHash": "p57dyLWFnqXHf/9sFCcQSo5Cy5Y+gzZEtjuEr9tTyORK73XXqvk29G6vwMisn8rsXIGeEiIe5bgfIhXaLP1xbg=="
+      },
       "Neolution.CodeAnalysis": {
         "type": "Direct",
         "requested": "[3.3.0-beta.2, )",

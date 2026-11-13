@@ -38,6 +38,7 @@ All service contracts are defined as interfaces for dependency injection and tes
 | `IServiceAccountClaimsEnricher` | Implemented by the application to add its own claims to a service-account principal on every request it authenticates. |
 | `IPasswordResetEmailService` | Sends password reset emails containing a reset link. |
 | `IImageStorageService`       | Stores and deletes images with support for multiple backends (database or blob storage). Returns a `StoredImageData` record with binary data or URL depending on the implementation. |
+| `ICountryCatalog`            | The ISO 3166-1 alpha-2 country codes that the application accepts. |
 
 ## Table View System
 
